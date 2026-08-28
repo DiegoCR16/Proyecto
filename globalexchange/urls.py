@@ -16,18 +16,10 @@ Including another URLconf
 """
 from django.contrib import admin
 from django.urls import path, include
-from authentication.views import (
-    RoleAdminTemplateView, CustomerAdminTemplateView, CorporateCustomerAdminTemplateView, 
-    KYCLimitsAdminTemplateView, MainMenuTemplateView, ClientDocumentsAdminTemplateView
-)
+from django.shortcuts import redirect
 
 urlpatterns = [
     path('admin/', admin.site.urls),
-    path('api/', include('authentication.urls')),
-    path('roles/admin/', RoleAdminTemplateView.as_view(), name='roles-admin-ui-root'),
-    path('customers/admin/', CustomerAdminTemplateView.as_view(), name='customers-admin-ui-root'),
-    path('customers/corporate/admin/', CorporateCustomerAdminTemplateView.as_view(), name='corporate-customer-admin-ui-root'),
-    path('limits/kyc/admin/', KYCLimitsAdminTemplateView.as_view(), name='kyc-limits-admin-ui-root'),
-    path('menu/', MainMenuTemplateView.as_view(), name='main-menu-ui-root'),
-    path('documents/admin/', ClientDocumentsAdminTemplateView.as_view(), name='client-documents-admin-ui-root'),
+    path('auth/', include('authentication.urls')),
+    path('', lambda request: redirect('auth/login/')),
 ]

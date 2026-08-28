@@ -1,271 +1,53 @@
 from django.db import models
 from django.contrib.auth.models import User
 
-class AuditLog(models.Model):
-    """
-    Model representing security and authentication audit logs.
-    
-    Attributes:
-        user_identifier (str): Username or email used in the attempt.
-        action (str): Description of the action (e.g., 'LOGIN_SUCCESS', 'ROLE_CREATED').
-        ip_address (str): IP address of the client.
-        timestamp (datetime): Exact date and time of the event.
-        details (str): Additional context or error details.
-    """
-    user_identifier = models.CharField(max_length=255)
-    action = models.CharField(max_length=100)
-    ip_address = models.GenericIPAddressField(null=True, blank=True)
-    timestamp = models.DateTimeField(auto_now_add=True)
-    details = models.TextField(blank=True, null=True)
-
-    def __str__(self):
-        """
-        Returns a string representation of the audit log entry.
-        
-        Returns:
-            str: Formatted string with timestamp, action, and user identifier.
-        """
-        return f"[{self.timestamp}] {self.action} - {self.user_identifier}"
-
-
-class SystemPermission(models.Model):
-    """
-    Model representing granular permissions in Global Exchange system (PSE-26).
-    
-    Attributes:
-        code (str): Unique system code for the permission (e.g., 'MANAGE_ROLES').
-        name (str): Human-readable permission name.
-        description (str): Detailed description of what the permission allows.
-    """
-    code = models.CharField(max_length=100, unique=True)
-    name = models.CharField(max_length=150)
-    description = models.TextField(blank=True, null=True)
-
-    def __str__(self):
-        """
-        Returns string representation of permission.
-        
-        Returns:
-            str: Permission name and code.
-        """
-        return f"{self.name} ({self.code})"
-
-
 class Role(models.Model):
     """
-    Model representing user roles with granular permissions and Keycloak synchronization (PSE-26).
-    
-    Attributes:
-        name (str): Unique role name (e.g., 'ADMINISTRADOR', 'ANALISTA_CAMBIARIO').
-        description (str): Role description.
-        permissions (ManyToManyField): Granular permissions assigned to this role.
-        is_active (bool): Whether the role is active or deactivated.
-        keycloak_synced (bool): Flag indicating synchronization status with Keycloak policies.
-        created_at (datetime): Timestamp when the role was created.
-        updated_at (datetime): Timestamp when the role was last updated.
+    Modelo que representa un Rol dentro del sistema Global Exchange.
+    Ej: Administrador, Corporativo, Individual, Operador, Visualizador.
     """
-    name = models.CharField(max_length=100, unique=True)
-    description = models.TextField(blank=True, null=True)
-    permissions = models.ManyToManyField(SystemPermission, related_name='roles', blank=True)
-    is_active = models.BooleanField(default=True)
-    keycloak_synced = models.BooleanField(default=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
+    name = models.CharField(max_length=50, unique=True, verbose_name="Nombre del Rol")
+    description = models.TextField(blank=True, null=True, verbose_name="Descripción")
 
     def __str__(self):
-        """
-        Returns string representation of role.
-        
-        Returns:
-            str: Role name and status.
-        """
-        status = "Activo" if self.is_active else "Inactivo"
-        return f"{self.name} [{status}]"
-
+        return self.name
 
 class UserProfile(models.Model):
     """
-    Extended user profile supporting roles and MFA requirements for Global Exchange.
-    
-    Attributes:
-        user (User): Associated Django auth user.
-        role (str): Assigned role (e.g., 'ADMIN', 'CORPORATE_CLIENT', 'RETAIL_CLIENT').
-        role_ref (Role): Optional ForeignKey reference to dynamic Role model.
-        mfa_required (bool): Whether Multi-Factor Authentication / iToken is strictly required.
+    Perfil extendido del usuario para almacenar información de Keycloak,
+    clasificación de cliente, rol y estado de autenticación de doble factor (MFA/iToken).
     """
-    ROLE_CHOICES = [
-        ('ADMIN', 'Administrador'),
-        ('CORPORATE_CLIENT', 'Cliente Corporativo'),
-        ('RETAIL_CLIENT', 'Cliente Minorista'),
-        ('EXCHANGE_ANALYST', 'Analista Cambiario'),
-    ]
-    
-    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='profile')
-    role = models.CharField(max_length=50, choices=ROLE_CHOICES, default='RETAIL_CLIENT')
-    role_ref = models.ForeignKey(Role, on_delete=models.SET_NULL, null=True, blank=True, related_name='users')
-    mfa_required = models.BooleanField(default=False)
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='profile', verbose_name="Usuario")
+    role = models.ForeignKey(Role, on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Rol")
+    is_corporate = models.BooleanField(default=False, verbose_name="Es Cliente Corporativo")
+    mfa_enabled = models.BooleanField(default=False, verbose_name="MFA / iToken Habilitado")
+    itoken_verified = models.BooleanField(default=False, verbose_name="iToken Verificado")
+    keycloak_id = models.CharField(max_length=255, blank=True, null=True, unique=True, verbose_name="ID de Keycloak")
 
-    def save(self, *args, **kwargs):
+    def requires_mfa(self):
         """
-        Overrides save to automatically enforce MFA for admin and corporate roles.
+        Determina si el usuario requiere obligatoriamente MFA/iToken según la regla de negocio:
+        Usuarios administrativos o Clientes Corporativos.
         """
-        if self.role in ['ADMIN', 'CORPORATE_CLIENT']:
-            self.mfa_required = True
-        super().save(*args, **kwargs)
+        if self.is_corporate:
+            return True
+        if self.role and self.role.name.lower() in ['admin', 'administrador', 'operador']:
+            return True
+        return self.mfa_enabled
 
     def __str__(self):
-        """
-        Returns a string representation of the user profile.
-        
-        Returns:
-            str: Username and role.
-        """
-        return f"{self.user.username} ({self.role})"
+        return f"{self.user.username} - {self.role.name if self.role else 'Sin Rol'}"
 
-
-class Customer(models.Model):
+class AuditLog(models.Model):
     """
-    Model representing bank customers with segmentation and profile management (PSE-2, PSE-3).
-    
-    Attributes:
-        first_name (str): Customer's first name.
-        last_name (str): Customer's last name.
-        document_number (str): Unique identification number (CI or RUC).
-        company_name (str): Company name for legal entities (Persona Jurídica - PSE-3).
-        ruc (str): RUC for legal entities (PSE-3).
-        client_type (str): Segmentation category ('RETAIL', 'CORPORATE', 'VIP').
-        email (str): Unique contact email address.
-        phone (str): Contact phone number.
-        address (str): Physical address.
-        is_active (bool): Whether the customer profile is active.
-        keycloak_synced (bool): Whether account is synced with Keycloak IdP (PSE-3).
-        created_at (datetime): Creation timestamp.
-        updated_at (datetime): Last modification timestamp.
+    Registro de auditoría para intentos de inicio de sesión, fallos de seguridad y eventos del sistema.
     """
-    CLIENT_TYPE_CHOICES = [
-        ('RETAIL', 'Cliente Minorista'),
-        ('CORPORATE', 'Cliente Corporativo'),
-        ('VIP', 'Cliente VIP'),
-    ]
-
-    first_name = models.CharField(max_length=150, blank=True, null=True)
-    last_name = models.CharField(max_length=150, blank=True, null=True)
-    document_number = models.CharField(max_length=50, unique=True, blank=True, null=True)
-    company_name = models.CharField(max_length=200, blank=True, null=True)
-    ruc = models.CharField(max_length=50, blank=True, null=True, unique=True)
-    client_type = models.CharField(max_length=50, choices=CLIENT_TYPE_CHOICES, default='RETAIL')
-    email = models.EmailField(unique=True)
-    phone = models.CharField(max_length=50, blank=True, null=True)
-    address = models.TextField(blank=True, null=True)
-    is_active = models.BooleanField(default=True)
-    keycloak_synced = models.BooleanField(default=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
+    user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Usuario")
+    action = models.CharField(max_length=255, verbose_name="Acción / Evento")
+    ip_address = models.GenericIPAddressField(blank=True, null=True, verbose_name="Dirección IP")
+    timestamp = models.DateTimeField(auto_now_add=True, verbose_name="Fecha y Hora")
+    details = models.TextField(blank=True, null=True, verbose_name="Detalles")
 
     def __str__(self):
-        """
-        Returns string representation of the customer.
-        
-        Returns:
-            str: Full name or company name, document/RUC, and client type.
-        """
-        name = self.company_name or f"{self.first_name or ''} {self.last_name or ''}".strip()
-        doc = self.ruc or self.document_number or 'N/A'
-        return f"{name} ({doc}) - {self.client_type}"
-
-
-class TransactionLimit(models.Model):
-    """
-    Model representing transactional limits parametrized by customer profile / client type (PSE-6).
-    
-    Attributes:
-        client_type (str): Category ('RETAIL', 'CORPORATE', 'VIP').
-        min_amount (Decimal): Minimum amount per transaction in PYG.
-        max_amount (Decimal): Maximum amount per transaction in PYG.
-        daily_limit (Decimal): Maximum daily transactional amount.
-        is_active (bool): Whether the limit rule is active.
-    """
-    client_type = models.CharField(max_length=50, unique=True, choices=Customer.CLIENT_TYPE_CHOICES)
-    min_amount = models.DecimalField(max_digits=15, decimal_places=2, default=50000.00)
-    max_amount = models.DecimalField(max_digits=15, decimal_places=2, default=1000000000.00)
-    daily_limit = models.DecimalField(max_digits=18, decimal_places=2, default=5000000000.00)
-    is_active = models.BooleanField(default=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
-    def __str__(self):
-        """
-        Returns string representation of transaction limit.
-        """
-        return f"Límite {self.client_type}: Min {self.min_amount} - Max {self.max_amount} PYG"
-
-
-class KYCAlert(models.Model):
-    """
-    Model representing KYC compliance alerts generated for high-value or suspicious transactions (PSE-6).
-    
-    Attributes:
-        customer (Customer): Associated customer.
-        alert_type (str): Type of alert (e.g., 'HIGH_VALUE_TRANSACTION', 'LIMIT_EXCEEDED').
-        amount (Decimal): Transaction amount that triggered the alert.
-        status (str): Alert status ('PENDING', 'REVIEWED', 'RESOLVED').
-        details (str): Additional context or description.
-        created_at (datetime): Timestamp when alert was generated.
-    """
-    STATUS_CHOICES = [
-        ('PENDING', 'Pendiente de Revisión'),
-        ('REVIEWED', 'En Revisión'),
-        ('RESOLVED', 'Resuelto / Aprobado'),
-    ]
-
-    customer = models.ForeignKey(Customer, on_delete=models.CASCADE, related_name='kyc_alerts')
-    alert_type = models.CharField(max_length=100)
-    amount = models.DecimalField(max_digits=15, decimal_places=2)
-    status = models.CharField(max_length=50, choices=STATUS_CHOICES, default='PENDING')
-    details = models.TextField(blank=True, null=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    def __str__(self):
-        """
-        Returns string representation of KYC alert.
-        """
-        return f"KYC Alert [{self.alert_type}] - {self.customer} - {self.amount} PYG [{self.status}]"
-
-
-class ClientDocument(models.Model):
-    """
-    Model representing digitalized client documentation (KYC documents, CI, income proof, etc. - PSE-7).
-    
-    Attributes:
-        customer (Customer): Associated customer.
-        document_type (str): Type of document ('CI_FRONT', 'CI_BACK', 'RUC_CERT', 'INCOME_PROOF', 'KYC_FORM').
-        file_name (str): Original file name.
-        file_url (str): Storage path or URL.
-        status (str): Verification status ('PENDING', 'VERIFIED', 'REJECTED').
-        uploaded_at (datetime): Upload timestamp.
-    """
-    DOCUMENT_TYPE_CHOICES = [
-        ('CI_FRONT', 'Cédula de Identidad (Anverso)'),
-        ('CI_BACK', 'Cédula de Identidad (Reverso)'),
-        ('RUC_CERT', 'Certificado de RUC'),
-        ('INCOME_PROOF', 'Comprobante de Ingresos'),
-        ('KYC_FORM', 'Formulario KYC Completado'),
-    ]
-
-    STATUS_CHOICES = [
-        ('PENDING', 'Pendiente de Verificación'),
-        ('VERIFIED', 'Verificado y Aprobado'),
-        ('REJECTED', 'Rechazado'),
-    ]
-
-    customer = models.ForeignKey(Customer, on_delete=models.CASCADE, related_name='documents')
-    document_type = models.CharField(max_length=50, choices=DOCUMENT_TYPE_CHOICES)
-    file_name = models.CharField(max_length=255)
-    file_url = models.CharField(max_length=500, blank=True, null=True)
-    status = models.CharField(max_length=50, choices=STATUS_CHOICES, default='PENDING')
-    uploaded_at = models.DateTimeField(auto_now_add=True)
-
-    def __str__(self):
-        """
-        Returns string representation of client document.
-        """
-        return f"{self.get_document_type_display()} - {self.customer} [{self.status}]"
+        username = self.user.username if self.user else "Anónimo"
+        return f"[{self.timestamp}] {username} - {self.action}"

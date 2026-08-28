@@ -20,7 +20,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/6.1/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-s)#y$l-(0i&ou+ndmx-u=rc3*r-3z4t6bk#@e%sk75o6sidiu('
+SECRET_KEY = 'django-insecure-*^pm7b%^e43^9+r^v7oo8lxlzh7z6n@hx65rypp*cwm$8kf(3r'
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
@@ -37,9 +37,15 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-    'rest_framework',
     'authentication',
 ]
+
+# Keycloak & OIDC Settings for PSE-4
+KEYCLOAK_SERVER_URL = 'http://localhost:8080'
+KEYCLOAK_REALM = 'global-exchange-realm'
+KEYCLOAK_CLIENT_ID = 'global-exchange-client'
+KEYCLOAK_CLIENT_SECRET = 'secret-client-key'
+KEYCLOAK_REDIRECT_URI = 'http://localhost:8000/auth/callback/'
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
