@@ -7,3 +7,6 @@ opencode.json
 
 .opencode.json
 .env
+__pycache__/
+*.pyc
+db.sqlite3
