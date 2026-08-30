@@ -1,12 +1,13 @@
 from django.test import TestCase, Client
 from django.contrib.auth.models import User
 from authentication.models import UserProfile, AuditLog
+from unittest.mock import patch
 
 class RegistrationPSE2Tests(TestCase):
     """
     Suite de pruebas unitarias independiente y exclusiva para la Historia de Usuario PSE-2:
-    Registro de Clientes Personas Físicas, validaciones de campos (nombre completo, cédula/RUC,
-    correo electrónico, contraseña segura), control de duplicados y redirección a Keycloak IdP.
+    Registro de Clientes (Personas Físicas y Jurídicas), validaciones de campos,
+    control de duplicados e integración con la Admin REST API de Keycloak en segundo plano.
     """
 
     def setUp(self):
@@ -21,7 +22,7 @@ class RegistrationPSE2Tests(TestCase):
 
     def test_register_page_loads(self):
         """
-        Verifica que la página de registro de Personas Físicas cargue correctamente (Status 200).
+        Verifica que la página de registro cargue correctamente (Status 200).
         """
         response = self.client.get(self.register_url)
         self.assertEqual(response.status_code, 200)
@@ -40,6 +41,7 @@ class RegistrationPSE2Tests(TestCase):
         Valida que el sistema rechace nombres completos que contengan números o símbolos.
         """
         response = self.client.post(self.register_url, {
+            'person_type': 'fisica',
             'full_name': 'Juan Pérez 123',
             'ci_ruc': '7654321',
             'email': 'nuevo.juan@globalexchange.com',
@@ -53,6 +55,7 @@ class RegistrationPSE2Tests(TestCase):
         Valida que el sistema rechace cédulas o RUC con formatos no numéricos inválidos.
         """
         response = self.client.post(self.register_url, {
+            'person_type': 'fisica',
             'full_name': 'Maria Gomez',
             'ci_ruc': 'ABC-1234',
             'email': 'maria.gomez@globalexchange.com',
@@ -66,6 +69,7 @@ class RegistrationPSE2Tests(TestCase):
         Valida que el sistema rechace correos electrónicos que no cumplan con la máscara texto@dominio.extensión.
         """
         response = self.client.post(self.register_url, {
+            'person_type': 'fisica',
             'full_name': 'Maria Gomez',
             'ci_ruc': '7654321',
             'email': 'mariagomez-invalid',
@@ -79,6 +83,7 @@ class RegistrationPSE2Tests(TestCase):
         Valida que el sistema rechace contraseñas inseguras (menos de 8 caracteres, sin mayúsculas, minúsculas o especiales).
         """
         response = self.client.post(self.register_url, {
+            'person_type': 'fisica',
             'full_name': 'Maria Gomez',
             'ci_ruc': '7654321',
             'email': 'maria.gomez@globalexchange.com',
@@ -92,6 +97,7 @@ class RegistrationPSE2Tests(TestCase):
         Verifica que el sistema deniegue el registro si el correo electrónico ya está registrado.
         """
         response = self.client.post(self.register_url, {
+            'person_type': 'fisica',
             'full_name': 'Otro Juan',
             'ci_ruc': '9876543',
             'email': 'juan.perez@globalexchange.com', # Email ya existente en setUp
@@ -106,6 +112,7 @@ class RegistrationPSE2Tests(TestCase):
         Verifica que el sistema deniegue el registro si el número de cédula o RUC ya existe.
         """
         response = self.client.post(self.register_url, {
+            'person_type': 'fisica',
             'full_name': 'Juan Duplicado',
             'ci_ruc': '1234567', # CI ya existente en setUp
             'email': 'juan.duplicado@globalexchange.com',
@@ -114,16 +121,36 @@ class RegistrationPSE2Tests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "El correo electrónico o número de cédula/RUC ya se encuentra registrado.")
 
-    def test_successful_validation_redirects_to_keycloak(self):
+    @patch('authentication.views.requests.get')
+    @patch('authentication.views.requests.post')
+    def test_successful_registration_calls_keycloak_admin_api(self, mock_post, mock_get):
         """
-        Verifica que al completar un registro válido sin duplicados, el sistema valida exitosamente
-        y redirige al flujo de registro de Keycloak.
+        Verifica que al completar un registro válido de Persona Física, el backend llama
+        a la Admin REST API de Keycloak en segundo plano con userType: fisica y redirige al login.
         """
+        mock_get.return_value.status_code = 200
+        mock_get.return_value.json.return_value = [] # Sin duplicados en Keycloak
+
+        mock_post.return_value.status_code = 200
+        mock_post.return_value.json.return_value = {'access_token': 'mock_admin_token'}
+
         response = self.client.post(self.register_url, {
+            'person_type': 'fisica',
             'full_name': 'Ana Benitez',
             'ci_ruc': '5544332',
             'email': 'ana.benitez@globalexchange.com',
             'password': 'StrongPassword123!'
         })
-        self.assertRedirects(response, self.keycloak_reg_url, fetch_redirect_response=False, status_code=302)
-        self.assertEqual(AuditLog.objects.filter(action="REGISTER_VALIDATION_SUCCESS").count(), 1)
+        self.assertRedirects(response, '/auth/login/', fetch_redirect_response=False, status_code=302)
+        self.assertEqual(AuditLog.objects.filter(action="REGISTER_SUCCESS").count(), 1)
+        self.assertTrue(User.objects.filter(email='ana.benitez@globalexchange.com').exists())
+
+    def test_juridica_person_type_selection(self):
+        """
+        Verifica que al seleccionar Persona Jurídica, el sistema informe que no requiere lógica backend.
+        """
+        response = self.client.post(self.register_url, {
+            'person_type': 'juridica'
+        })
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "El registro de Persona Jurídica no cuenta con lógica implementada")
