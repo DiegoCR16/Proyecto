@@ -13,5 +13,12 @@ services:
       - keycloak_data:/opt/keycloak/data
     command: start-dev
 
+  mailpit:
+    image: axllent/mailpit:latest
+    container_name: global-exchange-mailpit
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+
 volumes:
   keycloak_data:

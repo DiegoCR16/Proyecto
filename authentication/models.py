@@ -4,18 +4,31 @@ from django.contrib.auth.models import User
 class Role(models.Model):
     """
     Modelo que representa un Rol dentro del sistema Global Exchange.
-    Ej: Administrador, Corporativo, Individual, Operador, Visualizador.
+    
+    Attributes:
+        name (CharField): Nombre único del rol (Ej: Administrador, Corporativo, Individual).
+        description (TextField): Descripción detallada del rol y sus privilegios.
     """
     name = models.CharField(max_length=50, unique=True, verbose_name="Nombre del Rol")
     description = models.TextField(blank=True, null=True, verbose_name="Descripción")
 
     def __str__(self):
+        """Devuelve el nombre del rol como representación en cadena."""
         return self.name
 
 class UserProfile(models.Model):
     """
     Perfil extendido del usuario para almacenar información de Keycloak,
-    clasificación de cliente, rol y estado de autenticación de doble factor (MFA/iToken).
+    clasificación de cliente, rol, cédula/RUC y estado de autenticación de doble factor (MFA/iToken).
+    
+    Attributes:
+        user (OneToOneField): Relación uno a uno con el modelo User de Django.
+        role (ForeignKey): Rol asignado al usuario.
+        is_corporate (BooleanField): Indicador si el usuario es cliente corporativo.
+        mfa_enabled (BooleanField): Indicador si MFA/iToken está habilitado.
+        itoken_verified (BooleanField): Indicador si el iToken ha sido verificado en la sesión.
+        keycloak_id (CharField): Identificador único del usuario en Keycloak.
+        ci_ruc (CharField): Número de cédula de identidad o RUC del cliente.
     """
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='profile', verbose_name="Usuario")
     role = models.ForeignKey(Role, on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Rol")
@@ -23,11 +36,15 @@ class UserProfile(models.Model):
     mfa_enabled = models.BooleanField(default=False, verbose_name="MFA / iToken Habilitado")
     itoken_verified = models.BooleanField(default=False, verbose_name="iToken Verificado")
     keycloak_id = models.CharField(max_length=255, blank=True, null=True, unique=True, verbose_name="ID de Keycloak")
+    ci_ruc = models.CharField(max_length=20, blank=True, null=True, unique=True, verbose_name="Cédula o RUC")
 
     def requires_mfa(self):
         """
         Determina si el usuario requiere obligatoriamente MFA/iToken según la regla de negocio:
         Usuarios administrativos o Clientes Corporativos.
+        
+        Returns:
+            bool: True si requiere MFA, False en caso contrario.
         """
         if self.is_corporate:
             return True
@@ -36,11 +53,19 @@ class UserProfile(models.Model):
         return self.mfa_enabled
 
     def __str__(self):
+        """Devuelve una representación descriptiva del perfil de usuario."""
         return f"{self.user.username} - {self.role.name if self.role else 'Sin Rol'}"
 
 class AuditLog(models.Model):
     """
     Registro de auditoría para intentos de inicio de sesión, fallos de seguridad y eventos del sistema.
+    
+    Attributes:
+        user (ForeignKey): Usuario relacionado con el evento (si está autenticado).
+        action (CharField): Acción o evento registrado.
+        ip_address (GenericIPAddressField): Dirección IP desde donde se originó la petición.
+        timestamp (DateTimeField): Fecha y hora exacta del evento.
+        details (TextField): Detalles adicionales del evento o error.
     """
     user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Usuario")
     action = models.CharField(max_length=255, verbose_name="Acción / Evento")
@@ -49,5 +74,6 @@ class AuditLog(models.Model):
     details = models.TextField(blank=True, null=True, verbose_name="Detalles")
 
     def __str__(self):
+        """Devuelve una representación formateada del registro de auditoría."""
         username = self.user.username if self.user else "Anónimo"
         return f"[{self.timestamp}] {username} - {self.action}"
