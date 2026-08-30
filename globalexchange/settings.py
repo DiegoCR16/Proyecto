@@ -44,7 +44,7 @@ INSTALLED_APPS = [
 KEYCLOAK_SERVER_URL = 'http://localhost:8080'
 KEYCLOAK_REALM = 'global-exchange-realm'
 KEYCLOAK_CLIENT_ID = 'global-exchange-client'
-KEYCLOAK_CLIENT_SECRET = 'secret-client-key'
+KEYCLOAK_CLIENT_SECRET = 'YxgDli07yoW5jMdpZrdgu4NX2Mpxi5zc'
 KEYCLOAK_REDIRECT_URI = 'http://localhost:8000/auth/callback/'
 
 MIDDLEWARE = [

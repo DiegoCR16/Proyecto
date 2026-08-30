@@ -1,11 +1,12 @@
 from django.test import TestCase, Client
 from django.contrib.auth.models import User
 from authentication.models import Role, UserProfile, AuditLog
+from unittest.mock import patch
 
 class AuthenticationPSE4Tests(TestCase):
     """
     Suite de pruebas unitarias para la Historia de Usuario PSE-4:
-    Autenticación SSO, MFA obligatorio, redirección por roles y auditoría.
+    Autenticación SSO Keycloak, MFA obligatorio, redirección por roles y auditoría.
     """
 
     def setUp(self):
@@ -32,19 +33,11 @@ class AuthenticationPSE4Tests(TestCase):
         self.assertTrue(self.corp_profile.requires_mfa())
         self.assertFalse(self.ind_profile.requires_mfa())
 
-    def test_login_success_and_mfa_redirect(self):
-        """Verifica login exitoso de usuario admin y redirección a verificación MFA."""
-        response = self.client.post('/auth/login/', {'username': 'adminuser', 'password': 'password123'})
-        # Como requiere MFA, debe redirigir a /auth/mfa/
-        self.assertRedirects(response, '/auth/mfa/', fetch_redirect_response=False)
-        self.assertEqual(AuditLog.objects.filter(action="LOGIN_SUCCESS").count(), 1)
-
-    def test_login_invalid_credentials(self):
-        """Verifica intento fallido de login y registro de auditoría."""
-        response = self.client.post('/auth/login/', {'username': 'adminuser', 'password': 'wrongpassword'})
-        self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Credenciales inválidas")
-        self.assertEqual(AuditLog.objects.filter(action="LOGIN_FAILED").count(), 1)
+    def test_keycloak_login_redirect(self):
+        """Verifica la redirección al flujo OIDC de Keycloak SSO desde el login."""
+        response = self.client.get('/auth/sso/')
+        self.assertEqual(response.status_code, 302)
+        self.assertIn('protocol/openid-connect/auth', response.url)
 
     def test_mfa_verification_success(self):
         """Verifica éxito al introducir el iToken correcto."""
@@ -61,8 +54,29 @@ class AuthenticationPSE4Tests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "iToken inválido")
 
-    def test_sso_keycloak_callback(self):
-        """Verifica el callback de Keycloak SSO."""
+    @patch('authentication.views.requests.post')
+    @patch('authentication.views.requests.get')
+    def test_sso_keycloak_callback(self, mock_get, mock_post):
+        """Verifica el callback de Keycloak SSO y el registro de auditoría."""
+        mock_post.return_value.status_code = 200
+        import base64
+        import json
+        header = base64.urlsafe_b64encode(b'{"alg":"HS256"}').decode().rstrip('=')
+        payload = base64.urlsafe_b64encode(json.dumps({
+            'realm_access': {'roles': ['Admin']}
+        }).encode()).decode().rstrip('=')
+        dummy_jwt = f"{header}.{payload}.sig"
+        
+        mock_post.return_value.json.return_value = {
+            'access_token': dummy_jwt
+        }
+
+        mock_get.return_value.status_code = 200
+        mock_get.return_value.json.return_value = {
+            'preferred_username': 'adminuser',
+            'email': 'admin@globalexchange.com'
+        }
+
         response = self.client.get('/auth/callback/?code=mock_auth_code')
         self.assertRedirects(response, '/auth/mfa/', fetch_redirect_response=False)
         self.assertEqual(AuditLog.objects.filter(action="SSO_LOGIN_SUCCESS").count(), 1)
@@ -73,3 +87,11 @@ class AuthenticationPSE4Tests(TestCase):
         response = self.client.get('/auth/dashboard/')
         self.assertEqual(response.status_code, 200)
         self.assertTemplateUsed(response, 'authentication/client_dashboard.html')
+
+    def test_logout(self):
+        """Verifica el cierre de sesión local y redirección al endpoint de logout de Keycloak SSO."""
+        self.client.login(username='induser', password='password123')
+        response = self.client.get('/auth/logout/')
+        expected_url = f"http://localhost:8080/realms/global-exchange-realm/protocol/openid-connect/logout?client_id=global-exchange-client&post_logout_redirect_uri=http://testserver/auth/login/"
+        self.assertRedirects(response, expected_url, fetch_redirect_response=False, status_code=302)
+        self.assertEqual(AuditLog.objects.filter(action="LOGOUT").count(), 1)
