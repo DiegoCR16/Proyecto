@@ -38,7 +38,7 @@
             <p class="text-slate-600 mt-1">Gestión centralizada de operaciones de cambio, usuarios y seguridad.</p>
         </div>
 
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
             <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
                 <h3 class="text-lg font-semibold text-slate-800 mb-2">Simulación de Tasas</h3>
                 <p class="text-sm text-slate-600 mb-4">Simule compra y venta de divisas con cotizaciones en tiempo real.</p>
@@ -50,9 +50,14 @@
                 <a href="{% url 'admin_client_list' %}" class="text-blue-800 font-semibold text-sm hover:underline">Administrar &rarr;</a>
             </div>
             <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                <h3 class="text-lg font-semibold text-slate-800 mb-2">Roles y Permisos</h3>
+                <p class="text-sm text-slate-600 mb-4">CRUD de roles, asignación granular de permisos.</p>
+                <a href="{% url 'admin_roles' %}" class="text-blue-800 font-semibold text-sm hover:underline">Gestionar &rarr;</a>
+            </div>
+            <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
                 <h3 class="text-lg font-semibold text-slate-800 mb-2">Auditoría y Seguridad</h3>
                 <p class="text-sm text-slate-600 mb-4">Revise los registros de inicio de sesión y alertas de seguridad MFA.</p>
-                <a href="#" class="text-blue-800 font-semibold text-sm hover:underline">Ver Registros &rarr;</a>
+                <a href="{% url 'admin_audit_logs' %}" class="text-blue-800 font-semibold text-sm hover:underline">Ver Registros &rarr;</a>
             </div>
         </div>
     </main>

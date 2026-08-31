@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gestión de Permisos de Roles - Global Exchange</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+    </style>
+</head>
+<body class="bg-slate-50 min-h-screen">
+    <!-- Navbar -->
+    <nav class="bg-slate-900 text-white shadow">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between h-16 items-center">
+                <div class="flex items-center space-x-3">
+                    <div class="w-9 h-9 bg-blue-800 rounded-lg flex items-center justify-center font-bold text-lg">GX</div>
+                    <span class="font-bold text-lg">Global Exchange</span>
+                    <span class="bg-blue-800 text-xs px-2.5 py-1 rounded-full font-medium ml-2">Administrador</span>
+                </div>
+                <div class="flex items-center space-x-6">
+                    <a href="{% url 'dashboard_redirect' %}" class="text-sm text-slate-300 hover:text-white font-medium transition duration-200">
+                        Panel Principal
+                    </a>
+                    <span class="text-sm text-slate-300">Usuario: <strong class="text-white">{{ request.user.username }}</strong></span>
+                    <a href="{% url 'logout' %}" class="bg-red-600 hover:bg-red-700 text-white px-3.5 py-1.5 rounded-lg text-sm font-medium transition duration-200">
+                        Cerrar Sesión
+                    </a>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-8">
+            <div>
+                <h1 class="text-3xl font-bold text-slate-900">Gestión de Permisos para Roles</h1>
+                <p class="text-slate-600 mt-1">Administración de permisos granulares y descripción de roles.</p>
+            </div>
+            <div class="mt-4 md:mt-0">
+                <a href="{% url 'dashboard_redirect' %}" class="bg-slate-800 hover:bg-slate-900 text-white px-4 py-2.5 rounded-lg text-sm font-semibold transition duration-200 shadow-sm flex items-center space-x-2">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/></svg>
+                    <span>Volver al Panel</span>
+                </a>
+            </div>
+        </div>
+
+        {% if error %}
+        <div class="mb-6 bg-red-50 border-l-4 border-red-600 p-4 rounded-r-lg text-red-700 text-sm font-medium">
+            {{ error }}
+        </div>
+        {% endif %}
+
+        <!-- Roles Table Section -->
+        <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+            <div class="px-6 py-4 border-b border-slate-200 flex justify-between items-center bg-slate-50">
+                <h3 class="font-semibold text-slate-800">Roles del Sistema y Roles de Grupo Corporativo</h3>
+                <span class="text-xs font-medium text-slate-500 bg-slate-200 px-2.5 py-1 rounded-full">Total: 7 Roles (Admin, Analista, Cliente, Cajero, Jefe Corporativo, Operador Corporativo, Analista Corporativo)</span>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="min-w-full divide-y divide-slate-200 text-left text-sm">
+                    <thead class="bg-slate-100 text-slate-700 font-semibold">
+                        <tr>
+                            <th class="px-6 py-3.5">Nombre del Rol</th>
+                            <th class="px-6 py-3.5">Descripción</th>
+                            <th class="px-6 py-3.5">Permisos Granulares</th>
+                            <th class="px-6 py-3.5">Estado / Protección</th>
+                            <th class="px-6 py-3.5 text-right">Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-200 text-slate-600">
+                        {% for role in roles %}
+                        <tr class="hover:bg-slate-50 transition duration-150">
+                            <td class="px-6 py-4 font-semibold text-slate-900">{{ role.name }}</td>
+                            <td class="px-6 py-4">{{ role.description|default:"Sin descripción" }}</td>
+                            <td class="px-6 py-4">
+                                <div class="flex flex-wrap gap-1.5">
+                                    {% for perm in role.permissions.all %}
+                                    <span class="bg-indigo-50 text-indigo-700 text-xs px-2.5 py-1 rounded-full font-medium" title="{{ perm.description }}">{{ perm.name }}</span>
+                                    {% empty %}
+                                    <span class="text-slate-400 text-xs italic">Sin permisos asignados</span>
+                                    {% endfor %}
+                                </div>
+                            </td>
+                            <td class="px-6 py-4">
+                                {% if role.name == 'Admin' %}
+                                <span class="bg-blue-100 text-blue-800 text-xs px-2.5 py-1 rounded-full font-bold">Protegido (Acceso Total)</span>
+                                {% else %}
+                                <span class="bg-green-100 text-green-700 text-xs px-2.5 py-1 rounded-full font-semibold">Modificable</span>
+                                {% endif %}
+                            </td>
+                            <td class="px-6 py-4 text-right">
+                                {% if role.name != 'Admin' %}
+                                <button onclick="openEditModal('{{ role.id }}', '{{ role.name|escapejs }}', '{{ role.description|escapejs }}', [{% for p in role.permissions.all %}'{{ p.id }}',{% endfor %}])" class="text-blue-600 hover:text-blue-800 font-medium text-xs bg-blue-50 px-3 py-1.5 rounded-lg transition">
+                                    Editar Permisos y Descripción
+                                </button>
+                                {% else %}
+                                <span class="text-slate-400 text-xs italic">No editable</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="5" class="px-6 py-8 text-center text-slate-400">No hay roles configurados.</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </main>
+
+    <!-- Edit Role Modal -->
+    <div id="editRoleModal" class="hidden fixed inset-0 z-50 bg-slate-900 bg-opacity-50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-xl max-w-lg w-full overflow-hidden">
+            <div class="px-6 py-4 bg-slate-900 text-white flex justify-between items-center">
+                <h3 class="font-bold text-lg" id="modal_title">Modificar Permisos de Rol</h3>
+                <button onclick="document.getElementById('editRoleModal').classList.add('hidden')" class="text-slate-300 hover:text-white">&times;</button>
+            </div>
+            <form method="POST" action="{% url 'admin_roles' %}" class="p-6 space-y-4">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="edit">
+                <input type="hidden" name="role_id" id="edit_role_id">
+                <div>
+                    <label class="block text-sm font-semibold text-slate-700 mb-1">Nombre del Rol</label>
+                    <input type="text" id="edit_name_display" disabled class="w-full px-3.5 py-2.5 border border-slate-200 bg-slate-100 rounded-lg text-sm text-slate-500 font-semibold">
+                </div>
+                <div>
+                    <label class="block text-sm font-semibold text-slate-700 mb-1">Descripción</label>
+                    <textarea name="description" id="edit_description" rows="2" class="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-600 focus:outline-none"></textarea>
+                </div>
+                <div>
+                    <label class="block text-sm font-semibold text-slate-700 mb-2">Asignación Granular de Permisos</label>
+                    <div class="space-y-2 max-h-48 overflow-y-auto border border-slate-200 p-3 rounded-lg bg-slate-50">
+                        {% for perm in permissions %}
+                        <label class="flex items-start space-x-3 cursor-pointer">
+                            <input type="checkbox" name="permissions" value="{{ perm.id }}" class="edit-perm-checkbox mt-1 h-4 w-4 text-blue-600 border-slate-300 rounded focus:ring-blue-500" data-perm-id="{{ perm.id }}">
+                            <div>
+                                <span class="text-sm font-semibold text-slate-800">{{ perm.name }}</span>
+                                <p class="text-xs text-slate-500">{{ perm.description }}</p>
+                            </div>
+                        </label>
+                        {% endfor %}
+                    </div>
+                </div>
+                <div class="flex justify-end space-x-3 pt-4 border-t border-slate-200">
+                    <button type="button" onclick="document.getElementById('editRoleModal').classList.add('hidden')" class="px-4 py-2 border border-slate-300 rounded-lg text-sm font-medium text-slate-700 hover:bg-slate-100">Cancelar</button>
+                    <button type="submit" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-semibold shadow-sm transition">Guardar Cambios</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        function openEditModal(id, name, description, permIds) {
+            document.getElementById('edit_role_id').value = id;
+            document.getElementById('edit_name_display').value = name;
+            document.getElementById('edit_description').value = description;
+            document.getElementById('modal_title').innerText = 'Modificar Permisos: ' + name;
+
+            const checkboxes = document.querySelectorAll('.edit-perm-checkbox');
+            checkboxes.forEach(cb => {
+                cb.checked = permIds.includes(cb.getAttribute('data-perm-id'));
+            });
+
+            document.getElementById('editRoleModal').classList.remove('hidden');
+        }
+    </script>
+</body>
+</html>

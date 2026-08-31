@@ -12,7 +12,7 @@ from django.http import HttpResponseBadRequest
 from django.db import models
 from decimal import Decimal
 from django.utils import timezone
-from .models import UserProfile, AuditLog, Role
+from .models import UserProfile, AuditLog, Role, Permission
 from tasas_cambio.models import ExchangeRate
 
 def get_client_ip(request):
@@ -723,3 +723,167 @@ def logout_view(request):
     keycloak_logout_url = f"{settings.KEYCLOAK_SERVER_URL}/realms/{settings.KEYCLOAK_REALM}/protocol/openid-connect/logout?client_id={settings.KEYCLOAK_CLIENT_ID}&post_logout_redirect_uri={redirect_uri}"
     
     return redirect(keycloak_logout_url)
+
+@login_required
+def admin_roles_view(request):
+    """
+    Vista de administración para gestionar la descripción y asignación granular de permisos
+    de los roles fijos del sistema: Admin, Analista y Cliente (PSE-26).
+    
+    Args:
+        request (HttpRequest): Objeto de petición HTTP de Django.
+        
+    Returns:
+        HttpResponse: Renderiza la plantilla de gestión de roles y permisos con control RBAC.
+    """
+    profile, _ = UserProfile.objects.get_or_create(user=request.user)
+    role_name = profile.role.name.lower() if profile.role else ''
+    if not (request.user.is_superuser or 'admin' in role_name or 'administrador' in role_name):
+        AuditLog.objects.create(
+            user=request.user,
+            action="RBAC_ACCESS_DENIED",
+            ip_address=get_client_ip(request),
+            details="Intento de acceso no autorizado al módulo de gestión de roles (PSE-26)."
+        )
+        return render(request, 'authentication/admin_roles.html', {
+            'roles': Role.objects.none(),
+            'permissions': Permission.objects.none(),
+            'error': 'Acceso denegado: Se requiere rol de Administrador para gestionar roles y permisos.'
+        })
+
+    # Asegurar los roles fijos del sistema y roles de grupo corporativo
+    role_names = ['Admin', 'Analista', 'Cliente', 'Cajero', 'Jefe (Corporativo)', 'Operador (Corporativo)', 'Analista (Corporativo)']
+    descriptions = {
+        'Admin': 'Administrador General (Acceso Total - Protegido)',
+        'Analista': 'Analista de Operaciones (Permisos Delegados)',
+        'Cliente': 'Cliente de la Plataforma (Física y Jurídica General)',
+        'Cajero': 'Cajero de Sucursal (Operaciones de Caja)',
+        'Jefe (Corporativo)': 'Jefe / Propietario de Grupo Corporativo (Jurídica)',
+        'Operador (Corporativo)': 'Operador dentro del Grupo Corporativo (Jurídica)',
+        'Analista (Corporativo)': 'Analista dentro del Grupo Corporativo (Jurídica)',
+    }
+    for rname in role_names:
+        Role.objects.get_or_create(name=rname, defaults={'description': descriptions.get(rname, '')})
+
+    # Asegurar permisos granulares por defecto
+    default_perms = [
+        ('can_manage_roles', 'Gestionar Roles y Permisos', 'Crear, editar, desactivar roles y asignar permisos (Admin/Analista)'),
+        ('can_manage_clients', 'Gestionar Clientes', 'Crear, editar y asociar cuentas de clientes y grupos corporativos (Admin/Analista)'),
+        ('can_manage_rates', 'Gestionar Tasas de Cambio', 'Actualizar cotizaciones y tasas de cambio en tiempo real (Admin/Analista)'),
+        ('can_view_audit', 'Ver Auditoría', 'Consultar logs de auditoría e incidentes de seguridad (Admin/Analista)'),
+        ('can_perform_exchange', 'Realizar Transacciones', 'Ejecutar compra y venta de divisas en la interfaz de cliente'),
+        ('can_view_rates', 'Ver Pizarra de Tasas', 'Consultar cotizaciones actualizadas en tiempo real'),
+    ]
+    for codename, name, desc in default_perms:
+        Permission.objects.get_or_create(codename=codename, defaults={'name': name, 'description': desc})
+
+    ip = get_client_ip(request)
+
+    if request.method == 'POST':
+        action = request.POST.get('action')
+        
+        if action == 'edit':
+            role_id = request.POST.get('role_id')
+            role = get_object_or_404(Role, id=role_id)
+            
+            # El rol Admin está protegido
+            if role.name.lower() in ['admin', 'administrador']:
+                return render(request, 'authentication/admin_roles.html', {
+                    'roles': Role.objects.filter(name__in=role_names).prefetch_related('permissions'),
+                    'permissions': Permission.objects.all(),
+                    'error': 'El rol Administrador está protegido y no pueden modificarse sus permisos ni descripción.'
+                })
+
+            description = request.POST.get('description', '').strip()
+            permission_ids = request.POST.getlist('permissions')
+
+            # Validaciones de negocio según el rol
+            if role.name.lower() == 'cliente':
+                admin_codenames = ['can_manage_roles', 'can_manage_clients', 'can_manage_rates', 'can_view_audit']
+                selected_perms = Permission.objects.filter(id__in=permission_ids)
+                if selected_perms.filter(codename__in=admin_codenames).exists():
+                    return render(request, 'authentication/admin_roles.html', {
+                        'roles': Role.objects.filter(name__in=role_names).prefetch_related('permissions'),
+                        'permissions': Permission.objects.all(),
+                        'error': 'Error de validación: El rol Cliente no puede tener asignados permisos administrativos (Gestionar Roles, Clientes, Tasas o Auditoría).'
+                    })
+
+            if role.name.lower() == 'analista':
+                selected_perms = Permission.objects.filter(id__in=permission_ids)
+                if selected_perms.filter(codename='can_perform_exchange').exists():
+                    return render(request, 'authentication/admin_roles.html', {
+                        'roles': Role.objects.filter(name__in=role_names).prefetch_related('permissions'),
+                        'permissions': Permission.objects.all(),
+                        'error': 'Error de validación: El rol Analista no realiza transacciones de cliente (Realizar Transacciones es exclusivo de la interfaz de cliente).'
+                    })
+
+            role.description = description
+            role.save()
+            role.permissions.set(Permission.objects.filter(id__in=permission_ids))
+
+            # Sincronización con Keycloak Admin API (actualizar descripción del rol en Keycloak)
+            try:
+                token_url = f"{settings.KEYCLOAK_SERVER_URL}/realms/{settings.KEYCLOAK_REALM}/protocol/openid-connect/token"
+                token_data = {
+                    'grant_type': 'client_credentials',
+                    'client_id': settings.KEYCLOAK_CLIENT_ID,
+                    'client_secret': getattr(settings, 'KEYCLOAK_CLIENT_SECRET', ''),
+                }
+                token_resp = requests.post(token_url, data=token_data, timeout=3)
+                if token_resp.status_code == 200:
+                    admin_token = token_resp.json().get('access_token')
+                    kc_role_url = f"{settings.KEYCLOAK_SERVER_URL}/admin/realms/{settings.KEYCLOAK_REALM}/roles/{role.name}"
+                    headers = {'Authorization': f'Bearer {admin_token}', 'Content-Type': 'application/json'}
+                    requests.put(kc_role_url, json={'name': role.name, 'description': description}, headers=headers, timeout=3)
+            except Exception as e:
+                pass
+
+            AuditLog.objects.create(
+                user=request.user,
+                action="ROLE_UPDATE",
+                ip_address=ip,
+                details=f"Modificación del rol fijo {role.name}. Descripción y permisos granulares actualizados."
+            )
+            return redirect('admin_roles')
+
+    roles = Role.objects.filter(name__in=role_names).prefetch_related('permissions').order_by('id')
+    permissions = Permission.objects.all()
+
+    context = {
+        'roles': roles,
+        'permissions': permissions,
+        'now': timezone.now(),
+    }
+    return render(request, 'authentication/admin_roles.html', context)
+
+@login_required
+def admin_audit_logs_view(request):
+    """
+    Vista de administración para consultar el registro de auditoría del sistema,
+    especificando el usuario que realizó cada acción, detalles y fecha/hora (PSE-26).
+    
+    Args:
+        request (HttpRequest): Objeto de petición HTTP de Django.
+        
+    Returns:
+        HttpResponse: Renderiza la plantilla con los logs de auditoría o deniega acceso (RBAC).
+    """
+    profile, _ = UserProfile.objects.get_or_create(user=request.user)
+    role_name = profile.role.name.lower() if profile.role else ''
+    if not (request.user.is_superuser or 'admin' in role_name or 'administrador' in role_name):
+        AuditLog.objects.create(
+            user=request.user,
+            action="RBAC_ACCESS_DENIED",
+            ip_address=get_client_ip(request),
+            details="Intento de acceso no autorizado al módulo de auditoría."
+        )
+        return render(request, 'authentication/admin_dashboard.html', {
+            'error': 'Acceso denegado: Se requiere rol de Administrador para ver los registros de auditoría.'
+        })
+
+    logs = AuditLog.objects.all().order_by('-timestamp')
+    context = {
+        'logs': logs,
+        'now': timezone.now(),
+    }
+    return render(request, 'authentication/admin_audit_logs.html', context)

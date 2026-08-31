@@ -2,16 +2,37 @@ from django.db import models
 from django.contrib.auth.models import User
 from decimal import Decimal
 
+class Permission(models.Model):
+    """
+    Modelo que representa un permiso granular dentro del sistema Global Exchange.
+    
+    Attributes:
+        name (CharField): Nombre descriptivo del permiso (Ej: Crear Tasa, Editar Cliente, Gestionar Roles).
+        codename (CharField): Código único del permiso (Ej: can_manage_roles, can_edit_rates).
+        description (TextField): Descripción del alcance del permiso.
+    """
+    name = models.CharField(max_length=100, unique=True, verbose_name="Nombre del Permiso")
+    codename = models.CharField(max_length=100, unique=True, verbose_name="Código del Permiso")
+    description = models.TextField(blank=True, null=True, verbose_name="Descripción")
+
+    def __str__(self):
+        """Devuelve el nombre y código del permiso."""
+        return f"{self.name} ({self.codename})"
+
 class Role(models.Model):
     """
-    Modelo que representa un Rol dentro del sistema Global Exchange.
+    Modelo que representa un Rol dentro del sistema Global Exchange con soporte para permisos granulares y estado activo/inactivo.
     
     Attributes:
         name (CharField): Nombre único del rol (Ej: Administrador, Corporativo, Individual).
         description (TextField): Descripción detallada del rol y sus privilegios.
+        is_active (BooleanField): Indica si el rol está activo en la plataforma.
+        permissions (ManyToManyField): Permisos granulares asignados al rol.
     """
     name = models.CharField(max_length=50, unique=True, verbose_name="Nombre del Rol")
     description = models.TextField(blank=True, null=True, verbose_name="Descripción")
+    is_active = models.BooleanField(default=True, verbose_name="Rol Activo")
+    permissions = models.ManyToManyField(Permission, blank=True, related_name='roles', verbose_name="Permisos Asignados")
 
     def __str__(self):
         """Devuelve el nombre del rol como representación en cadena."""
@@ -175,6 +196,7 @@ class GroupMembership(models.Model):
         role_in_group (CharField): Rol asignado en el grupo ('OPERADOR', 'ANALISTA', 'MIEMBRO').
     """
     ROLE_CHOICES = [
+        ('JEFE', 'Jefe'),
         ('OPERADOR', 'Operador'),
         ('ANALISTA', 'Analista'),
         ('MIEMBRO', 'Miembro'),
