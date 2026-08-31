@@ -1,5 +1,6 @@
 from django.db import models
 from django.contrib.auth.models import User
+from decimal import Decimal
 
 class Role(models.Model):
     """
@@ -86,6 +87,42 @@ class UserProfile(models.Model):
             raise ValueError("Los clientes de naturaleza Jurídica no pueden tener categoría Minorista.")
         return True
 
+    def has_active_client_association(self):
+        """
+        Verifica si el perfil está asociado a al menos un cliente activo en Keycloak (con keycloak_id válido y usuario activo).
+        
+        Returns:
+            bool: True si está asociado a Keycloak y activo, False en caso contrario.
+        """
+        if not self.user.is_active:
+            return False
+        if self.user.is_superuser or (self.role and 'admin' in self.role.name.lower()):
+            return True
+        if self.keycloak_id:
+            return True
+        return False
+
+    def perform_transaction(self, amount):
+        """
+        Realiza una transacción validando el bloqueo operativo si no hay asociación activa con Keycloak/cliente.
+        
+        Args:
+            amount (Decimal or float): Monto de la transacción en guaraníes.
+            
+        Raises:
+            PermissionError: Si el usuario no está asociado a ningún cliente activo.
+            
+        Returns:
+            bool: True si la transacción es exitosa.
+        """
+        if not self.has_active_client_association():
+            raise PermissionError("Bloqueo operativo: El usuario no está asociado a ningún cliente activo en Keycloak.")
+        current_vol = self.transaction_volume if isinstance(self.transaction_volume, Decimal) else Decimal(str(self.transaction_volume))
+        trans_amount = amount if isinstance(amount, Decimal) else Decimal(str(amount))
+        self.transaction_volume = current_vol + trans_amount
+        self.save()
+        return True
+
     def __str__(self):
         """Devuelve una representación descriptiva del perfil de usuario."""
         return f"{self.user.username} - {self.role.name if self.role else 'Sin Rol'}"
@@ -111,3 +148,45 @@ class AuditLog(models.Model):
         """Devuelve una representación formateada del registro de auditoría."""
         username = self.user.username if self.user else "Anónimo"
         return f"[{self.timestamp}] {username} - {self.action}"
+
+class CorporateGroup(models.Model):
+    """
+    Representa el grupo corporativo en Keycloak asociado a una Persona Jurídica.
+    
+    Attributes:
+        juridica_profile (ForeignKey): Perfil de la persona jurídica dueña del grupo.
+        group_name (CharField): Nombre del grupo (coincide con el nombre de la persona jurídica).
+        keycloak_group_id (CharField): ID único del grupo en Keycloak.
+    """
+    juridica_profile = models.ForeignKey(UserProfile, on_delete=models.CASCADE, related_name='corporate_group', verbose_name="Perfil Persona Jurídica")
+    group_name = models.CharField(max_length=255, unique=True, verbose_name="Nombre del Grupo Corporate")
+    keycloak_group_id = models.CharField(max_length=255, blank=True, null=True, unique=True, verbose_name="ID de Grupo en Keycloak")
+
+    def __str__(self):
+        return f"Grupo Corporativo: {self.group_name}"
+
+class GroupMembership(models.Model):
+    """
+    Representa la vinculación de una Persona Física a un Grupo Corporativo con un rol (Operador o Analista).
+    
+    Attributes:
+        corporate_group (ForeignKey): Grupo corporativo al que pertenece.
+        fisica_profile (ForeignKey): Perfil de la persona física vinculada.
+        role_in_group (CharField): Rol asignado en el grupo ('OPERADOR', 'ANALISTA', 'MIEMBRO').
+    """
+    ROLE_CHOICES = [
+        ('OPERADOR', 'Operador'),
+        ('ANALISTA', 'Analista'),
+        ('MIEMBRO', 'Miembro'),
+    ]
+
+    corporate_group = models.ForeignKey(CorporateGroup, on_delete=models.CASCADE, related_name='memberships', verbose_name="Grupo Corporativo")
+    fisica_profile = models.ForeignKey(UserProfile, on_delete=models.CASCADE, related_name='group_memberships', verbose_name="Perfil Persona Física")
+    role_in_group = models.CharField(max_length=20, choices=ROLE_CHOICES, default='OPERADOR', verbose_name="Rol en el Grupo")
+
+    class Meta:
+        unique_together = ('corporate_group', 'fisica_profile')
+
+    def __str__(self):
+        return f"{self.fisica_profile.user.username} -> {self.corporate_group.group_name} ({self.role_in_group})"
+
