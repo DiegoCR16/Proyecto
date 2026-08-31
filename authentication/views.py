@@ -88,10 +88,166 @@ def register_view(request):
         person_type = request.POST.get('person_type', 'fisica').strip()
 
         if person_type == 'juridica' or person_type == 'jiridica':
-            return render(request, 'authentication/register.html', {
-                'error': 'El registro de Persona Jurídica no cuenta con lógica implementada en esta versión.',
-                'person_type': person_type
-            })
+            company_name = request.POST.get('company_name', '').strip() or request.POST.get('full_name', '').strip()
+            ci_ruc = request.POST.get('ci_ruc', '').strip()
+            email = request.POST.get('email', '').strip()
+            password = request.POST.get('password', '').strip()
+
+            # Validación 1: Campos obligatorios
+            if not company_name or not ci_ruc or not email or not password:
+                return render(request, 'authentication/register.html', {
+                    'error': 'Todos los campos obligatorios deben ser completados.',
+                    'full_name': company_name,
+                    'company_name': company_name,
+                    'ci_ruc': ci_ruc,
+                    'email': email,
+                    'person_type': person_type
+                })
+
+            # Validación 2: Nombre de la empresa solo alfabético y puntos
+            if not re.match(r'^[A-Za-záéíóúÁÉÍÓÚñÑ\s\.]+$', company_name):
+                return render(request, 'authentication/register.html', {
+                    'error': 'El nombre de la empresa debe contener únicamente caracteres alfabéticos y puntos.',
+                    'full_name': company_name,
+                    'company_name': company_name,
+                    'ci_ruc': ci_ruc,
+                    'email': email,
+                    'person_type': person_type
+                })
+
+            # Validación 3: RUC formato numérico con guion obligatorio
+            if not re.match(r'^\d{1,10}-\d{1}$', ci_ruc):
+                return render(request, 'authentication/register.html', {
+                    'error': 'El RUC debe tener un formato numérico válido con guion (ej. 80012345-6).',
+                    'full_name': company_name,
+                    'company_name': company_name,
+                    'ci_ruc': ci_ruc,
+                    'email': email,
+                    'person_type': person_type
+                })
+
+            # Validación 4: Correo electrónico (máscara texto@dominio.extensión)
+            if not re.match(r'^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$', email):
+                return render(request, 'authentication/register.html', {
+                    'error': 'El correo electrónico no cumple con la máscara texto@dominio.extensión.',
+                    'full_name': company_name,
+                    'company_name': company_name,
+                    'ci_ruc': ci_ruc,
+                    'email': email,
+                    'person_type': person_type
+                })
+
+            # Validación 5: Seguridad de contraseña (min 8 caracteres, mayús, min, carac. especial)
+            if len(password) < 8 or not re.search(r'[A-Z]', password) or not re.search(r'[a-z]', password) or not re.search(r'[\W_]', password):
+                return render(request, 'authentication/register.html', {
+                    'error': 'La contraseña debe tener un mínimo de 8 caracteres e incluir mayúsculas, minúsculas y caracteres especiales.',
+                    'full_name': company_name,
+                    'company_name': company_name,
+                    'ci_ruc': ci_ruc,
+                    'email': email,
+                    'person_type': person_type
+                })
+
+            # Control de Duplicados y Registro en Keycloak Admin REST API
+            admin_token = None
+            try:
+                token_url = f"{settings.KEYCLOAK_SERVER_URL}/realms/{settings.KEYCLOAK_REALM}/protocol/openid-connect/token"
+                token_data = {
+                    'grant_type': 'client_credentials',
+                    'client_id': settings.KEYCLOAK_CLIENT_ID,
+                    'client_secret': getattr(settings, 'KEYCLOAK_CLIENT_SECRET', ''),
+                }
+                token_resp = requests.post(token_url, data=token_data, timeout=5)
+                if token_resp.status_code == 200:
+                    admin_token = token_resp.json().get('access_token')
+                    headers = {'Authorization': f'Bearer {admin_token}', 'Content-Type': 'application/json'}
+                    
+                    # Verificar duplicados por correo en Keycloak
+                    search_url = f"{settings.KEYCLOAK_SERVER_URL}/admin/realms/{settings.KEYCLOAK_REALM}/users?email={email}"
+                    search_resp = requests.get(search_url, headers=headers, timeout=5)
+                    if search_resp.status_code == 200 and search_resp.json():
+                        AuditLog.objects.create(
+                            action="REGISTER_DUPLICATE_ATTEMPT",
+                            ip_address=ip,
+                            details=f"Intento de registro duplicado en Keycloak para email corporativo: {email}"
+                        )
+                        return render(request, 'authentication/register.html', {
+                            'error': 'El correo electrónico ya se encuentra registrado en Keycloak.',
+                            'full_name': company_name,
+                            'company_name': company_name,
+                            'ci_ruc': ci_ruc,
+                            'email': email,
+                            'person_type': person_type
+                        })
+            except Exception as e:
+                pass
+
+            # Control de duplicados local (fallback)
+            if User.objects.filter(email=email).exists() or UserProfile.objects.filter(ci_ruc=ci_ruc).exists():
+                AuditLog.objects.create(
+                    action="REGISTER_DUPLICATE_ATTEMPT",
+                    ip_address=ip,
+                    details=f"Intento de registro corporativo duplicado para email: {email} o RUC: {ci_ruc}"
+                )
+                return render(request, 'authentication/register.html', {
+                    'error': 'El correo electrónico o RUC ya se encuentra registrado.',
+                    'full_name': company_name,
+                    'company_name': company_name,
+                    'ci_ruc': ci_ruc,
+                    'email': email,
+                    'person_type': person_type
+                })
+
+            # Llamada a Keycloak Admin REST API para crear el usuario corporativo en segundo plano
+            try:
+                if admin_token:
+                    create_user_url = f"{settings.KEYCLOAK_SERVER_URL}/admin/realms/{settings.KEYCLOAK_REALM}/users"
+                    user_payload = {
+                        "username": email,
+                        "email": email,
+                        "firstName": company_name,
+                        "enabled": True,
+                        "requiredActions": ["VERIFY_EMAIL"],
+                        "attributes": {
+                            "userType": ["juridica"],
+                            "ci_ruc": [ci_ruc]
+                        },
+                        "credentials": [
+                            {
+                                "type": "password",
+                                "value": password,
+                                "temporary": False
+                            }
+                        ]
+                    }
+                    headers = {'Authorization': f'Bearer {admin_token}', 'Content-Type': 'application/json'}
+                    requests.post(create_user_url, json=user_payload, headers=headers, timeout=5)
+            except Exception as e:
+                AuditLog.objects.create(
+                    action="KEYCLOAK_ADMIN_API_ERROR",
+                    ip_address=ip,
+                    details=f"Error al conectar con Keycloak Admin API para Persona Jurídica: {str(e)}"
+                )
+
+            # Registro exitoso local y auditoría para Persona Jurídica
+            user, created = User.objects.get_or_create(username=email, defaults={'email': email})
+            user.set_password(password)
+            user.save()
+
+            role_obj, _ = Role.objects.get_or_create(name="Corporate")
+            profile, _ = UserProfile.objects.get_or_create(user=user)
+            profile.ci_ruc = ci_ruc
+            profile.role = role_obj
+            profile.is_corporate = True
+            profile.save()
+
+            AuditLog.objects.create(
+                user=user,
+                action="REGISTER_SUCCESS",
+                ip_address=ip,
+                details=f"Registro exitoso para Persona Jurídica: {email} con userType: juridica"
+            )
+            return redirect('login')
 
         full_name = request.POST.get('full_name', '').strip()
         ci_ruc = request.POST.get('ci_ruc', '').strip()
@@ -247,7 +403,13 @@ def register_view(request):
         )
         return redirect('login')
 
-    return render(request, 'authentication/register.html')
+    return render(request, 'authentication/register.html', {
+        'full_name': '',
+        'company_name': '',
+        'ci_ruc': '',
+        'email': '',
+        'person_type': 'fisica'
+    })
 
 @ensure_csrf_cookie
 def keycloak_callback_view(request):

@@ -147,10 +147,10 @@ class RegistrationPSE2Tests(TestCase):
 
     def test_juridica_person_type_selection(self):
         """
-        Verifica que al seleccionar Persona Jurídica, el sistema informe que no requiere lógica backend.
+        Verifica que al seleccionar Persona Jurídica, el sistema requiera los campos obligatorios corporativos.
         """
         response = self.client.post(self.register_url, {
             'person_type': 'juridica'
         })
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "El registro de Persona Jurídica no cuenta con lógica implementada")
+        self.assertContains(response, "Todos los campos obligatorios deben ser completados.")
