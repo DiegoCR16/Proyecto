@@ -38,6 +38,7 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'authentication',
+    'gestion_clientes',
 ]
 
 # Keycloak & OIDC Settings for PSE-4

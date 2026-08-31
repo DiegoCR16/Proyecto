@@ -5,7 +5,7 @@ from authentication.models import UserProfile, AuditLog, Role
 class SegmentationPSE6Tests(TestCase):
     """
     Suite de pruebas unitarias independiente y exclusiva para la Historia de Usuario PSE-6:
-    Clasificación y Segmentación Base de Clientes.
+    Clasificación y Segmentación Base de Clientes (Epic: Gestión de Clientes).
     Valida asignación de categorías (Minorista, Corporativo, VIP), validación de coherencia
     por volumen transaccional en guaraníes y naturaleza (Física/Jurídica), consultas,
     actualizaciones en ficha y registro de logs de auditoría por usuario administrativo.
@@ -18,7 +18,7 @@ class SegmentationPSE6Tests(TestCase):
         self.client = Client()
         self.admin_role, _ = Role.objects.get_or_create(name="Admin")
         self.corp_role, _ = Role.objects.get_or_create(name="Corporate")
-        self.ind_role, _ = Role.objects.get_or_create(name="Individual")
+        self.ind_role, _ = Role.objects.get_or_create(name="Cliente")
 
         # Administrador
         self.admin_user = User.objects.create_user(username="admin_pse6", email="admin@globalexchange.com", password="Password123*")
@@ -73,11 +73,9 @@ class SegmentationPSE6Tests(TestCase):
         """
         Valida que la asignación de la categoría VIP requiera un volumen transaccional mínimo de 50.000.000 Gs.
         """
-        # Volumen menor a 50 millones debe fallar
         with self.assertRaises(ValueError):
             self.fisica_profile.clean_category_assignment('VIP', 40000000)
 
-        # Volumen mayor o igual a 50 millones debe ser exitoso
         res = self.fisica_profile.clean_category_assignment('VIP', 60000000)
         self.assertTrue(res)
 
@@ -91,7 +89,6 @@ class SegmentationPSE6Tests(TestCase):
         self.assertContains(response, "juan_perez")
         self.assertContains(response, "empresa_sa")
 
-        # Filtrar por MINORISTA
         response_minorista = self.client.get(self.list_url, {'category': 'MINORISTA'})
         self.assertEqual(response_minorista.status_code, 200)
         self.assertContains(response_minorista, "juan_perez")
@@ -104,7 +101,6 @@ class SegmentationPSE6Tests(TestCase):
         """
         self.client.force_login(self.admin_user)
 
-        # Actualizar fisica_profile a VIP con volumen de 75,000,000 Gs
         response = self.client.post(self.detail_url, {
             'category': 'VIP',
             'transaction_volume': '75000000'
@@ -112,12 +108,10 @@ class SegmentationPSE6Tests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Categoría y volumen transaccional actualizados exitosamente")
 
-        # Verificar actualización inmediata en BD
         self.fisica_profile.refresh_from_db()
         self.assertEqual(self.fisica_profile.category, 'VIP')
         self.assertEqual(float(self.fisica_profile.transaction_volume), 75000000.0)
 
-        # Verificar registro de auditoría indicando el usuario administrativo y fecha
         audit_entry = AuditLog.objects.filter(action="CLIENT_CATEGORY_UPDATE", user=self.admin_user).first()
         self.assertIsNotNone(audit_entry)
         self.assertIn("admin_pse6", audit_entry.details)

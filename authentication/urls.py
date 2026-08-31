@@ -10,6 +10,4 @@ urlpatterns = [
     path('mfa/', views.mfa_verify_view, name='mfa_verify'),
     path('dashboard/', views.dashboard_redirect_view, name='dashboard_redirect'),
     path('logout/', views.logout_view, name='logout'),
-    path('admin/clients/', views.admin_client_list_view, name='admin_client_list'),
-    path('admin/clients/<int:user_id>/', views.admin_client_detail_view, name='admin_client_detail'),
 ]
