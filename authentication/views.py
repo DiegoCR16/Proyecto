@@ -10,7 +10,10 @@ from django.views.decorators.csrf import ensure_csrf_cookie
 from django.conf import settings
 from django.http import HttpResponseBadRequest
 from django.db import models
+from decimal import Decimal
+from django.utils import timezone
 from .models import UserProfile, AuditLog, Role
+from tasas_cambio.models import ExchangeRate
 
 def get_client_ip(request):
     """
@@ -32,15 +35,87 @@ def get_client_ip(request):
 @ensure_csrf_cookie
 def login_view(request):
     """
-    Vista de inicio de sesión principal. Redirige o presenta el acceso a Keycloak SSO.
+    Vista de inicio de sesión principal. Muestra el acceso a Keycloak SSO
+    y la pizarra pública de tasas de cambio en tiempo real (PSE-9) para invitados y usuarios.
     
     Args:
         request (HttpRequest): Objeto de petición HTTP de Django.
         
     Returns:
-        HttpResponse: Respuesta renderizada con la plantilla de login.
+        HttpResponse: Respuesta renderizada con la plantilla de login y cotizaciones.
     """
-    return render(request, 'authentication/login.html')
+    default_rates = [
+        ('USD', 'Dólar Estadounidense', Decimal('7300.0000'), Decimal('7450.0000')),
+        ('EUR', 'Euro', Decimal('7900.0000'), Decimal('8150.0000')),
+        ('BRL', 'Real Brasileño', Decimal('1350.0000'), Decimal('1450.0000')),
+        ('ARS', 'Peso Argentino', Decimal('7.5000'), Decimal('9.0000')),
+        ('PYG', 'Guaraní Paraguayo', Decimal('1.0000'), Decimal('1.0000')),
+    ]
+
+    for code, name, buy, sell in default_rates:
+        ExchangeRate.objects.get_or_create(
+            currency_code=code,
+            defaults={
+                'currency_name': name,
+                'buy_rate': buy,
+                'sell_rate': sell
+            }
+        )
+
+    rates = ExchangeRate.objects.all().order_by('id')
+
+    user_profile = None
+    benefit_percentage = Decimal('0.00')
+    benefit_label = 'Estándar'
+    category_display = 'Invitado (Acceso Público)'
+
+    if request.user.is_authenticated:
+        try:
+            user_profile = request.user.profile
+            category = user_profile.category
+            if category == 'VIP':
+                benefit_percentage = Decimal('2.00')
+                benefit_label = '2% (VIP)'
+                category_display = 'VIP'
+            elif category == 'CORPORATIVO':
+                benefit_percentage = Decimal('4.00')
+                benefit_label = '4% (Corporativo)'
+                category_display = 'Corporativo'
+            else:
+                category_display = 'Minorista'
+        except Exception:
+            pass
+
+    personalized_rates = []
+    for rate in rates:
+        if benefit_percentage > 0 and rate.currency_code != 'PYG':
+            factor = Decimal('1.00') - (benefit_percentage / Decimal('100.00'))
+            custom_sell = (rate.sell_rate * factor).quantize(Decimal('0.0001'))
+            custom_buy = (rate.buy_rate / factor).quantize(Decimal('0.0001'))
+        else:
+            custom_sell = rate.sell_rate
+            custom_buy = rate.buy_rate
+
+        personalized_rates.append({
+            'currency_code': rate.currency_code,
+            'currency_name': rate.currency_name,
+            'standard_buy': rate.buy_rate,
+            'standard_sell': rate.sell_rate,
+            'custom_buy': custom_buy,
+            'custom_sell': custom_sell,
+            'last_updated': rate.last_updated,
+        })
+
+    context = {
+        'rates': personalized_rates,
+        'user_profile': user_profile,
+        'benefit_percentage': benefit_percentage,
+        'benefit_label': benefit_label,
+        'category_display': category_display,
+        'now': timezone.now(),
+    }
+
+    return render(request, 'authentication/login.html', context)
 
 def keycloak_login_redirect(request):
     """
@@ -547,23 +622,87 @@ def mfa_verify_view(request):
 @login_required
 def dashboard_redirect_view(request):
     """
-    Redirige al usuario a su panel personalizado según su rol asignado.
+    Redirige al usuario a su panel personalizado según su rol asignado,
+    incluyendo la pizarra de cotizaciones en tiempo real y tasas personalizadas según categoría (PSE-9).
     
     Args:
         request (HttpRequest): Objeto de petición HTTP de Django.
         
     Returns:
-        HttpResponse: Renderiza la plantilla del panel correspondiente al rol.
+        HttpResponse: Renderiza la plantilla del panel correspondiente al rol con tasas y beneficios.
     """
     profile, _ = UserProfile.objects.get_or_create(user=request.user)
     role_name = profile.role.name.lower() if profile.role else 'individual'
 
-    if 'admin' in role_name or request.user.is_superuser:
-        return render(request, 'authentication/admin_dashboard.html', {'profile': profile})
-    elif profile.is_corporate or 'corporativo' in role_name:
-        return render(request, 'authentication/corporate_dashboard.html', {'profile': profile})
+    default_rates = [
+        ('USD', 'Dólar Estadounidense', Decimal('7300.0000'), Decimal('7450.0000')),
+        ('EUR', 'Euro', Decimal('7900.0000'), Decimal('8150.0000')),
+        ('BRL', 'Real Brasileño', Decimal('1350.0000'), Decimal('1450.0000')),
+        ('ARS', 'Peso Argentino', Decimal('7.5000'), Decimal('9.0000')),
+        ('PYG', 'Guaraní Paraguayo', Decimal('1.0000'), Decimal('1.0000')),
+    ]
+
+    for code, name, buy, sell in default_rates:
+        ExchangeRate.objects.get_or_create(
+            currency_code=code,
+            defaults={
+                'currency_name': name,
+                'buy_rate': buy,
+                'sell_rate': sell
+            }
+        )
+
+    rates = ExchangeRate.objects.all().order_by('id')
+
+    category = profile.category
+    if category == 'VIP':
+        benefit_percentage = Decimal('2.00')
+        benefit_label = '2% (VIP)'
+        category_display = 'VIP'
+    elif category == 'CORPORATIVO':
+        benefit_percentage = Decimal('4.00')
+        benefit_label = '4% (Corporativo)'
+        category_display = 'Corporativo'
     else:
-        return render(request, 'authentication/client_dashboard.html', {'profile': profile})
+        benefit_percentage = Decimal('0.00')
+        benefit_label = 'Estándar'
+        category_display = 'Minorista'
+
+    personalized_rates = []
+    for rate in rates:
+        if benefit_percentage > 0 and rate.currency_code != 'PYG':
+            factor = Decimal('1.00') - (benefit_percentage / Decimal('100.00'))
+            custom_sell = (rate.sell_rate * factor).quantize(Decimal('0.0001'))
+            custom_buy = (rate.buy_rate / factor).quantize(Decimal('0.0001'))
+        else:
+            custom_sell = rate.sell_rate
+            custom_buy = rate.buy_rate
+
+        personalized_rates.append({
+            'currency_code': rate.currency_code,
+            'currency_name': rate.currency_name,
+            'standard_buy': rate.buy_rate,
+            'standard_sell': rate.sell_rate,
+            'custom_buy': custom_buy,
+            'custom_sell': custom_sell,
+            'last_updated': rate.last_updated,
+        })
+
+    context = {
+        'profile': profile,
+        'rates': personalized_rates,
+        'benefit_percentage': benefit_percentage,
+        'benefit_label': benefit_label,
+        'category_display': category_display,
+        'now': timezone.now(),
+    }
+
+    if 'admin' in role_name or request.user.is_superuser:
+        return render(request, 'authentication/admin_dashboard.html', context)
+    elif profile.is_corporate or 'corporativo' in role_name:
+        return render(request, 'authentication/corporate_dashboard.html', context)
+    else:
+        return render(request, 'authentication/client_dashboard.html', context)
 
 def logout_view(request):
     """

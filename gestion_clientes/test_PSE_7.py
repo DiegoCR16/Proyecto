@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 from django.test import TestCase, Client
 from django.contrib.auth.models import User
 from unittest.mock import patch
@@ -127,4 +128,4 @@ class AssociationKeycloakPSE7Tests(TestCase):
         response_corp = self.client.get(self.detail_url)
         self.assertEqual(response_corp.status_code, 200)
         self.assertTemplateUsed(response_corp, 'gestion_clientes/client_user_mapping.html')
-        self.assertContains(response_corp, "Creación de Cuenta para Persona Física y Asignación a la Empresa")
+        self.assertContains(response_corp, "Creación de Cuenta para un Usuario")
