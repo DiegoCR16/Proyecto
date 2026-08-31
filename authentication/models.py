@@ -29,7 +29,15 @@ class UserProfile(models.Model):
         itoken_verified (BooleanField): Indicador si el iToken ha sido verificado en la sesión.
         keycloak_id (CharField): Identificador único del usuario en Keycloak.
         ci_ruc (CharField): Número de cédula de identidad o RUC del cliente.
+        category (CharField): Categoría de segmentación del cliente (Minorista, Corporativo, VIP).
+        transaction_volume (DecimalField): Volumen transaccional acumulado en guaraníes (Gs).
     """
+    CATEGORY_CHOICES = [
+        ('MINORISTA', 'Minorista'),
+        ('CORPORATIVO', 'Corporativo'),
+        ('VIP', 'VIP'),
+    ]
+
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='profile', verbose_name="Usuario")
     role = models.ForeignKey(Role, on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Rol")
     is_corporate = models.BooleanField(default=False, verbose_name="Es Cliente Corporativo")
@@ -37,6 +45,8 @@ class UserProfile(models.Model):
     itoken_verified = models.BooleanField(default=False, verbose_name="iToken Verificado")
     keycloak_id = models.CharField(max_length=255, blank=True, null=True, unique=True, verbose_name="ID de Keycloak")
     ci_ruc = models.CharField(max_length=20, blank=True, null=True, unique=True, verbose_name="Cédula o RUC")
+    category = models.CharField(max_length=20, choices=CATEGORY_CHOICES, default='MINORISTA', verbose_name="Categoría de Cliente")
+    transaction_volume = models.DecimalField(max_digits=15, decimal_places=2, default=0.00, verbose_name="Volumen Transaccional (Gs)")
 
     def requires_mfa(self):
         """
@@ -51,6 +61,30 @@ class UserProfile(models.Model):
         if self.role and self.role.name.lower() in ['admin', 'administrador', 'operador']:
             return True
         return self.mfa_enabled
+
+    def clean_category_assignment(self, new_category, volume=None):
+        """
+        Valida que la asignación de categorías según el volumen transaccional en guaraníes
+        guarde coherencia con la naturaleza del cliente (Física o Jurídica).
+        
+        Args:
+            new_category (str): Nueva categoría a asignar ('MINORISTA', 'CORPORATIVO', 'VIP').
+            volume (Decimal, optional): Volumen transaccional en guaraníes a evaluar.
+            
+        Raises:
+            ValueError: Si la asignación viola las reglas de coherencia de naturaleza o volumen.
+            
+        Returns:
+            bool: True si la validación es exitosa.
+        """
+        vol = volume if volume is not None else self.transaction_volume
+        if new_category == 'CORPORATIVO' and not self.is_corporate:
+            raise ValueError("Los clientes de naturaleza Física (no corporativos) no pueden ser clasificados como Corporativo.")
+        if new_category == 'VIP' and vol < 50000000:
+            raise ValueError("Para la categoría VIP se requiere un volumen transaccional mínimo de 50.000.000 Gs.")
+        if new_category == 'MINORISTA' and self.is_corporate:
+            raise ValueError("Los clientes de naturaleza Jurídica no pueden tener categoría Minorista.")
+        return True
 
     def __str__(self):
         """Devuelve una representación descriptiva del perfil de usuario."""
