@@ -19,9 +19,35 @@
                 <div class="flex items-center space-x-3">
                     <div class="w-9 h-9 bg-blue-800 rounded-lg flex items-center justify-center font-bold text-lg">GX</div>
                     <span class="font-bold text-lg">Global Exchange</span>
-                    <span class="bg-emerald-600 text-xs px-2.5 py-1 rounded-full font-medium ml-2">Cliente Personal</span>
+                    {% if badge_text %}
+                    <span class="bg-emerald-600 text-xs px-2.5 py-1 rounded-full font-medium ml-2">{{ badge_text }}</span>
+                    {% endif %}
                 </div>
                 <div class="flex items-center space-x-4">
+                    {% if user_roles and user_roles|length > 1 %}
+                    <div class="flex items-center space-x-2">
+                        <span class="text-xs text-slate-300">Rol Activo:</span>
+                        <select onchange="window.location.href=this.value" class="bg-slate-800 text-white text-xs px-2 py-1 rounded border border-slate-700">
+                            {% for r in user_roles %}
+                            <option value="{% url 'switch_role' r.id %}" {% if active_role and active_role.id == r.id %}selected{% endif %}>
+                                {{ r.name }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    {% endif %}
+                    {% if corporate_groups %}
+                    <div class="flex items-center space-x-2">
+                        <span class="text-xs text-slate-300">Cliente/Grupo:</span>
+                        <select onchange="window.location.href=this.value" class="bg-slate-800 text-white text-xs px-2 py-1 rounded border border-slate-700">
+                            {% for g in corporate_groups %}
+                            <option value="{% url 'switch_group' g.keycloak_group_id|default:g.id %}" {% if active_group and active_group.id == g.id %}selected{% endif %}>
+                                {{ g.group_name }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    {% endif %}
                     <span class="text-sm text-slate-300">Usuario: <strong class="text-white">{{ request.user.username }}</strong></span>
                     <a href="{% url 'logout' %}" class="bg-red-600 hover:bg-red-700 text-white px-3.5 py-1.5 rounded-lg text-sm font-medium transition duration-200">
                         Cerrar Sesión
@@ -33,6 +59,44 @@
 
     <!-- Main Content -->
     <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 flex-grow w-full">
+        {% if not has_own_group %}
+        <div class="mb-8 bg-gradient-to-r from-blue-900 to-indigo-900 text-white p-6 rounded-2xl shadow-md flex flex-col md:flex-row items-center justify-between gap-4">
+            <div>
+                <h3 class="text-xl font-bold mb-1">¿Deseas operar como Cliente en Global Exchange?</h3>
+                <p class="text-sm text-blue-200">Actualmente estás operando como usuario regular sin grupo de cliente asignado. Solicita tu registro de cliente (Persona Física o Jurídica).</p>
+            </div>
+            <a href="{% url 'register' %}" class="whitespace-nowrap bg-white text-blue-900 hover:bg-blue-50 font-semibold px-5 py-2.5 rounded-xl shadow transition duration-200 text-sm">
+                Solicitar ser Cliente &rarr;
+            </a>
+        </div>
+        {% endif %}
+
+        {% if active_group and is_group_owner %}
+        <div class="mb-8 bg-white border border-slate-200 p-6 rounded-2xl shadow-sm">
+            <h3 class="text-lg font-bold text-slate-800 mb-2">Solicitar Asociar Usuario al Grupo Cliente</h3>
+            <p class="text-sm text-slate-600 mb-4">Solicite al Administrador asociar un nuevo usuario (como Operador o Analista) a su grupo cliente activo: <strong>{{ active_group.group_name }}</strong>.</p>
+            <form method="POST" action="{% url 'request_member' %}" class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {% csrf_token %}
+                <div>
+                    <label class="block text-xs font-medium text-slate-700 mb-1">Correo o Usuario a Asociar</label>
+                    <input type="email" name="target_email" required placeholder="usuario@dominio.com" class="w-full px-3.5 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-800">
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-slate-700 mb-1">Rol Solicitado</label>
+                    <select name="role_requested" class="w-full px-3.5 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-800 bg-white">
+                        <option value="OPERADOR">Operador</option>
+                        <option value="ANALISTA">Analista</option>
+                    </select>
+                </div>
+                <div class="flex items-end">
+                    <button type="submit" class="w-full bg-blue-800 hover:bg-blue-900 text-white px-4 py-2 rounded-lg text-sm font-semibold transition">
+                        Enviar Solicitud de Asociación
+                    </button>
+                </div>
+            </form>
+        </div>
+        {% endif %}
+
         <div class="mb-8 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
             <div>
                 <h1 class="text-3xl font-bold text-slate-900">Panel de Cliente Personal</h1>

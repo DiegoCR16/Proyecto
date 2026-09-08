@@ -62,6 +62,7 @@ class UserProfile(models.Model):
 
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='profile', verbose_name="Usuario")
     role = models.ForeignKey(Role, on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Rol")
+    roles = models.ManyToManyField(Role, blank=True, related_name='user_profiles', verbose_name="Roles Adicionales")
     is_corporate = models.BooleanField(default=False, verbose_name="Es Cliente Corporativo")
     mfa_enabled = models.BooleanField(default=False, verbose_name="MFA / iToken Habilitado")
     itoken_verified = models.BooleanField(default=False, verbose_name="iToken Verificado")
@@ -196,7 +197,7 @@ class GroupMembership(models.Model):
         role_in_group (CharField): Rol asignado en el grupo ('OPERADOR', 'ANALISTA', 'MIEMBRO').
     """
     ROLE_CHOICES = [
-        ('JEFE', 'Jefe'),
+        ('CLIENTE', 'Cliente'),
         ('OPERADOR', 'Operador'),
         ('ANALISTA', 'Analista'),
         ('MIEMBRO', 'Miembro'),
@@ -211,4 +212,34 @@ class GroupMembership(models.Model):
 
     def __str__(self):
         return f"{self.fisica_profile.user.username} -> {self.corporate_group.group_name} ({self.role_in_group})"
+
+class ClientRegistrationRequest(models.Model):
+    """
+    Solicitud de registro de cliente (física o jurídica) pendiente de aprobación por el Administrador.
+    """
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='client_requests', verbose_name="Usuario Solicitante")
+    client_name = models.CharField(max_length=255, verbose_name="Nombre / Razón Social del Cliente")
+    ci_ruc = models.CharField(max_length=50, unique=True, verbose_name="Cédula o RUC")
+    client_type = models.CharField(max_length=20, choices=[('FISICA', 'Persona Física'), ('JURIDICA', 'Persona Jurídica')], default='FISICA', verbose_name="Tipo de Cliente")
+    corporate_group = models.ForeignKey(CorporateGroup, on_delete=models.SET_NULL, null=True, blank=True, related_name='registration_request', verbose_name="Grupo Creado")
+    status = models.CharField(max_length=20, choices=[('PENDING', 'Pendiente'), ('APPROVED', 'Aprobado'), ('REJECTED', 'Rechazado')], default='PENDING', verbose_name="Estado")
+    timestamp = models.DateTimeField(auto_now_add=True, verbose_name="Fecha de Solicitud")
+
+    def __str__(self):
+        return f"Solicitud Cliente: {self.client_name} ({self.client_type}) - {self.status}"
+
+class MemberRequest(models.Model):
+    """
+    Solicitud del cliente principal para asociar a un usuario a su grupo cliente como Operador o Analista.
+    """
+    corporate_group = models.ForeignKey(CorporateGroup, on_delete=models.CASCADE, related_name='member_requests', verbose_name="Grupo Cliente")
+    requester = models.ForeignKey(User, on_delete=models.CASCADE, related_name='requested_memberships', verbose_name="Cliente Solicitante")
+    target_email = models.EmailField(verbose_name="Correo del Usuario a Asociar")
+    role_requested = models.CharField(max_length=20, choices=[('OPERADOR', 'Operador'), ('ANALISTA', 'Analista')], default='OPERADOR', verbose_name="Rol Solicitado")
+    status = models.CharField(max_length=20, choices=[('PENDING', 'Pendiente'), ('APPROVED', 'Aprobado'), ('REJECTED', 'Rechazado')], default='PENDING', verbose_name="Estado")
+    timestamp = models.DateTimeField(auto_now_add=True, verbose_name="Fecha de Solicitud")
+
+    def __str__(self):
+        return f"Solicitud Miembro ({self.role_requested}): {self.target_email} -> {self.corporate_group.group_name} ({self.status})"
+
 

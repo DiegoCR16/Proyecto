@@ -81,6 +81,36 @@ class AuthenticationPSE4Tests(TestCase):
         self.assertRedirects(response, '/auth/mfa/', fetch_redirect_response=False)
         self.assertEqual(AuditLog.objects.filter(action="SSO_LOGIN_SUCCESS").count(), 1)
 
+    @patch('authentication.views.requests.post')
+    @patch('authentication.views.requests.get')
+    def test_sso_keycloak_callback_cajero(self, mock_get, mock_post):
+        """Verifica el callback de Keycloak SSO mapeando el rol 'cajero'."""
+        mock_post.return_value.status_code = 200
+        import base64
+        import json
+        header = base64.urlsafe_b64encode(b'{"alg":"HS256"}').decode().rstrip('=')
+        payload = base64.urlsafe_b64encode(json.dumps({
+            'preferred_username': 'cajerosso',
+            'email': 'cajero@globalexchange.com',
+            'realm_access': {'roles': ['cajero']}
+        }).encode()).decode().rstrip('=')
+        dummy_jwt = f"{header}.{payload}.sig"
+        
+        mock_post.return_value.json.return_value = {
+            'access_token': dummy_jwt
+        }
+
+        mock_get.return_value.status_code = 200
+        mock_get.return_value.json.return_value = {
+            'preferred_username': 'cajerosso',
+            'email': 'cajero@globalexchange.com'
+        }
+
+        response = self.client.get('/auth/callback/?code=mock_auth_code')
+        self.assertRedirects(response, '/auth/dashboard/', fetch_redirect_response=False)
+        user = User.objects.get(username='cajerosso')
+        self.assertEqual(user.profile.role.name, "Cajero")
+
     def test_dashboard_redirect_by_role(self):
         """Verifica la redirección al panel según el rol del usuario."""
         self.client.login(username='induser', password='password123')
@@ -95,3 +125,94 @@ class AuthenticationPSE4Tests(TestCase):
         expected_url = f"http://localhost:8080/realms/global-exchange-realm/protocol/openid-connect/logout?client_id=global-exchange-client&post_logout_redirect_uri=http://testserver/auth/login/"
         self.assertRedirects(response, expected_url, fetch_redirect_response=False, status_code=302)
         self.assertEqual(AuditLog.objects.filter(action="LOGOUT").count(), 1)
+
+    def test_normal_user_no_group_no_role_badge(self):
+        """Verifica que un usuario sin grupo ni rol no muestre insignia en el encabezado."""
+        plain_user = User.objects.create_user(username="plainuser", password="password123")
+        plain_profile = UserProfile.objects.create(user=plain_user, role=None)
+        self.client.login(username='plainuser', password='password123')
+        response = self.client.get('/auth/dashboard/')
+        self.assertEqual(response.status_code, 200)
+        self.assertNotContains(response, 'Administrador')
+        self.assertNotContains(response, 'Cliente Corporativo')
+
+    def test_dynamic_group_switching(self):
+        """Verifica el cambio dinámico de grupo/cliente de Keycloak para un usuario con múltiples asociaciones."""
+        from authentication.models import CorporateGroup, GroupMembership
+        corp1 = CorporateGroup.objects.create(juridica_profile=self.corp_profile, group_name="Empresa A", keycloak_group_id="group-id-1")
+        corp2 = CorporateGroup.objects.create(juridica_profile=self.corp_profile, group_name="Empresa B", keycloak_group_id="group-id-2")
+        
+        GroupMembership.objects.create(corporate_group=corp1, fisica_profile=self.ind_profile, role_in_group="OPERADOR")
+        GroupMembership.objects.create(corporate_group=corp2, fisica_profile=self.ind_profile, role_in_group="ANALISTA")
+
+        self.client.login(username='induser', password='password123')
+        # Cambiar a Empresa B
+        response = self.client.get('/auth/switch-group/group-id-2/')
+        self.assertRedirects(response, '/auth/dashboard/', fetch_redirect_response=False)
+        
+        # Verificar que la interfaz muestre el grupo activo Empresa B
+        dash_resp = self.client.get('/auth/dashboard/')
+        self.assertContains(dash_resp, "Empresa B")
+        self.assertContains(dash_resp, "ANALISTA")
+
+    def test_normal_user_solicitar_ser_cliente_ui(self):
+        """Verifica que un usuario normal sin rol ni grupo vea la opción 'Solicitar ser Cliente' y no 'Minorista'."""
+        plain_user = User.objects.create_user(username="solicitante", password="password123")
+        UserProfile.objects.create(user=plain_user, role=None)
+        self.client.login(username='solicitante', password='password123')
+        response = self.client.get('/auth/dashboard/')
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Solicitar ser Cliente")
+        self.assertContains(response, "Usuario Regular (Sin Grupo de Cliente)")
+
+    def test_user_in_other_group_still_sees_solicitar_cliente(self):
+        """Verifica que un usuario perteneciente al grupo de otro usuario pero sin grupo propio siga viendo 'Solicitar ser Cliente'."""
+        from authentication.models import CorporateGroup, GroupMembership
+        corp1 = CorporateGroup.objects.create(juridica_profile=self.corp_profile, group_name="Empresa X", keycloak_group_id="group-x")
+        GroupMembership.objects.create(corporate_group=corp1, fisica_profile=self.ind_profile, role_in_group="OPERADOR")
+
+        self.client.login(username='induser', password='password123')
+        response = self.client.get('/auth/dashboard/')
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Solicitar ser Cliente")
+
+    def test_request_registration_does_not_create_group_immediately(self):
+        """Verifica que al solicitar registro de cliente no se cree el CorporateGroup hasta que el admin apruebe."""
+        from authentication.models import ClientRegistrationRequest, CorporateGroup
+        self.client.login(username='induser', password='password123')
+        response = self.client.post('/auth/register/', {
+            'client_name': 'Mi Empresa Nueva',
+            'ci_ruc': '99988877-6',
+            'client_type': 'JURIDICA',
+            'email': 'miempresa@globalexchange.com'
+        })
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Solicitud enviada exitosamente")
+
+        req = ClientRegistrationRequest.objects.filter(ci_ruc='99988877-6').first()
+        self.assertIsNotNone(req)
+        self.assertEqual(req.status, 'PENDING')
+        self.assertIsNone(req.corporate_group)
+        self.assertFalse(CorporateGroup.objects.filter(juridica_profile=self.ind_profile).exists())
+
+    def test_cajero_dashboard_render(self):
+        """Verifica que un usuario con rol Cajero renderice correctamente la interfaz de cajero."""
+        cajero_role = Role.objects.create(name="Cajero", description="Rol de Cajero")
+        cajero_user = User.objects.create_user(username="cajero1", password="password123")
+        UserProfile.objects.create(user=cajero_user, role=cajero_role)
+        self.client.login(username='cajero1', password='password123')
+        response = self.client.get('/auth/dashboard/')
+        self.assertEqual(response.status_code, 200)
+        self.assertTemplateUsed(response, 'authentication/cajero_dashboard.html')
+        self.assertContains(response, "Panel Operativo de Cajero")
+
+    def test_analista_dashboard_render(self):
+        """Verifica que un usuario con rol Analista renderice correctamente la interfaz de analista."""
+        analista_role = Role.objects.create(name="Analista", description="Rol de Analista")
+        analista_user = User.objects.create_user(username="analista1", password="password123")
+        UserProfile.objects.create(user=analista_user, role=analista_role)
+        self.client.login(username='analista1', password='password123')
+        response = self.client.get('/auth/dashboard/')
+        self.assertEqual(response.status_code, 200)
+        self.assertTemplateUsed(response, 'authentication/analista_dashboard.html')
+        self.assertContains(response, "Panel de Analista de Operaciones")

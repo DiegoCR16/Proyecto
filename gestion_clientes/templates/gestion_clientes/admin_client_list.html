@@ -43,6 +43,46 @@
             </div>
         </div>
 
+        <!-- Solicitudes Pendientes de Creación de Cliente -->
+        {% if pending_client_requests %}
+        <div class="bg-amber-50 border border-amber-200 rounded-xl p-6 mb-6 shadow-sm">
+            <h3 class="text-lg font-bold text-amber-900 mb-3">Solicitudes Pendientes de Creación de Grupo Cliente</h3>
+            <div class="space-y-3">
+                {% for req in pending_client_requests %}
+                <div class="bg-white p-4 rounded-lg border border-amber-300 flex items-center justify-between shadow-sm">
+                    <div>
+                        <span class="font-bold text-slate-900">{{ req.client_name }}</span> ({{ req.client_type }})
+                        <div class="text-xs text-slate-600">CI/RUC: <strong class="font-mono">{{ req.ci_ruc }}</strong> | Solicitante: {{ req.user.username }}</div>
+                    </div>
+                    <a href="{% url 'admin_approve_client' req.id %}" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-xs font-semibold transition">
+                        Aprobar y Asociar Grupo &rarr;
+                    </a>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Solicitudes Pendientes de Asociación de Miembros (Operador / Analista) -->
+        {% if pending_member_requests %}
+        <div class="bg-blue-50 border border-blue-200 rounded-xl p-6 mb-6 shadow-sm">
+            <h3 class="text-lg font-bold text-blue-900 mb-3">Solicitudes de Asociación de Miembros (Operadores / Analistas)</h3>
+            <div class="space-y-3">
+                {% for mreq in pending_member_requests %}
+                <div class="bg-white p-4 rounded-lg border border-blue-300 flex items-center justify-between shadow-sm">
+                    <div>
+                        Asociar <strong class="text-slate-900">{{ mreq.target_email }}</strong> como <span class="bg-blue-100 text-blue-800 text-xs px-2 py-0.5 rounded font-semibold">{{ mreq.role_requested }}</span>
+                        <div class="text-xs text-slate-600">Grupo Cliente: {{ mreq.corporate_group.group_name }} | Cliente Solicitante: {{ mreq.requester.username }}</div>
+                    </div>
+                    <a href="{% url 'admin_approve_member' mreq.id %}" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-xs font-semibold transition">
+                        Aprobar Asociación &rarr;
+                    </a>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+
         <!-- Filters and Search Bar -->
         <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200 mb-6">
             <form method="GET" action="{% url 'admin_client_list' %}" class="grid grid-cols-1 md:grid-cols-3 gap-4">

@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Panel de Analista - Global Exchange</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>body { font-family: 'Inter', sans-serif; }</style>
+</head>
+<body class="bg-slate-50 min-h-screen flex flex-col justify-between">
+    <nav class="bg-slate-900 text-white shadow">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between h-16 items-center">
+                <div class="flex items-center space-x-3">
+                    <div class="w-9 h-9 bg-purple-800 rounded-lg flex items-center justify-center font-bold text-lg">GX</div>
+                    <span class="font-bold text-lg">Global Exchange</span>
+                    <span class="bg-purple-600 text-xs px-2.5 py-1 rounded-full font-medium ml-2">Analista de Operaciones</span>
+                </div>
+                <div class="flex items-center space-x-4">
+                    {% if user_roles and user_roles|length > 1 %}
+                    <div class="flex items-center space-x-2">
+                        <span class="text-xs text-slate-300">Rol Activo:</span>
+                        <select onchange="window.location.href=this.value" class="bg-slate-800 text-white text-xs px-2 py-1 rounded border border-slate-700">
+                            {% for r in user_roles %}
+                            <option value="{% url 'switch_role' r.id %}" {% if active_role and active_role.id == r.id %}selected{% endif %}>
+                                {{ r.name }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    {% endif %}
+                    <span class="text-sm text-slate-300">Usuario: <strong class="text-white">{{ request.user.username }}</strong></span>
+                    <a href="{% url 'logout' %}" class="bg-red-600 hover:bg-red-700 text-white px-3.5 py-1.5 rounded-lg text-sm font-medium transition duration-200">
+                        Cerrar Sesión
+                    </a>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 flex-grow w-full">
+        <div class="mb-8 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+            <div>
+                <h1 class="text-3xl font-bold text-slate-900">Panel de Analista de Operaciones</h1>
+                <p class="text-slate-600 mt-1">Supervisión, reportes estadísticos y análisis de transacciones cambiarias.</p>
+            </div>
+            <div class="bg-white border border-slate-200 p-4 rounded-xl shadow-sm flex items-center space-x-3">
+                <div class="w-9 h-9 rounded-full bg-purple-100 text-purple-800 flex items-center justify-center font-bold text-sm">
+                    📊
+                </div>
+                <div>
+                    <span class="text-[10px] font-medium text-slate-500 uppercase tracking-wider block">Módulo Autorizado</span>
+                    <span class="font-bold text-slate-900 text-sm">Analista Senior &bull; RBAC Delegado</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+            <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                <h3 class="text-lg font-semibold text-slate-800 mb-2">Monitoreo de Operaciones</h3>
+                <p class="text-sm text-slate-600 mb-4">Revisión de transacciones en tiempo real y validación de volúmenes de clientes.</p>
+                <a href="#" class="text-purple-800 font-semibold text-sm hover:underline">Ver Reportes &rarr;</a>
+            </div>
+            <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                <h3 class="text-lg font-semibold text-slate-800 mb-2">Auditoría y Logs</h3>
+                <p class="text-sm text-slate-600 mb-4">Consulta de eventos y registros de seguridad del sistema Global Exchange.</p>
+                <a href="{% url 'admin_audit_logs' %}" class="text-purple-800 font-semibold text-sm hover:underline">Consultar Auditoría &rarr;</a>
+            </div>
+            <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                <h3 class="text-lg font-semibold text-slate-800 mb-2">Tasas y Cotizaciones</h3>
+                <p class="text-sm text-slate-600 mb-4">Análisis de fluctuación de divisas y márgenes de compra/venta.</p>
+                <a href="#" class="text-purple-800 font-semibold text-sm hover:underline">Ver Pizarra &rarr;</a>
+            </div>
+        </div>
+
+        <!-- Pizarra de Cotizaciones -->
+        <div class="bg-white shadow-sm rounded-2xl border border-slate-200 overflow-hidden">
+            <div class="px-6 py-4 bg-slate-900 text-white flex justify-between items-center">
+                <h3 class="font-semibold text-base">Pizarra Analítica de Tasas de Cambio</h3>
+                <span class="text-xs text-slate-400">Actualizado: {{ now|date:"d/m/Y H:i:s" }}</span>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="min-w-full divide-y divide-slate-200 text-left">
+                    <thead class="bg-slate-50">
+                        <tr>
+                            <th class="px-6 py-3.5 text-xs font-semibold text-slate-600 uppercase tracking-wider">Divisa</th>
+                            <th class="px-6 py-3.5 text-xs font-semibold text-slate-600 uppercase tracking-wider">Compra Estándar (Gs)</th>
+                            <th class="px-6 py-3.5 text-xs font-semibold text-slate-600 uppercase tracking-wider">Venta Estándar (Gs)</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-200 bg-white">
+                        {% for r in rates %}
+                        <tr class="hover:bg-slate-50 transition duration-150">
+                            <td class="px-6 py-4 whitespace-nowrap font-bold text-slate-900">{{ r.currency_code }} - {{ r.currency_name }}</td>
+                            <td class="px-6 py-4 whitespace-nowrap font-mono text-sm text-green-700">₲ {{ r.standard_buy|floatformat:4 }}</td>
+                            <td class="px-6 py-4 whitespace-nowrap font-mono text-sm text-blue-800">₲ {{ r.standard_sell|floatformat:4 }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </main>
+
+    <footer class="bg-white border-t border-slate-200 py-6 text-center text-xs text-slate-500 mt-10">
+        <p>&copy; 2026 Global Exchange - Ingeniería de Software 2 (FPUNA). Todos los derechos reservados.</p>
+    </footer>
+</body>
+</html>

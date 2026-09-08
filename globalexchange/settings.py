@@ -11,6 +11,7 @@ https://docs.djangoproject.com/en/6.1/ref/settings/
 """
 
 from pathlib import Path
+import os
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -43,11 +44,12 @@ INSTALLED_APPS = [
 ]
 
 # Keycloak & OIDC Settings for PSE-4
-KEYCLOAK_SERVER_URL = 'http://localhost:8080'
-KEYCLOAK_REALM = 'global-exchange-realm'
-KEYCLOAK_CLIENT_ID = 'global-exchange-client'
-KEYCLOAK_CLIENT_SECRET = 'YxgDli07yoW5jMdpZrdgu4NX2Mpxi5zc'
-KEYCLOAK_REDIRECT_URI = 'http://localhost:8000/auth/callback/'
+KEYCLOAK_SERVER_URL = os.environ.get('KEYCLOAK_SERVER_URL', 'http://localhost:8080')
+KEYCLOAK_FRONTEND_URL = os.environ.get('KEYCLOAK_FRONTEND_URL', 'http://localhost:8080')
+KEYCLOAK_REALM = os.environ.get('KEYCLOAK_REALM', 'global-exchange-realm')
+KEYCLOAK_CLIENT_ID = os.environ.get('KEYCLOAK_CLIENT_ID', 'global-exchange-client')
+KEYCLOAK_CLIENT_SECRET = os.environ.get('KEYCLOAK_CLIENT_SECRET', 'YxgDli07yoW5jMdpZrdgu4NX2Mpxi5zc')
+KEYCLOAK_REDIRECT_URI = os.environ.get('KEYCLOAK_REDIRECT_URI', 'http://localhost:8000/auth/callback/')
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
@@ -82,12 +84,24 @@ WSGI_APPLICATION = 'globalexchange.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/6.1/ref/settings/#databases
 
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+if os.environ.get('DB_HOST') or os.environ.get('DB_ENGINE'):
+    DATABASES = {
+        'default': {
+            'ENGINE': os.environ.get('DB_ENGINE', 'django.db.backends.postgresql'),
+            'NAME': os.environ.get('DB_NAME', 'globalexchange'),
+            'USER': os.environ.get('DB_USER', 'postgres'),
+            'PASSWORD': os.environ.get('DB_PASSWORD', 'postgres'),
+            'HOST': os.environ.get('DB_HOST', 'db'),
+            'PORT': os.environ.get('DB_PORT', '5432'),
+        }
     }
-}
+else:
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.sqlite3',
+            'NAME': BASE_DIR / 'db.sqlite3',
+        }
+    }
 
 
 # Password validation
@@ -129,6 +143,10 @@ STATIC_URL = 'static/'
 
 # Email
 # https://docs.djangoproject.com/en/6.1/topics/email/#topic-email-configuration
+
+LOGIN_URL = '/auth/login/'
+LOGIN_REDIRECT_URL = '/auth/dashboard/'
+LOGOUT_REDIRECT_URL = '/auth/login/'
 
 MAILERS = {
     'default': {

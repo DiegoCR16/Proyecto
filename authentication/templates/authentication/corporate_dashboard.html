@@ -19,9 +19,35 @@
                 <div class="flex items-center space-x-3">
                     <div class="w-9 h-9 bg-blue-800 rounded-lg flex items-center justify-center font-bold text-lg">GX</div>
                     <span class="font-bold text-lg">Global Exchange</span>
-                    <span class="bg-indigo-600 text-xs px-2.5 py-1 rounded-full font-medium ml-2">Cliente Corporativo</span>
+                    {% if badge_text %}
+                    <span class="bg-indigo-600 text-xs px-2.5 py-1 rounded-full font-medium ml-2">{{ badge_text }}</span>
+                    {% endif %}
                 </div>
                 <div class="flex items-center space-x-4">
+                    {% if user_roles and user_roles|length > 1 %}
+                    <div class="flex items-center space-x-2">
+                        <span class="text-xs text-slate-300">Rol Activo:</span>
+                        <select onchange="window.location.href=this.value" class="bg-slate-800 text-white text-xs px-2 py-1 rounded border border-slate-700">
+                            {% for r in user_roles %}
+                            <option value="{% url 'switch_role' r.id %}" {% if active_role and active_role.id == r.id %}selected{% endif %}>
+                                {{ r.name }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    {% endif %}
+                    {% if corporate_groups %}
+                    <div class="flex items-center space-x-2">
+                        <span class="text-xs text-slate-300">Cliente/Grupo:</span>
+                        <select onchange="window.location.href=this.value" class="bg-slate-800 text-white text-xs px-2 py-1 rounded border border-slate-700">
+                            {% for g in corporate_groups %}
+                            <option value="{% url 'switch_group' g.keycloak_group_id|default:g.id %}" {% if active_group and active_group.id == g.id %}selected{% endif %}>
+                                {{ g.group_name }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    {% endif %}
                     <span class="text-sm text-slate-300">Usuario: <strong class="text-white">{{ request.user.username }}</strong></span>
                     <a href="{% url 'logout' %}" class="bg-red-600 hover:bg-red-700 text-white px-3.5 py-1.5 rounded-lg text-sm font-medium transition duration-200">
                         Cerrar Sesión

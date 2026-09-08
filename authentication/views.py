@@ -12,8 +12,9 @@ from django.http import HttpResponseBadRequest
 from django.db import models
 from decimal import Decimal
 from django.utils import timezone
-from .models import UserProfile, AuditLog, Role, Permission
+from .models import UserProfile, AuditLog, Role, Permission, CorporateGroup, GroupMembership, ClientRegistrationRequest, MemberRequest
 from tasas_cambio.models import ExchangeRate
+from gestion_clientes.views import get_user_interface_context
 
 def get_client_ip(request):
     """
@@ -127,7 +128,7 @@ def keycloak_login_redirect(request):
     Returns:
         HttpResponseRedirect: Redirección al endpoint de autenticación de Keycloak.
     """
-    keycloak_url = f"{settings.KEYCLOAK_SERVER_URL}/realms/{settings.KEYCLOAK_REALM}/protocol/openid-connect/auth"
+    keycloak_url = f"{getattr(settings, 'KEYCLOAK_FRONTEND_URL', settings.KEYCLOAK_SERVER_URL)}/realms/{settings.KEYCLOAK_REALM}/protocol/openid-connect/auth"
     params = f"?client_id={settings.KEYCLOAK_CLIENT_ID}&redirect_uri={settings.KEYCLOAK_REDIRECT_URI}&response_type=code&scope=openid"
     return redirect(keycloak_url + params)
 
@@ -141,364 +142,15 @@ def keycloak_register_redirect(request):
     Returns:
         HttpResponseRedirect: Redirección al endpoint de registro de Keycloak.
     """
-    keycloak_reg_url = f"{settings.KEYCLOAK_SERVER_URL}/realms/{settings.KEYCLOAK_REALM}/protocol/openid-connect/registrations"
-    params = f"?client_id={settings.KEYCLOAK_CLIENT_ID}&redirect_uri={settings.KEYCLOAK_REDIRECT_URI}&response_type=code&scope=openid"
+    keycloak_reg_url = f"{getattr(settings, 'KEYCLOAK_FRONTEND_URL', settings.KEYCLOAK_SERVER_URL)}/realms/{settings.KEYCLOAK_REALM}/protocol/openid-connect/registrations"
+    params = f"?client_id={settings.KEYCLOAK_CLIENT_ID}&redirect_uri={settings.KEYCLOAK_REDIRECT_URI}&response_type=code&scope=openid&kc_action=register"
     return redirect(keycloak_reg_url + params)
-
-@ensure_csrf_cookie
-def register_view(request):
-    """
-    Vista para el registro de clientes (Persona Física o Jurídica).
-    Valida el tipo de persona, campos obligatorios (nombre completo, cédula/RUC, correo, contraseña),
-    control de duplicados, llama a la Admin REST API de Keycloak en segundo plano
-    asignando el atributo userType: "fisica" (o "juridica") y crea el usuario.
-    
-    Args:
-        request (HttpRequest): Objeto de petición HTTP de Django.
-        
-    Returns:
-        HttpResponse: Renderiza la plantilla de registro con errores o redirige al login tras éxito.
-    """
-    ip = get_client_ip(request)
-    if request.method == 'POST':
-        person_type = request.POST.get('person_type', 'fisica').strip()
-
-        if person_type == 'juridica' or person_type == 'jiridica':
-            company_name = request.POST.get('company_name', '').strip() or request.POST.get('full_name', '').strip()
-            ci_ruc = request.POST.get('ci_ruc', '').strip()
-            email = request.POST.get('email', '').strip()
-            password = request.POST.get('password', '').strip()
-
-            # Validación 1: Campos obligatorios
-            if not company_name or not ci_ruc or not email or not password:
-                return render(request, 'authentication/register.html', {
-                    'error': 'Todos los campos obligatorios deben ser completados.',
-                    'full_name': company_name,
-                    'company_name': company_name,
-                    'ci_ruc': ci_ruc,
-                    'email': email,
-                    'person_type': person_type
-                })
-
-            # Validación 2: Nombre de la empresa solo alfabético y puntos
-            if not re.match(r'^[A-Za-záéíóúÁÉÍÓÚñÑ\s\.]+$', company_name):
-                return render(request, 'authentication/register.html', {
-                    'error': 'El nombre de la empresa debe contener únicamente caracteres alfabéticos y puntos.',
-                    'full_name': company_name,
-                    'company_name': company_name,
-                    'ci_ruc': ci_ruc,
-                    'email': email,
-                    'person_type': person_type
-                })
-
-            # Validación 3: RUC formato numérico con guion obligatorio
-            if not re.match(r'^\d{1,10}-\d{1}$', ci_ruc):
-                return render(request, 'authentication/register.html', {
-                    'error': 'El RUC debe tener un formato numérico válido con guion (ej. 80012345-6).',
-                    'full_name': company_name,
-                    'company_name': company_name,
-                    'ci_ruc': ci_ruc,
-                    'email': email,
-                    'person_type': person_type
-                })
-
-            # Validación 4: Correo electrónico (máscara texto@dominio.extensión)
-            if not re.match(r'^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$', email):
-                return render(request, 'authentication/register.html', {
-                    'error': 'El correo electrónico no cumple con la máscara texto@dominio.extensión.',
-                    'full_name': company_name,
-                    'company_name': company_name,
-                    'ci_ruc': ci_ruc,
-                    'email': email,
-                    'person_type': person_type
-                })
-
-            # Validación 5: Seguridad de contraseña (min 8 caracteres, mayús, min, carac. especial)
-            if len(password) < 8 or not re.search(r'[A-Z]', password) or not re.search(r'[a-z]', password) or not re.search(r'[\W_]', password):
-                return render(request, 'authentication/register.html', {
-                    'error': 'La contraseña debe tener un mínimo de 8 caracteres e incluir mayúsculas, minúsculas y caracteres especiales.',
-                    'full_name': company_name,
-                    'company_name': company_name,
-                    'ci_ruc': ci_ruc,
-                    'email': email,
-                    'person_type': person_type
-                })
-
-            # Control de Duplicados y Registro en Keycloak Admin REST API
-            admin_token = None
-            try:
-                token_url = f"{settings.KEYCLOAK_SERVER_URL}/realms/{settings.KEYCLOAK_REALM}/protocol/openid-connect/token"
-                token_data = {
-                    'grant_type': 'client_credentials',
-                    'client_id': settings.KEYCLOAK_CLIENT_ID,
-                    'client_secret': getattr(settings, 'KEYCLOAK_CLIENT_SECRET', ''),
-                }
-                token_resp = requests.post(token_url, data=token_data, timeout=5)
-                if token_resp.status_code == 200:
-                    admin_token = token_resp.json().get('access_token')
-                    headers = {'Authorization': f'Bearer {admin_token}', 'Content-Type': 'application/json'}
-                    
-                    # Verificar duplicados por correo en Keycloak
-                    search_url = f"{settings.KEYCLOAK_SERVER_URL}/admin/realms/{settings.KEYCLOAK_REALM}/users?email={email}"
-                    search_resp = requests.get(search_url, headers=headers, timeout=5)
-                    if search_resp.status_code == 200 and search_resp.json():
-                        AuditLog.objects.create(
-                            action="REGISTER_DUPLICATE_ATTEMPT",
-                            ip_address=ip,
-                            details=f"Intento de registro duplicado en Keycloak para email corporativo: {email}"
-                        )
-                        return render(request, 'authentication/register.html', {
-                            'error': 'El correo electrónico ya se encuentra registrado en Keycloak.',
-                            'full_name': company_name,
-                            'company_name': company_name,
-                            'ci_ruc': ci_ruc,
-                            'email': email,
-                            'person_type': person_type
-                        })
-            except Exception as e:
-                pass
-
-            # Control de duplicados local (fallback)
-            if User.objects.filter(email=email).exists() or UserProfile.objects.filter(ci_ruc=ci_ruc).exists():
-                AuditLog.objects.create(
-                    action="REGISTER_DUPLICATE_ATTEMPT",
-                    ip_address=ip,
-                    details=f"Intento de registro corporativo duplicado para email: {email} o RUC: {ci_ruc}"
-                )
-                return render(request, 'authentication/register.html', {
-                    'error': 'El correo electrónico o RUC ya se encuentra registrado.',
-                    'full_name': company_name,
-                    'company_name': company_name,
-                    'ci_ruc': ci_ruc,
-                    'email': email,
-                    'person_type': person_type
-                })
-
-            # Llamada a Keycloak Admin REST API para crear el usuario corporativo en segundo plano
-            try:
-                if admin_token:
-                    create_user_url = f"{settings.KEYCLOAK_SERVER_URL}/admin/realms/{settings.KEYCLOAK_REALM}/users"
-                    user_payload = {
-                        "username": email,
-                        "email": email,
-                        "firstName": company_name,
-                        "enabled": True,
-                        "requiredActions": ["VERIFY_EMAIL"],
-                        "attributes": {
-                            "userType": ["juridica"],
-                            "ci_ruc": [ci_ruc]
-                        },
-                        "credentials": [
-                            {
-                                "type": "password",
-                                "value": password,
-                                "temporary": False
-                            }
-                        ]
-                    }
-                    headers = {'Authorization': f'Bearer {admin_token}', 'Content-Type': 'application/json'}
-                    requests.post(create_user_url, json=user_payload, headers=headers, timeout=5)
-            except Exception as e:
-                AuditLog.objects.create(
-                    action="KEYCLOAK_ADMIN_API_ERROR",
-                    ip_address=ip,
-                    details=f"Error al conectar con Keycloak Admin API para Persona Jurídica: {str(e)}"
-                )
-
-            # Registro exitoso local y auditoría para Persona Jurídica
-            user, created = User.objects.get_or_create(username=email, defaults={'email': email})
-            user.set_password(password)
-            user.save()
-
-            role_obj, _ = Role.objects.get_or_create(name="Corporate")
-            profile, _ = UserProfile.objects.get_or_create(user=user)
-            profile.ci_ruc = ci_ruc
-            profile.role = role_obj
-            profile.is_corporate = True
-            profile.save()
-
-            AuditLog.objects.create(
-                user=user,
-                action="REGISTER_SUCCESS",
-                ip_address=ip,
-                details=f"Registro exitoso para Persona Jurídica: {email} con userType: juridica"
-            )
-            return redirect('login')
-
-        full_name = request.POST.get('full_name', '').strip()
-        ci_ruc = request.POST.get('ci_ruc', '').strip()
-        email = request.POST.get('email', '').strip()
-        password = request.POST.get('password', '').strip()
-
-        # Validación 1: Campos obligatorios
-        if not full_name or not ci_ruc or not email or not password:
-            return render(request, 'authentication/register.html', {
-                'error': 'Todos los campos obligatorios deben ser completados.',
-                'full_name': full_name,
-                'ci_ruc': ci_ruc,
-                'email': email,
-                'person_type': person_type
-            })
-
-        # Validación 2: Nombre completo solo alfabético
-        if not re.match(r'^[A-Za-záéíóúÁÉÍÓÚñÑ\s]+$', full_name):
-            return render(request, 'authentication/register.html', {
-                'error': 'El nombre completo debe contener únicamente caracteres alfabéticos.',
-                'full_name': full_name,
-                'ci_ruc': ci_ruc,
-                'email': email,
-                'person_type': person_type
-            })
-
-        # Validación 3: Cédula o RUC formato numérico válido
-        if not re.match(r'^\d{1,8}(-\d)?$', ci_ruc):
-            return render(request, 'authentication/register.html', {
-                'error': 'El número de cédula o RUC debe tener un formato numérico válido.',
-                'full_name': full_name,
-                'ci_ruc': ci_ruc,
-                'email': email,
-                'person_type': person_type
-            })
-
-        # Validación 4: Correo electrónico (máscara texto@dominio.extensión)
-        if not re.match(r'^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$', email):
-            return render(request, 'authentication/register.html', {
-                'error': 'El correo electrónico no cumple con la máscara texto@dominio.extensión.',
-                'full_name': full_name,
-                'ci_ruc': ci_ruc,
-                'email': email,
-                'person_type': person_type
-            })
-
-        # Validación 5: Seguridad de contraseña (min 8 caracteres, mayús, min, carac. especial)
-        if len(password) < 8 or not re.search(r'[A-Z]', password) or not re.search(r'[a-z]', password) or not re.search(r'[\W_]', password):
-            return render(request, 'authentication/register.html', {
-                'error': 'La contraseña debe tener un mínimo de 8 caracteres e incluir mayúsculas, minúsculas y caracteres especiales.',
-                'full_name': full_name,
-                'ci_ruc': ci_ruc,
-                'email': email,
-                'person_type': person_type
-            })
-
-        # Control de Duplicados y Registro en Keycloak Admin REST API
-        admin_token = None
-        try:
-            token_url = f"{settings.KEYCLOAK_SERVER_URL}/realms/{settings.KEYCLOAK_REALM}/protocol/openid-connect/token"
-            token_data = {
-                'grant_type': 'client_credentials',
-                'client_id': settings.KEYCLOAK_CLIENT_ID,
-                'client_secret': getattr(settings, 'KEYCLOAK_CLIENT_SECRET', ''),
-            }
-            token_resp = requests.post(token_url, data=token_data, timeout=5)
-            if token_resp.status_code == 200:
-                admin_token = token_resp.json().get('access_token')
-                headers = {'Authorization': f'Bearer {admin_token}', 'Content-Type': 'application/json'}
-                
-                # Verificar duplicados por correo en Keycloak
-                search_url = f"{settings.KEYCLOAK_SERVER_URL}/admin/realms/{settings.KEYCLOAK_REALM}/users?email={email}"
-                search_resp = requests.get(search_url, headers=headers, timeout=5)
-                if search_resp.status_code == 200 and search_resp.json():
-                    AuditLog.objects.create(
-                        action="REGISTER_DUPLICATE_ATTEMPT",
-                        ip_address=ip,
-                        details=f"Intento de registro duplicado en Keycloak para email: {email}"
-                    )
-                    return render(request, 'authentication/register.html', {
-                        'error': 'El correo electrónico ya se encuentra registrado en Keycloak.',
-                        'full_name': full_name,
-                        'ci_ruc': ci_ruc,
-                        'email': email,
-                        'person_type': person_type
-                    })
-        except Exception as e:
-            pass
-
-        # Control de duplicados local (fallback)
-        if User.objects.filter(email=email).exists() or UserProfile.objects.filter(ci_ruc=ci_ruc).exists():
-            AuditLog.objects.create(
-                action="REGISTER_DUPLICATE_ATTEMPT",
-                ip_address=ip,
-                details=f"Intento de registro duplicado para email: {email} o CI/RUC: {ci_ruc}"
-            )
-            return render(request, 'authentication/register.html', {
-                'error': 'El correo electrónico o número de cédula/RUC ya se encuentra registrado.',
-                'full_name': full_name,
-                'ci_ruc': ci_ruc,
-                'email': email,
-                'person_type': person_type
-            })
-
-        # Llamada a Keycloak Admin REST API para crear el usuario en segundo plano
-        try:
-            if admin_token:
-                create_user_url = f"{settings.KEYCLOAK_SERVER_URL}/admin/realms/{settings.KEYCLOAK_REALM}/users"
-                user_payload = {
-                    "username": email,
-                    "email": email,
-                    "firstName": full_name,
-                    "enabled": True,
-                    "requiredActions": ["VERIFY_EMAIL"],
-                    "attributes": {
-                        "userType": ["fisica"],
-                        "ci_ruc": [ci_ruc],
-                        "category": ["MINORISTA"]
-                    },
-                    "credentials": [
-                        {
-                            "type": "password",
-                            "value": password,
-                            "temporary": False
-                        }
-                    ]
-                }
-                headers = {'Authorization': f'Bearer {admin_token}', 'Content-Type': 'application/json'}
-                requests.post(create_user_url, json=user_payload, headers=headers, timeout=5)
-        except Exception as e:
-            AuditLog.objects.create(
-                action="KEYCLOAK_ADMIN_API_ERROR",
-                ip_address=ip,
-                details=f"Error al conectar con Keycloak Admin API: {str(e)}"
-            )
-
-        # Registro exitoso local y auditoría
-        user, created = User.objects.get_or_create(username=email, defaults={'email': email})
-        user.set_password(password)
-        user.save()
-
-        role_obj, _ = Role.objects.get_or_create(name="Individual")
-        profile, _ = UserProfile.objects.get_or_create(user=user)
-        profile.ci_ruc = ci_ruc
-        profile.role = role_obj
-        profile.is_corporate = False
-        profile.save()
-
-        AuditLog.objects.create(
-            user=user,
-            action="REGISTER_SUCCESS",
-            ip_address=ip,
-            details=f"Registro exitoso para Persona Física: {email} con userType: fisica"
-        )
-        return redirect('login')
-
-    return render(request, 'authentication/register.html', {
-        'full_name': '',
-        'company_name': '',
-        'ci_ruc': '',
-        'email': '',
-        'person_type': 'fisica'
-    })
 
 @ensure_csrf_cookie
 def keycloak_callback_view(request):
     """
     Callback del SSO de Keycloak tras autenticación exitosa.
-    Intercambia el código por tokens y extrae usuario y roles desde Keycloak.
-    
-    Args:
-        request (HttpRequest): Objeto de petición HTTP de Django.
-        
-    Returns:
-        HttpResponse: Redirección al panel del usuario o respuesta de error.
+    Intercambia el código por tokens y obtiene roles y grupos directamente desde Keycloak (Fuente de Verdad Principal).
     """
     code = request.GET.get('code')
     ip = get_client_ip(request)
@@ -530,47 +182,107 @@ def keycloak_callback_view(request):
         token_json = token_response.json()
         access_token = token_json.get('access_token')
 
-        userinfo_url = f"{settings.KEYCLOAK_SERVER_URL}/realms/{settings.KEYCLOAK_REALM}/protocol/openid-connect/userinfo"
-        userinfo_resp = requests.get(userinfo_url, headers={'Authorization': f'Bearer {access_token}'})
-        userinfo = userinfo_resp.json()
-
-        username = userinfo.get('preferred_username', 'keycloak_user')
-        email = userinfo.get('email', '')
-
         token_parts = access_token.split('.')
         payload_encoded = token_parts[1]
         payload_encoded += '=' * (-len(payload_encoded) % 4)
         payload_json = json.loads(base64.urlsafe_b64decode(payload_encoded).decode('utf-8'))
+
+        username = payload_json.get('preferred_username', 'keycloak_user')
+        email = payload_json.get('email', '')
+        kc_id = payload_json.get('sub')
         
         realm_roles = payload_json.get('realm_access', {}).get('roles', [])
         client_roles = payload_json.get('resource_access', {}).get(settings.KEYCLOAK_CLIENT_ID, {}).get('roles', [])
         all_roles = list(set(realm_roles + client_roles))
+
+        # Consultar Keycloak Admin API para obtener los grupos y roles exactos del usuario en Keycloak
+        kc_groups = []
+        try:
+            admin_token_url = f"{settings.KEYCLOAK_SERVER_URL}/realms/{settings.KEYCLOAK_REALM}/protocol/openid-connect/token"
+            admin_token_data = {
+                'grant_type': 'client_credentials',
+                'client_id': settings.KEYCLOAK_CLIENT_ID,
+                'client_secret': getattr(settings, 'KEYCLOAK_CLIENT_SECRET', ''),
+            }
+            admin_token_resp = requests.post(admin_token_url, data=admin_token_data, timeout=3)
+            if admin_token_resp.status_code == 200:
+                admin_token = admin_token_resp.json().get('access_token')
+                headers = {'Authorization': f'Bearer {admin_token}', 'Content-Type': 'application/json'}
+                
+                if not kc_id:
+                    search_url = f"{settings.KEYCLOAK_SERVER_URL}/admin/realms/{settings.KEYCLOAK_REALM}/users?username={username}"
+                    search_resp = requests.get(search_url, headers=headers, timeout=3)
+                    if search_resp.status_code == 200 and search_resp.json():
+                        kc_id = search_resp.json()[0].get('id')
+
+                if kc_id:
+                    roles_api_url = f"{settings.KEYCLOAK_SERVER_URL}/admin/realms/{settings.KEYCLOAK_REALM}/users/{kc_id}/role-mappings/realm"
+                    roles_api_resp = requests.get(roles_api_url, headers=headers, timeout=3)
+                    if roles_api_resp.status_code == 200:
+                        api_roles = [r.get('name') for r in roles_api_resp.json()]
+                        all_roles = list(set(all_roles + api_roles))
+
+                    groups_api_url = f"{settings.KEYCLOAK_SERVER_URL}/admin/realms/{settings.KEYCLOAK_REALM}/users/{kc_id}/groups"
+                    groups_api_resp = requests.get(groups_api_url, headers=headers, timeout=3)
+                    if groups_api_resp.status_code == 200:
+                        kc_groups = groups_api_resp.json()
+        except Exception:
+            pass
+
         all_roles_lower = [r.lower() for r in all_roles]
 
         user, created = User.objects.get_or_create(username=username, defaults={'email': email})
-        
+        if email and not user.email:
+            user.email = email
+            user.save()
+
         role_obj = None
         is_corp = False
         
-        if any(r in all_roles_lower for r in ['admin', 'administrador', 'administrator', 'operador']):
+        if any(r in all_roles_lower for r in ['admin', 'administrador', 'administrator']):
             role_obj, _ = Role.objects.get_or_create(name="Admin")
-        elif any(r in all_roles_lower for r in ['corporate', 'corporativo', 'empresa']):
+        elif any(r in all_roles_lower for r in ['cajero']):
+            role_obj, _ = Role.objects.get_or_create(name="Cajero")
+        elif any(r in all_roles_lower for r in ['analista']):
+            role_obj, _ = Role.objects.get_or_create(name="Analista")
+        elif any(r in all_roles_lower for r in ['corporate', 'corporativo', 'empresa', 'jefe']):
             role_obj, _ = Role.objects.get_or_create(name="Corporate")
             is_corp = True
         else:
             role_obj, _ = Role.objects.get_or_create(name="Cliente")
 
         profile, _ = UserProfile.objects.get_or_create(user=user)
+        if kc_id:
+            profile.keycloak_id = kc_id
         profile.role = role_obj
         profile.is_corporate = is_corp
         profile.save()
+
+        for g in kc_groups:
+            g_id = g.get('id')
+            g_name = g.get('name')
+            corp_group, _ = CorporateGroup.objects.get_or_create(
+                keycloak_group_id=g_id,
+                defaults={'group_name': g_name, 'juridica_profile': profile}
+            )
+            role_in_group = 'OPERADOR'
+            if any(r.lower() == f"{g_name.lower()}_cliente" or r.lower() == 'cliente' or r.lower() == f"{g_name.lower()}_jefe" or r.lower() == 'jefe' for r in all_roles_lower):
+                role_in_group = 'CLIENTE'
+            elif any(r.lower() == f"{g_name.lower()}_analista" or r.lower() == 'analista' for r in all_roles_lower):
+                role_in_group = 'ANALISTA'
+
+            GroupMembership.objects.get_or_create(
+                corporate_group=corp_group,
+                fisica_profile=profile,
+                defaults={'role_in_group': role_in_group}
+            )
 
         login(request, user)
         AuditLog.objects.create(
             user=user,
             action="SSO_LOGIN_SUCCESS",
             ip_address=ip,
-            details=f"Inicio de sesión SSO exitoso. Roles Keycloak: {all_roles}"
+            details=f"Inicio de sesión SSO exitoso. Roles Keycloak: {all_roles}, Grupos: {[g.get('name') for g in kc_groups]}"
         )
 
         if profile.requires_mfa() and not profile.itoken_verified:
@@ -634,6 +346,8 @@ def dashboard_redirect_view(request):
     profile, _ = UserProfile.objects.get_or_create(user=request.user)
     role_name = profile.role.name.lower() if profile.role else 'individual'
 
+    interface_ctx = get_user_interface_context(request, profile)
+
     default_rates = [
         ('USD', 'Dólar Estadounidense', Decimal('7300.0000'), Decimal('7450.0000')),
         ('EUR', 'Euro', Decimal('7900.0000'), Decimal('8150.0000')),
@@ -654,19 +368,26 @@ def dashboard_redirect_view(request):
 
     rates = ExchangeRate.objects.all().order_by('id')
 
-    category = profile.category
-    if category == 'VIP':
-        benefit_percentage = Decimal('2.00')
-        benefit_label = '2% (VIP)'
-        category_display = 'VIP'
-    elif category == 'CORPORATIVO':
-        benefit_percentage = Decimal('4.00')
-        benefit_label = '4% (Corporativo)'
-        category_display = 'Corporativo'
+    has_client_mode = interface_ctx['active_group'] or profile.is_corporate or (profile.role and profile.role.name.lower() in ['cliente', 'corporate', 'corporativo', 'vip'])
+    
+    if has_client_mode:
+        category = profile.category
+        if category == 'VIP':
+            benefit_percentage = Decimal('2.00')
+            benefit_label = '2% (VIP)'
+            category_display = 'VIP'
+        elif category == 'CORPORATIVO':
+            benefit_percentage = Decimal('4.00')
+            benefit_label = '4% (Corporativo)'
+            category_display = 'Corporativo'
+        else:
+            benefit_percentage = Decimal('0.00')
+            benefit_label = 'Estándar'
+            category_display = 'Minorista'
     else:
         benefit_percentage = Decimal('0.00')
-        benefit_label = 'Estándar'
-        category_display = 'Minorista'
+        benefit_label = 'Sin Beneficio'
+        category_display = 'Usuario Regular (Sin Grupo de Cliente)'
 
     personalized_rates = []
     for rate in rates:
@@ -695,10 +416,15 @@ def dashboard_redirect_view(request):
         'benefit_label': benefit_label,
         'category_display': category_display,
         'now': timezone.now(),
+        **interface_ctx,
     }
 
-    if 'admin' in role_name or request.user.is_superuser:
+    if interface_ctx['is_admin']:
         return render(request, 'authentication/admin_dashboard.html', context)
+    elif profile.role and 'cajero' in profile.role.name.lower():
+        return render(request, 'authentication/cajero_dashboard.html', context)
+    elif profile.role and 'analista' in profile.role.name.lower():
+        return render(request, 'authentication/analista_dashboard.html', context)
     elif profile.is_corporate or 'corporativo' in role_name:
         return render(request, 'authentication/corporate_dashboard.html', context)
     else:
@@ -720,7 +446,7 @@ def logout_view(request):
     logout(request)
     
     redirect_uri = request.build_absolute_uri('/auth/login/')
-    keycloak_logout_url = f"{settings.KEYCLOAK_SERVER_URL}/realms/{settings.KEYCLOAK_REALM}/protocol/openid-connect/logout?client_id={settings.KEYCLOAK_CLIENT_ID}&post_logout_redirect_uri={redirect_uri}"
+    keycloak_logout_url = f"{getattr(settings, 'KEYCLOAK_FRONTEND_URL', settings.KEYCLOAK_SERVER_URL)}/realms/{settings.KEYCLOAK_REALM}/protocol/openid-connect/logout?client_id={settings.KEYCLOAK_CLIENT_ID}&post_logout_redirect_uri={redirect_uri}"
     
     return redirect(keycloak_logout_url)
 
@@ -751,7 +477,6 @@ def admin_roles_view(request):
             'error': 'Acceso denegado: Se requiere rol de Administrador para gestionar roles y permisos.'
         })
 
-    # Asegurar los roles fijos del sistema y roles de grupo corporativo
     role_names = ['Admin', 'Analista', 'Cliente', 'Cajero', 'Jefe (Corporativo)', 'Operador (Corporativo)', 'Analista (Corporativo)']
     descriptions = {
         'Admin': 'Administrador General (Acceso Total - Protegido)',
@@ -765,7 +490,6 @@ def admin_roles_view(request):
     for rname in role_names:
         Role.objects.get_or_create(name=rname, defaults={'description': descriptions.get(rname, '')})
 
-    # Asegurar permisos granulares por defecto
     default_perms = [
         ('can_manage_roles', 'Gestionar Roles y Permisos', 'Crear, editar, desactivar roles y asignar permisos (Admin/Analista)'),
         ('can_manage_clients', 'Gestionar Clientes', 'Crear, editar y asociar cuentas de clientes y grupos corporativos (Admin/Analista)'),
@@ -786,7 +510,6 @@ def admin_roles_view(request):
             role_id = request.POST.get('role_id')
             role = get_object_or_404(Role, id=role_id)
             
-            # El rol Admin está protegido
             if role.name.lower() in ['admin', 'administrador']:
                 return render(request, 'authentication/admin_roles.html', {
                     'roles': Role.objects.filter(name__in=role_names).prefetch_related('permissions'),
@@ -797,7 +520,6 @@ def admin_roles_view(request):
             description = request.POST.get('description', '').strip()
             permission_ids = request.POST.getlist('permissions')
 
-            # Validaciones de negocio según el rol
             if role.name.lower() == 'cliente':
                 admin_codenames = ['can_manage_roles', 'can_manage_clients', 'can_manage_rates', 'can_view_audit']
                 selected_perms = Permission.objects.filter(id__in=permission_ids)
@@ -805,7 +527,7 @@ def admin_roles_view(request):
                     return render(request, 'authentication/admin_roles.html', {
                         'roles': Role.objects.filter(name__in=role_names).prefetch_related('permissions'),
                         'permissions': Permission.objects.all(),
-                        'error': 'Error de validación: El rol Cliente no puede tener asignados permisos administrativos (Gestionar Roles, Clientes, Tasas o Auditoría).'
+                        'error': 'Error de validación: El rol Cliente no puede tener asignados permisos administrativos.'
                     })
 
             if role.name.lower() == 'analista':
@@ -814,14 +536,13 @@ def admin_roles_view(request):
                     return render(request, 'authentication/admin_roles.html', {
                         'roles': Role.objects.filter(name__in=role_names).prefetch_related('permissions'),
                         'permissions': Permission.objects.all(),
-                        'error': 'Error de validación: El rol Analista no realiza transacciones de cliente (Realizar Transacciones es exclusivo de la interfaz de cliente).'
+                        'error': 'Error de validación: El rol Analista no realiza transacciones de cliente.'
                     })
 
             role.description = description
             role.save()
             role.permissions.set(Permission.objects.filter(id__in=permission_ids))
 
-            # Sincronización con Keycloak Admin API (actualizar descripción del rol en Keycloak)
             try:
                 token_url = f"{settings.KEYCLOAK_SERVER_URL}/realms/{settings.KEYCLOAK_REALM}/protocol/openid-connect/token"
                 token_data = {
@@ -842,7 +563,7 @@ def admin_roles_view(request):
                 user=request.user,
                 action="ROLE_UPDATE",
                 ip_address=ip,
-                details=f"Modificación del rol fijo {role.name}. Descripción y permisos granulares actualizados."
+                details=f"Modificación del rol fijo {role.name}."
             )
             return redirect('admin_roles')
 
@@ -859,14 +580,7 @@ def admin_roles_view(request):
 @login_required
 def admin_audit_logs_view(request):
     """
-    Vista de administración para consultar el registro de auditoría del sistema,
-    especificando el usuario que realizó cada acción, detalles y fecha/hora (PSE-26).
-    
-    Args:
-        request (HttpRequest): Objeto de petición HTTP de Django.
-        
-    Returns:
-        HttpResponse: Renderiza la plantilla con los logs de auditoría o deniega acceso (RBAC).
+    Vista de administración para consultar el registro de auditoría del sistema (PSE-26).
     """
     profile, _ = UserProfile.objects.get_or_create(user=request.user)
     role_name = profile.role.name.lower() if profile.role else ''
@@ -878,7 +592,7 @@ def admin_audit_logs_view(request):
             details="Intento de acceso no autorizado al módulo de auditoría."
         )
         return render(request, 'authentication/admin_dashboard.html', {
-            'error': 'Acceso denegado: Se requiere rol de Administrador para ver los registros de auditoría.'
+            'error': 'Acceso denegado: Se requiere rol de Administrador.'
         })
 
     logs = AuditLog.objects.all().order_by('-timestamp')
