@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 from django.shortcuts import render
 from django.utils import timezone
+from django.core.exceptions import ValidationError
 from decimal import Decimal
 from .models import ExchangeRate
 
@@ -91,3 +92,277 @@ def public_rates_view(request):
     }
 
     return render(request, 'tasas_cambio/rates_board.html', context)
+
+
+class SimuladorConversionService:
+    """
+    Servicio de dominio para la simulación de conversión de divisas (PSE-11).
+    Calcula conversiones exactas aplicando tipos de cambio vigentes y beneficios por categoría de cliente.
+    """
+
+    @staticmethod
+    def simular(from_currency, to_currency, amount, user=None):
+        """
+        Simula una conversión monetaria entre dos divisas.
+
+        Args:
+            from_currency (str): Código ISO de la moneda de origen (ej. 'USD', 'PYG').
+            to_currency (str): Código ISO de la moneda de destino (ej. 'PYG', 'EUR').
+            amount (Decimal or float or int): Monto a convertir.
+            user (User, optional): Usuario solicitante para determinar categoría y beneficios (VIP, Corporativo).
+
+        Returns:
+            dict: Diccionario con el resultado detallado de la simulación.
+
+        Raises:
+            ValidationError: Si faltan campos obligatorios, el monto es inválido o no existe la tasa de cambio.
+        """
+        if not from_currency or not to_currency or amount is None:
+            raise ValidationError("Los campos moneda origen, moneda destino y monto son obligatorios.")
+
+        try:
+            amount_dec = Decimal(str(amount))
+        except (ValueError, TypeError):
+            raise ValidationError("El monto ingresado debe ser un valor numérico válido.")
+
+        if amount_dec <= Decimal('0.00'):
+            raise ValidationError("El monto de la simulación debe ser mayor a cero.")
+
+        benefit_percentage = Decimal('0.00')
+        category_name = 'Invitado / Minorista'
+
+        if user and user.is_authenticated:
+            try:
+                profile = user.profile
+                if profile.category == 'VIP':
+                    benefit_percentage = Decimal('2.00')
+                    category_name = 'VIP'
+                elif profile.category == 'CORPORATIVO':
+                    benefit_percentage = Decimal('4.00')
+                    category_name = 'Corporativo'
+                else:
+                    category_name = 'Minorista'
+            except Exception:
+                pass
+
+        factor = Decimal('1.00') - (benefit_percentage / Decimal('100.00'))
+
+        if from_currency == to_currency:
+            return {
+                'from_currency': from_currency,
+                'to_currency': to_currency,
+                'amount': amount_dec,
+                'converted_amount': amount_dec,
+                'applied_rate': Decimal('1.0000'),
+                'standard_rate': Decimal('1.0000'),
+                'operation_type': 'IDÉNTICA',
+                'benefit_percentage': benefit_percentage,
+                'category_name': category_name,
+            }
+
+        if from_currency == 'PYG':
+            try:
+                rate_obj = ExchangeRate.objects.get(currency_code=to_currency)
+            except ExchangeRate.DoesNotExist:
+                raise ValidationError(f"El sistema no cuenta con la tasa de cambio registrada para la divisa: {to_currency}")
+
+            standard_rate = rate_obj.sell_rate
+            if standard_rate <= 0:
+                raise ValidationError(f"La tasa de venta para {to_currency} no se encuentra disponible.")
+
+            custom_rate = (standard_rate * factor).quantize(Decimal('0.0001'))
+            converted_amount = (amount_dec / custom_rate).quantize(Decimal('0.01'))
+
+            return {
+                'from_currency': from_currency,
+                'to_currency': to_currency,
+                'amount': amount_dec,
+                'converted_amount': converted_amount,
+                'applied_rate': custom_rate,
+                'standard_rate': standard_rate,
+                'operation_type': 'COMPRA',
+                'benefit_percentage': benefit_percentage,
+                'category_name': category_name,
+            }
+
+        elif to_currency == 'PYG':
+            try:
+                rate_obj = ExchangeRate.objects.get(currency_code=from_currency)
+            except ExchangeRate.DoesNotExist:
+                raise ValidationError(f"El sistema no cuenta con la tasa de cambio registrada para la divisa: {from_currency}")
+
+            standard_rate = rate_obj.buy_rate
+            if standard_rate <= 0:
+                raise ValidationError(f"La tasa de compra para {from_currency} no se encuentra disponible.")
+
+            if benefit_percentage > 0:
+                custom_rate = (standard_rate / factor).quantize(Decimal('0.0001'))
+            else:
+                custom_rate = standard_rate
+
+            converted_amount = (amount_dec * custom_rate).quantize(Decimal('0.01'))
+
+            return {
+                'from_currency': from_currency,
+                'to_currency': to_currency,
+                'amount': amount_dec,
+                'converted_amount': converted_amount,
+                'applied_rate': custom_rate,
+                'standard_rate': standard_rate,
+                'operation_type': 'VENTA',
+                'benefit_percentage': benefit_percentage,
+                'category_name': category_name,
+            }
+
+        else:
+            try:
+                rate_from = ExchangeRate.objects.get(currency_code=from_currency)
+            except ExchangeRate.DoesNotExist:
+                raise ValidationError(f"El sistema no cuenta con la tasa de cambio registrada para la divisa: {from_currency}")
+
+            try:
+                rate_to = ExchangeRate.objects.get(currency_code=to_currency)
+            except ExchangeRate.DoesNotExist:
+                raise ValidationError(f"El sistema no cuenta con la tasa de cambio registrada para la divisa: {to_currency}")
+
+            std_buy = rate_from.buy_rate
+            std_sell = rate_to.sell_rate
+            if std_buy <= 0 or std_sell <= 0:
+                raise ValidationError("Tasas de cambio inválidas para la conversión cruzada.")
+
+            if benefit_percentage > 0:
+                custom_buy = (std_buy / factor).quantize(Decimal('0.0001'))
+                custom_sell = (std_sell * factor).quantize(Decimal('0.0001'))
+            else:
+                custom_buy = std_buy
+                custom_sell = std_sell
+
+            pyg_amount = amount_dec * custom_buy
+            converted_amount = (pyg_amount / custom_sell).quantize(Decimal('0.01'))
+            effective_rate = (custom_buy / custom_sell).quantize(Decimal('0.0004'))
+
+            return {
+                'from_currency': from_currency,
+                'to_currency': to_currency,
+                'amount': amount_dec,
+                'converted_amount': converted_amount,
+                'applied_rate': effective_rate,
+                'standard_rate': std_sell,
+                'operation_type': 'CRUZADA',
+                'benefit_percentage': benefit_percentage,
+                'category_name': category_name,
+            }
+
+
+def currency_simulator_view(request):
+    """
+    Vista web para el simulador de conversión de divisas (PSE-11).
+    Permite ingresar montos, seleccionar monedas de origen y destino, y visualizar cotizaciones exactas.
+    """
+    default_rates = [
+        ('USD', 'Dólar Estadounidense', Decimal('7300.0000'), Decimal('7450.0000')),
+        ('EUR', 'Euro', Decimal('7900.0000'), Decimal('8150.0000')),
+        ('BRL', 'Real Brasileño', Decimal('1350.0000'), Decimal('1450.0000')),
+        ('ARS', 'Peso Argentino', Decimal('7.5000'), Decimal('9.0000')),
+        ('PYG', 'Guaraní Paraguayo', Decimal('1.0000'), Decimal('1.0000')),
+    ]
+    for code, name, buy, sell in default_rates:
+        ExchangeRate.objects.get_or_create(
+            currency_code=code,
+            defaults={'currency_name': name, 'buy_rate': buy, 'sell_rate': sell}
+        )
+
+    currencies = ExchangeRate.objects.all().order_by('currency_code')
+    simulation_result = None
+    error_message = None
+
+    from_currency = request.GET.get('from_currency', 'PYG')
+    to_currency = request.GET.get('to_currency', 'USD')
+    amount_str = request.GET.get('amount', '100000')
+
+    if request.method == 'POST':
+        from_currency = request.POST.get('from_currency')
+        to_currency = request.POST.get('to_currency')
+        amount_str = request.POST.get('amount')
+
+        try:
+            if not from_currency or not to_currency or not amount_str:
+                raise ValidationError("Todos los campos (moneda origen, moneda destino y monto) son obligatorios.")
+            
+            simulation_result = SimuladorConversionService.simular(
+                from_currency=from_currency,
+                to_currency=to_currency,
+                amount=amount_str,
+                user=request.user
+            )
+        except ValidationError as e:
+            error_message = e.messages[0] if hasattr(e, 'messages') else str(e)
+        except Exception as e:
+            error_message = f"Error en la simulación: {str(e)}"
+    else:
+        if request.GET.get('amount'):
+            try:
+                simulation_result = SimuladorConversionService.simular(
+                    from_currency=from_currency,
+                    to_currency=to_currency,
+                    amount=amount_str,
+                    user=request.user
+                )
+            except ValidationError as e:
+                error_message = e.messages[0] if hasattr(e, 'messages') else str(e)
+            except Exception:
+                pass
+
+    user_profile = None
+    benefit_percentage = Decimal('0.00')
+    category_display = 'Invitado / Minorista'
+    if request.user.is_authenticated:
+        try:
+            user_profile = request.user.profile
+            if user_profile.category == 'VIP':
+                benefit_percentage = Decimal('2.00')
+                category_display = 'VIP'
+            elif user_profile.category == 'CORPORATIVO':
+                benefit_percentage = Decimal('4.00')
+                category_display = 'Corporativo'
+            else:
+                category_display = 'Minorista'
+        except Exception:
+            pass
+
+    rates = ExchangeRate.objects.all().order_by('id')
+    personalized_rates = []
+    for rate in rates:
+        if benefit_percentage > 0 and rate.currency_code != 'PYG':
+            factor = Decimal('1.00') - (benefit_percentage / Decimal('100.00'))
+            custom_sell = (rate.sell_rate * factor).quantize(Decimal('0.0001'))
+            custom_buy = (rate.buy_rate / factor).quantize(Decimal('0.0001'))
+        else:
+            custom_sell = rate.sell_rate
+            custom_buy = rate.buy_rate
+
+        personalized_rates.append({
+            'currency_code': rate.currency_code,
+            'currency_name': rate.currency_name,
+            'standard_buy': rate.buy_rate,
+            'standard_sell': rate.sell_rate,
+            'custom_buy': custom_buy,
+            'custom_sell': custom_sell,
+            'last_updated': rate.last_updated,
+        })
+
+    context = {
+        'currencies': currencies,
+        'rates': personalized_rates,
+        'from_currency': from_currency,
+        'to_currency': to_currency,
+        'amount': amount_str,
+        'simulation_result': simulation_result,
+        'error_message': error_message,
+        'user_profile': user_profile,
+        'benefit_percentage': benefit_percentage,
+        'category_display': category_display,
+        'now': timezone.now(),
+    }
+
+    return render(request, 'tasas_cambio/simulator.html', context)

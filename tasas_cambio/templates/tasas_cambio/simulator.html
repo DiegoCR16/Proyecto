@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simulador de Conversión y Tasas - Global Exchange</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>body { font-family: 'Inter', sans-serif; }</style>
+</head>
+<body class="bg-slate-50 min-h-screen text-slate-900 flex flex-col justify-between">
+    <!-- Navbar / Header matching Image 1 -->
+    <nav class="bg-slate-900 text-white shadow-md">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between h-16 items-center">
+                <div class="flex items-center space-x-3">
+                    <div class="w-10 h-10 bg-blue-800 rounded-xl flex items-center justify-center font-bold text-xl shadow">GX</div>
+                    <div>
+                        <span class="font-bold text-lg tracking-tight">Global Exchange</span>
+                        <span class="block text-xs text-slate-400">Sistema Financiero de Cambio</span>
+                    </div>
+                </div>
+                <div class="flex items-center space-x-6">
+                    <a href="/auth/dashboard/" class="text-slate-300 hover:text-white text-sm font-medium transition">Panel Principal</a>
+                    {% if user.is_authenticated %}
+                        <span class="text-sm text-slate-300">Usuario: <strong class="text-white">{{ request.user.username }}</strong></span>
+                        <a href="/auth/logout/" class="bg-red-600 hover:bg-red-700 text-white px-3.5 py-1.5 rounded-lg text-sm font-medium transition shadow-sm">Cerrar Sesión</a>
+                    {% else %}
+                        <a href="/auth/login/" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition shadow-sm">Iniciar Sesión</a>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 flex-grow w-full space-y-8">
+        
+        <!-- Hero Header & Benefit Badge -->
+        <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+            <div>
+                <div class="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-blue-100 text-blue-800 mb-2">
+                    <span class="w-2 h-2 mr-1.5 bg-blue-600 rounded-full animate-pulse"></span>
+                    Módulo Transaccional y Simulador
+                </div>
+                <h1 class="text-3xl font-bold text-slate-900 tracking-tight">Simulador de Conversión y Tasas Vigentes</h1>
+                <p class="text-slate-600 mt-1">Previsualice conversiones exactas y consulte sus tasas aplicables según su categoría.</p>
+            </div>
+
+            <!-- Back Button (Volver al Panel) matching reference image -->
+            <div class="flex justify-end mb-4">
+                <a href="/auth/dashboard/" class="inline-flex items-center bg-slate-900 hover:bg-slate-800 text-white px-4 py-2.5 rounded-xl text-sm font-medium shadow-sm transition">
+                    &larr; Volver al Panel
+                </a>
+            </div>
+
+            <!--<div class="bg-white border border-slate-200 p-4 rounded-xl shadow-sm flex items-center space-x-4">
+                <div class="w-10 h-10 rounded-full bg-green-100 text-green-700 flex items-center justify-center font-bold text-lg">
+                    %
+                </div>
+                <div>
+                    <span class="text-xs font-medium text-slate-500 uppercase tracking-wider">Categoría y Beneficio</span>
+                    <div class="flex items-center space-x-2 mt-0.5">
+                        <span class="font-bold text-slate-900 text-sm">{{ category_display }}</span>
+                        {% if benefit_percentage > 0 %}
+                            <span class="bg-green-600 text-white text-xs px-2.5 py-0.5 rounded-full font-semibold shadow-sm">
+                                Beneficio {{ benefit_percentage }}% Aplicado
+                            </span>
+                        {% else %}
+                            <span class="bg-slate-200 text-slate-700 text-xs px-2.5 py-0.5 rounded-full font-medium">
+                                Tarifas Estándar
+                            </span>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>-->
+        </div>
+
+        <!-- Error Banner Visual -->
+        {% if error_message %}
+        <div class="bg-red-50 border-l-4 border-red-600 p-4 rounded-xl shadow-sm flex items-start space-x-3">
+            <div class="flex-shrink-0 text-red-600 font-bold text-lg">⚠️</div>
+            <div>
+                <h3 class="text-sm font-bold text-red-800">Error en la Simulación</h3>
+                <p class="text-xs text-red-700 mt-1">{{ error_message }}</p>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Simulator Section (Form + Preview Panel) -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <!-- Form Card (2 cols) -->
+            <div class="bg-white p-6 md:p-8 rounded-2xl shadow-sm border border-slate-200 lg:col-span-2">
+                <h3 class="text-lg font-bold text-slate-900 mb-1">Calculadora de Conversión</h3>
+                <p class="text-xs text-slate-600 mb-6">Seleccione las divisas e ingrese el monto para calcular el valor exacto.</p>
+
+                <form method="POST" action="{% url 'tasas_cambio:simulator' %}" class="space-y-6">
+                    {% csrf_token %}
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-2">Monto a Convertir *</label>
+                        <input type="number" step="any" name="amount" id="amount" value="{{ amount|default:'100000' }}" required
+                            class="w-full px-4 py-3 border border-slate-300 rounded-xl text-lg font-mono focus:ring-2 focus:ring-blue-800 focus:outline-none transition">
+                    </div>
+
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-2">Moneda Origen *</label>
+                            <select name="from_currency" id="from_currency" required
+                                class="w-full px-4 py-3 border border-slate-300 rounded-xl text-sm font-medium focus:ring-2 focus:ring-blue-800 focus:outline-none transition bg-white">
+                                {% for c in currencies %}
+                                <option value="{{ c.currency_code }}" {% if from_currency == c.currency_code %}selected{% endif %}>
+                                    {{ c.currency_code }} - {{ c.currency_name }}
+                                </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-2">Moneda Destino *</label>
+                            <select name="to_currency" id="to_currency" required
+                                class="w-full px-4 py-3 border border-slate-300 rounded-xl text-sm font-medium focus:ring-2 focus:ring-blue-800 focus:outline-none transition bg-white">
+                                {% for c in currencies %}
+                                <option value="{{ c.currency_code }}" {% if to_currency == c.currency_code %}selected{% endif %}>
+                                    {{ c.currency_code }} - {{ c.currency_name }}
+                                </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="pt-2 flex items-center space-x-4">
+                        <button type="submit" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-6 rounded-xl shadow-md transition flex items-center justify-center space-x-2">
+                            <span>Simular Cotización</span>
+                        </button>
+                        <a href="{% url 'tasas_cambio:simulator' %}" class="bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium py-3 px-5 rounded-xl transition text-center">
+                            Limpiar
+                        </a>
+                    </div>
+                </form>
+            </div>
+
+            <!-- Preview Panel (1 col) -->
+            <div class="bg-slate-900 text-white p-6 rounded-2xl shadow-sm border border-slate-800 flex flex-col justify-between space-y-6">
+                <div>
+                    <h3 class="text-base font-bold text-white mb-3">Previsualización de Operación</h3>
+                    
+                    <div class="bg-slate-800/80 p-4 rounded-xl border border-slate-700 space-y-3">
+                        <div class="flex justify-between items-center text-xs text-slate-400">
+                            <span>Categoría Cliente:</span>
+                            <span class="text-white font-semibold">{{ category_display }}</span>
+                        </div>
+                        <div class="flex justify-between items-center text-xs text-slate-400">
+                            <span>Beneficio Aplicado:</span>
+                            <span class="text-green-400 font-semibold">{% if benefit_percentage > 0 %}{{ benefit_percentage }}%{% else %}Estándar (0%){% endif %}</span>
+                        </div>
+                        <div class="border-t border-slate-700 pt-3">
+                            <span class="text-xs text-slate-400 block mb-1">Resultado Estimado:</span>
+                            <div id="resultBox" class="text-2xl font-bold font-mono text-green-400">
+                                {% if simulation_result %}
+                                    {{ simulation_result.converted_amount|floatformat:2 }} {{ simulation_result.to_currency }}
+                                {% else %}
+                                    --
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+
+                    {% if simulation_result %}
+                    <div class="mt-4 space-y-2 text-xs text-slate-300">
+                        <p><strong>Tipo de Operación:</strong> {{ simulation_result.operation_type }}</p>
+                        <p><strong>Tasa Aplicada:</strong> ₲ {{ simulation_result.applied_rate|floatformat:4 }}</p>
+                        <p class="text-slate-400 italic mt-2">Cotización exacta generada conforme a las tasas vigentes.</p>
+                    </div>
+                    {% endif %}
+                </div>
+
+                <div class="border-t border-slate-800 pt-4">
+                    <span class="text-xs text-slate-400 block text-center">🔒 Operación respaldada por Global Exchange</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- User Transaction Rates Table -->
+        <div class="bg-white shadow-sm rounded-2xl border border-slate-200 overflow-hidden">
+            <div class="px-6 py-4 bg-slate-900 text-white flex justify-between items-center">
+                <h3 class="font-semibold text-base">Cotizaciones Autorizadas y Tus Tasas de Transacción</h3>
+                <span class="text-xs text-slate-400">Perfil: {{ category_display }}</span>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="min-w-full divide-y divide-slate-200 text-left">
+                    <thead class="bg-slate-50">
+                        <tr>
+                            <th class="px-6 py-3.5 text-xs font-semibold text-slate-600 uppercase tracking-wider">Divisa</th>
+                            <th class="px-6 py-3.5 text-xs font-semibold text-slate-600 uppercase tracking-wider">Compra Estándar (Gs)</th>
+                            <th class="px-6 py-3.5 text-xs font-semibold text-slate-600 uppercase tracking-wider">Venta Estándar (Gs)</th>
+                            {% if benefit_percentage > 0 %}
+                            <th class="px-6 py-3.5 text-xs font-semibold text-green-700 uppercase tracking-wider">Tu Tasa de Compra (Con Beneficio)</th>
+                            <th class="px-6 py-3.5 text-xs font-semibold text-blue-800 uppercase tracking-wider">Tu Tasa de Venta (Con Beneficio)</th>
+                            {% endif %}
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-200 bg-white">
+                        {% for r in rates %}
+                        <tr class="hover:bg-slate-50 transition duration-150">
+                            <td class="px-6 py-4 whitespace-nowrap">
+                                <div class="flex items-center space-x-3">
+                                    <div class="w-8 h-8 rounded-lg bg-blue-50 text-blue-800 font-bold flex items-center justify-center text-xs border border-blue-100">
+                                        {{ r.currency_code }}
+                                    </div>
+                                    <div>
+                                        <span class="font-bold text-slate-900 block">{{ r.currency_code }}</span>
+                                        <span class="text-xs text-slate-500">{{ r.currency_name }}</span>
+                                    </div>
+                                </div>
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap font-mono text-sm text-slate-700">
+                                ₲ {{ r.standard_buy|floatformat:4 }}
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap font-mono text-sm text-slate-700">
+                                ₲ {{ r.standard_sell|floatformat:4 }}
+                            </td>
+                            {% if benefit_percentage > 0 %}
+                            <td class="px-6 py-4 whitespace-nowrap font-mono text-sm font-semibold text-green-700">
+                                ₲ {{ r.custom_buy|floatformat:4 }}
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap font-mono text-sm font-semibold text-blue-800">
+                                ₲ {{ r.custom_sell|floatformat:4 }}
+                            </td>
+                            {% endif %}
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            <div class="px-6 py-3 bg-slate-50 border-t border-slate-200 text-xs text-slate-500">
+                {% if benefit_percentage > 0 %}
+                <span class="text-green-700 font-semibold">✨ Estás operando en categoría {{ category_display }}: se aplican tus tasas personalizadas con descuento del {{ benefit_percentage }}%.</span>
+                {% else %}
+                <span>💡 Estás operando como cliente Minorista: se aplican las cotizaciones estándar de compra y venta.</span>
+                {% endif %}
+            </div>
+        </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="bg-white border-t border-slate-200 py-6 text-center text-xs text-slate-500">
+        <p>&copy; 2026 Global Exchange - Ingeniería de Software 2 (FPUNA). Todos los derechos reservados.</p>
+    </footer>
+</body>
+</html>
