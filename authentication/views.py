@@ -414,6 +414,8 @@ def dashboard_redirect_view(request):
             'last_updated': rate.last_updated,
         })
 
+    user_mode = request.session.get('user_mode', False)
+
     context = {
         'profile': profile,
         'rates': personalized_rates,
@@ -431,9 +433,43 @@ def dashboard_redirect_view(request):
     elif profile.role and 'analista' in profile.role.name.lower():
         return render(request, 'authentication/analista_dashboard.html', context)
     elif profile.is_corporate or 'corporativo' in role_name:
+        if user_mode:
+            return render(request, 'authentication/user_dashboard.html', context)
         return render(request, 'authentication/corporate_dashboard.html', context)
     else:
+        if not has_client_mode or user_mode:
+            return render(request, 'authentication/user_dashboard.html', context)
         return render(request, 'authentication/client_dashboard.html', context)
+
+@login_required
+def switch_to_user_mode_view(request):
+    """
+    Permite al usuario cambiar a la interfaz de usuario regular (sin cliente).
+    """
+    ip = get_client_ip(request)
+    request.session['user_mode'] = True
+    AuditLog.objects.create(
+        user=request.user,
+        action="SWITCH_TO_USER_MODE",
+        ip_address=ip,
+        details=f"Usuario {request.user.username} cambió a la interfaz de usuario regular (sin cliente)."
+    )
+    return redirect('dashboard_redirect')
+
+@login_required
+def switch_to_client_mode_view(request):
+    """
+    Permite al usuario regresar a la interfaz de cliente.
+    """
+    ip = get_client_ip(request)
+    request.session['user_mode'] = False
+    AuditLog.objects.create(
+        user=request.user,
+        action="SWITCH_TO_CLIENT_MODE",
+        ip_address=ip,
+        details=f"Usuario {request.user.username} regresó a la interfaz de cliente."
+    )
+    return redirect('dashboard_redirect')
 
 def logout_view(request):
     """

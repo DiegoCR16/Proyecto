@@ -23,9 +23,10 @@ class AuthenticationPSE4Tests(TestCase):
         self.corp_user = User.objects.create_user(username="corpuser", password="password123")
         self.corp_profile = UserProfile.objects.create(user=self.corp_user, role=self.corporate_role, is_corporate=True)
 
-        # Usuario Individual
+        # Usuario Individual (con rol Cliente para pruebas de cliente por defecto)
+        self.client_role = Role.objects.create(name="Cliente", description="Rol de Cliente")
         self.ind_user = User.objects.create_user(username="induser", password="password123")
-        self.ind_profile = UserProfile.objects.create(user=self.ind_user, role=self.individual_role)
+        self.ind_profile = UserProfile.objects.create(user=self.ind_user, role=self.client_role)
 
     def test_mfa_requirement(self):
         """Verifica que admin y corporativos requieran MFA obligatorio."""
@@ -156,14 +157,14 @@ class AuthenticationPSE4Tests(TestCase):
         self.assertContains(dash_resp, "ANALISTA")
 
     def test_normal_user_solicitar_ser_cliente_ui(self):
-        """Verifica que un usuario normal sin rol ni grupo vea la opción 'Solicitar ser Cliente' y no 'Minorista'."""
+        """Verifica que un usuario normal sin rol ni grupo vea la opción 'Solicitar ser Cliente'."""
         plain_user = User.objects.create_user(username="solicitante", password="password123")
         UserProfile.objects.create(user=plain_user, role=None)
         self.client.login(username='solicitante', password='password123')
         response = self.client.get('/auth/dashboard/')
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Solicitar ser Cliente")
-        self.assertContains(response, "Usuario Regular (Sin Grupo de Cliente)")
+        self.assertContains(response, "Panel de Usuario Regular")
 
     def test_user_in_other_group_still_sees_solicitar_cliente(self):
         """Verifica que un usuario perteneciente al grupo de otro usuario pero sin grupo propio siga viendo 'Solicitar ser Cliente'."""
@@ -216,3 +217,31 @@ class AuthenticationPSE4Tests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertTemplateUsed(response, 'authentication/analista_dashboard.html')
         self.assertContains(response, "Panel de Analista de Operaciones")
+
+    def test_user_without_client_interface_render(self):
+        """Verifica la interfaz para el usuario sin cliente (user_dashboard.html) sin categoría de cliente."""
+        self.client.login(username='induser', password='password123')
+        resp_mode = self.client.get('/auth/mode/user/')
+        self.assertRedirects(resp_mode, '/auth/dashboard/', fetch_redirect_response=False)
+        
+        response = self.client.get('/auth/dashboard/')
+        self.assertEqual(response.status_code, 200)
+        self.assertTemplateUsed(response, 'authentication/user_dashboard.html')
+        self.assertContains(response, "Panel de Usuario Regular")
+        self.assertNotContains(response, "Categoría Actual")
+        self.assertNotContains(response, "Minorista")
+        self.assertNotContains(response, "Corporativo")
+        self.assertNotContains(response, "VIP")
+
+    def test_switch_between_client_and_user_mode(self):
+        """Verifica el cambio entre modo cliente y modo usuario sin cliente para solicitar ser cliente."""
+        self.client.login(username='induser', password='password123')
+        self.client.get('/auth/mode/user/')
+        resp_user = self.client.get('/auth/dashboard/')
+        self.assertTemplateUsed(resp_user, 'authentication/user_dashboard.html')
+        self.assertContains(resp_user, "Solicitar ser Cliente")
+
+        resp_client_mode = self.client.get('/auth/mode/client/')
+        self.assertRedirects(resp_client_mode, '/auth/dashboard/', fetch_redirect_response=False)
+        resp_client = self.client.get('/auth/dashboard/')
+        self.assertTemplateUsed(resp_client, 'authentication/client_dashboard.html')

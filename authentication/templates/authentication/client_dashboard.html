@@ -48,6 +48,11 @@
                         </select>
                     </div>
                     {% endif %}
+                    <div class="flex items-center space-x-2">
+                        <a href="{% url 'switch_to_user_mode' %}" class="bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs px-3 py-1.5 rounded-lg border border-slate-700 font-medium transition">
+                            Modo Usuario
+                        </a>
+                    </div>
                     <span class="text-sm text-slate-300">Usuario: <strong class="text-white">{{ request.user.username }}</strong></span>
                     <a href="{% url 'logout' %}" class="bg-red-600 hover:bg-red-700 text-white px-3.5 py-1.5 rounded-lg text-sm font-medium transition duration-200">
                         Cerrar Sesión
