@@ -116,9 +116,7 @@ class ParametrizacionDivisasMetodosPSE25Tests(TestCase):
             'action': 'add_currency',
             'currency_code': 'CLP',
             'currency_name': 'Peso Chileno',
-            'currency_symbol': '$',
-            'buy_rate': '8.5000',
-            'sell_rate': '9.2000'
+            'currency_symbol': '$'
         })
         self.assertEqual(resp_curr.status_code, 200)
         self.assertTrue(ExchangeRate.objects.filter(currency_code='CLP').exists())

@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gestor y Cotizaciones - Global Exchange</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>body { font-family: 'Inter', sans-serif; }</style>
+</head>
+<body class="bg-slate-50 min-h-screen text-slate-900 flex flex-col justify-between">
+    <!-- Navbar -->
+    <nav class="bg-slate-900 text-white shadow-md">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between h-16 items-center">
+                <div class="flex items-center space-x-3">
+                    <div class="w-10 h-10 bg-blue-800 rounded-xl flex items-center justify-center font-bold text-xl shadow">GX</div>
+                    <div>
+                        <span class="font-bold text-lg tracking-tight">Global Exchange</span>
+                    </div>
+                </div>
+                <div class="flex items-center space-x-6">
+                    <a href="/auth/dashboard/" class="text-slate-300 hover:text-white text-sm font-medium transition">Panel Administrativo</a>
+                    {% if user.is_authenticated %}
+                        <span class="text-sm text-slate-300">Usuario: <strong class="text-white">{{ request.user.username }}</strong></span>
+                        <a href="{% url 'logout' %}" class="bg-red-600 hover:bg-red-700 text-white px-3.5 py-1.5 rounded-lg text-sm font-medium transition shadow-sm">Cerrar Sesión</a>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 flex-grow w-full space-y-12">
+        
+        <!-- Header & Back Button -->
+        <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+            <div>
+                <h1 class="text-3xl font-bold text-slate-900 tracking-tight">Gestor y Cotizaciones de Divisas</h1>
+                <p class="text-slate-600 mt-1">Administración de tasas de cambio vigentes en tiempo real y trazabilidad histórica.</p>
+            </div>
+            <div>
+                <a href="/auth/dashboard/" class="inline-flex items-center bg-slate-900 hover:bg-slate-800 text-white px-4 py-2.5 rounded-xl text-sm font-medium shadow-sm transition">
+                    &larr; Volver al Panel
+                </a>
+            </div>
+        </div>
+
+        <!-- Success Message -->
+        {% if success_message %}
+        <div class="bg-green-50 border border-green-200 text-green-800 px-6 py-4 rounded-2xl text-sm font-medium shadow-sm flex items-center space-x-3">
+            <span class="text-green-600 font-bold text-lg">&#10003;</span>
+            <span>{{ success_message }}</span>
+        </div>
+        {% endif %}
+
+        <!-- Error Message -->
+        {% if error_message %}
+        <div class="bg-red-50 border border-red-200 text-red-800 px-6 py-4 rounded-2xl text-sm font-medium shadow-sm flex items-center space-x-3">
+            <span class="text-red-600 font-bold text-lg">&#9888;</span>
+            <span>{{ error_message }}</span>
+        </div>
+        {% endif %}
+
+        <!-- ================= SECTION 1: LIVE RATES MANAGER ================= -->
+        <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+            <div class="px-6 py-4 bg-slate-900 text-white flex justify-between items-center">
+                <h3 class="font-semibold text-base">Módulo Gestor de Cotizaciones en Tiempo Real</h3>
+                <span class="text-xs text-slate-400">Actualización Instantánea de Turno</span>
+            </div>
+            <div class="p-6">
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {% for rate in currencies %}
+                    <div class="border border-slate-200 rounded-2xl p-5 bg-slate-50/50 flex flex-col justify-between hover:shadow-md transition">
+                        <div>
+                            <div class="flex items-center justify-between mb-3">
+                                <div class="flex items-center space-x-2">
+                                    <span class="font-bold font-mono text-lg text-slate-900">{{ rate.currency_code }}</span>
+                                    <span class="px-2 py-0.5 bg-blue-100 text-blue-800 rounded font-mono text-xs">{{ rate.symbol }}</span>
+                                </div>
+                                <span class="text-[10px] text-slate-500 font-medium">Actualizado: {{ rate.last_updated|date:"d/m/Y H:i" }}</span>
+                            </div>
+                            <p class="text-xs text-slate-600 mb-4">{{ rate.currency_name }}</p>
+
+                            <form method="POST" class="space-y-3">
+                                {% csrf_token %}
+                                <input type="hidden" name="action" value="update_live_rate">
+                                <input type="hidden" name="currency_code" value="{{ rate.currency_code }}">
+                                
+                                <div class="grid grid-cols-2 gap-2">
+                                    <div>
+                                        <label class="block text-[10px] font-semibold text-slate-600 uppercase tracking-wider mb-1">Compra (Gs)</label>
+                                        <input type="number" step="any" name="buy_rate" value="{{ rate.buy_rate }}" required
+                                            class="w-full px-3 py-2 border border-slate-300 rounded-xl font-mono text-sm focus:ring-2 focus:ring-blue-800 focus:outline-none">
+                                    </div>
+                                    <div>
+                                        <label class="block text-[10px] font-semibold text-slate-600 uppercase tracking-wider mb-1">Venta (Gs)</label>
+                                        <input type="number" step="any" name="sell_rate" value="{{ rate.sell_rate }}" required
+                                            class="w-full px-3 py-2 border border-slate-300 rounded-xl font-mono text-sm focus:ring-2 focus:ring-blue-800 focus:outline-none">
+                                    </div>
+                                </div>
+                                <button type="submit" class="w-full mt-2 bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-xl text-xs font-semibold shadow transition flex items-center justify-center space-x-1">
+                                    <span>Actualizar en Tiempo Real</span>
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+
+        <!-- ================= SECTION 2: HISTORICAL AUDIT & CRUD ================= -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            
+            <!-- Add / Create Historical Rate Form -->
+            <div class="lg:col-span-1 bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
+                <div class="px-6 py-4 bg-slate-900 text-white">
+                    <h3 class="font-semibold text-base">Registrar Cotización Histórica</h3>
+                    <p class="text-xs text-slate-400 mt-0.5">Crear o corregir valor a fecha pasada</p>
+                </div>
+                <form method="POST" class="p-6 space-y-4 flex-grow flex flex-col justify-between">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="add_historical_rate">
+                    
+                    <div class="space-y-4">
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">Divisa</label>
+                            <select name="history_currency_code" required
+                                class="w-full px-3.5 py-2.5 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-blue-800 focus:outline-none font-mono">
+                                {% for r in currencies %}
+                                <option value="{{ r.currency_code }}">{{ r.currency_code }} - {{ r.currency_name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">Tasa Compra (Gs)</label>
+                            <input type="number" step="any" name="history_buy_rate" placeholder="ej. 7300.00" required
+                                class="w-full px-3.5 py-2.5 border border-slate-300 rounded-xl font-mono text-sm focus:ring-2 focus:ring-blue-800 focus:outline-none">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">Tasa Venta (Gs)</label>
+                            <input type="number" step="any" name="history_sell_rate" placeholder="ej. 7450.00" required
+                                class="w-full px-3.5 py-2.5 border border-slate-300 rounded-xl font-mono text-sm focus:ring-2 focus:ring-blue-800 focus:outline-none">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">Fecha y Hora (Timestamp)</label>
+                            <input type="datetime-local" name="history_timestamp" required
+                                class="w-full px-3.5 py-2.5 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-blue-800 focus:outline-none">
+                        </div>
+                    </div>
+
+                    <div class="pt-4">
+                        <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-xl text-sm font-semibold shadow-md transition flex items-center justify-center space-x-2">
+                            <span>Crear Registro Histórico</span>
+                        </button>
+                    </div>
+                </form>
+            </div>
+
+            <!-- Historical Audit Records Table & Filter -->
+            <div class="lg:col-span-2 bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
+                <div class="px-6 py-4 bg-slate-900 text-white flex flex-col sm:flex-row justify-between items-center gap-3">
+                    <h3 class="font-semibold text-base">Historial y Trazabilidad de Cotizaciones</h3>
+                    
+                    <!-- Filter form -->
+                    <form method="GET" class="flex items-center space-x-2">
+                        <select name="filter_currency" onchange="this.form.submit()"
+                            class="bg-slate-800 text-white text-xs px-3 py-1.5 rounded-lg border border-slate-700 font-mono focus:outline-none">
+                            <option value="">Todas las Divisas</option>
+                            {% for r in currencies %}
+                            <option value="{{ r.currency_code }}" {% if filter_currency == r.currency_code %}selected{% endif %}>{{ r.currency_code }}</option>
+                            {% endfor %}
+                        </select>
+                    </form>
+                </div>
+
+                <div class="overflow-x-auto flex-grow max-h-[500px]">
+                    <table class="min-w-full divide-y divide-slate-200 text-left">
+                        <thead class="bg-slate-50 sticky top-0">
+                            <tr>
+                                <th class="px-4 py-3.5 text-xs font-semibold text-slate-600 uppercase tracking-wider">Fecha / Hora</th>
+                                <th class="px-4 py-3.5 text-xs font-semibold text-slate-600 uppercase tracking-wider">Divisa</th>
+                                <th class="px-4 py-3.5 text-xs font-semibold text-slate-600 uppercase tracking-wider">Compra (Gs)</th>
+                                <th class="px-4 py-3.5 text-xs font-semibold text-slate-600 uppercase tracking-wider">Venta (Gs)</th>
+                                <th class="px-4 py-3.5 text-xs font-semibold text-slate-600 uppercase tracking-wider text-right">Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-200 bg-white text-sm">
+                            {% for record in history_records %}
+                            <tr class="hover:bg-slate-50 transition">
+                                <td class="px-4 py-3 whitespace-nowrap font-mono text-xs text-slate-600">
+                                    {{ record.timestamp|date:"d/m/Y H:i:s" }}
+                                </td>
+                                <td class="px-4 py-3 whitespace-nowrap font-mono font-bold text-slate-900">
+                                    {{ record.currency_code }}
+                                </td>
+                                <td class="px-4 py-3 whitespace-nowrap font-mono text-slate-700">
+                                    ₲ {{ record.buy_rate }}
+                                </td>
+                                <td class="px-4 py-3 whitespace-nowrap font-mono text-slate-700">
+                                    ₲ {{ record.sell_rate }}
+                                </td>
+                                <td class="px-4 py-3 whitespace-nowrap text-right text-xs font-medium space-x-1">
+                                    <button onclick="openEditModal('{{ record.id }}', '{{ record.currency_code }}', '{{ record.buy_rate }}', '{{ record.sell_rate }}', '{{ record.timestamp|date:'Y-m-d\TH:i' }}')"
+                                        class="text-blue-600 hover:text-blue-900 bg-blue-50 hover:bg-blue-100 px-2.5 py-1 rounded-lg font-semibold transition">
+                                        Editar
+                                    </button>
+                                    <form method="POST" class="inline">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="action" value="delete_historical_rate">
+                                        <input type="hidden" name="history_id" value="{{ record.id }}">
+                                        <button type="submit" onclick="return confirm('¿Eliminar registro histórico #{{ record.id }}?')"
+                                            class="text-red-600 hover:text-red-900 bg-red-50 hover:bg-red-100 px-2.5 py-1 rounded-lg font-semibold transition">
+                                            Eliminar
+                                        </button>
+                                    </form>
+                                </td>
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="5" class="px-6 py-8 text-center text-slate-500 text-sm">
+                                    No se encontraron registros históricos de cotizaciones.
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+        </div>
+    </main>
+
+    <!-- Modal Editar Historial -->
+    <div id="editModal" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm hidden items-center justify-center p-4 z-50">
+        <div class="bg-white rounded-2xl shadow-xl max-w-md w-full overflow-hidden border border-slate-200">
+            <div class="px-6 py-4 bg-slate-900 text-white flex justify-between items-center">
+                <h3 class="font-semibold text-base">Editar Registro Histórico</h3>
+                <button onclick="closeEditModal()" class="text-slate-400 hover:text-white font-bold text-lg">&times;</button>
+            </div>
+            <form method="POST" class="p-6 space-y-4">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="edit_historical_rate">
+                <input type="hidden" name="history_id" id="edit_history_id">
+                
+                <div>
+                    <label class="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">Divisa</label>
+                    <input type="text" id="edit_currency_code" disabled
+                        class="w-full px-3.5 py-2.5 bg-slate-100 border border-slate-300 rounded-xl text-sm font-mono text-slate-600">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">Tasa Compra (Gs)</label>
+                    <input type="number" step="any" name="history_buy_rate" id="edit_buy_rate" required
+                        class="w-full px-3.5 py-2.5 border border-slate-300 rounded-xl font-mono text-sm focus:ring-2 focus:ring-blue-800 focus:outline-none">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">Tasa Venta (Gs)</label>
+                    <input type="number" step="any" name="history_sell_rate" id="edit_sell_rate" required
+                        class="w-full px-3.5 py-2.5 border border-slate-300 rounded-xl font-mono text-sm focus:ring-2 focus:ring-blue-800 focus:outline-none">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">Fecha y Hora (Timestamp)</label>
+                    <input type="datetime-local" name="history_timestamp" id="edit_timestamp" required
+                        class="w-full px-3.5 py-2.5 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-blue-800 focus:outline-none">
+                </div>
+
+                <div class="pt-2 flex space-x-3">
+                    <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded-xl text-sm font-semibold shadow transition">
+                        Guardar Cambios
+                    </button>
+                    <button type="button" onclick="closeEditModal()" class="w-full bg-slate-200 hover:bg-slate-300 text-slate-700 py-2.5 rounded-xl text-sm font-semibold transition">
+                        Cancelar
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <footer class="bg-white border-t border-slate-200 py-6 text-center text-xs text-slate-500">
+        <p>&copy; 2026 Global Exchange - Ingeniería de Software 2 (FPUNA). Todos los derechos reservados.</p>
+    </footer>
+
+    <script>
+        function openEditModal(id, code, buy, sell, timestamp) {
+            document.getElementById('edit_history_id').value = id;
+            document.getElementById('edit_currency_code').value = code;
+            document.getElementById('edit_buy_rate').value = buy;
+            document.getElementById('edit_sell_rate').value = sell;
+            document.getElementById('edit_timestamp').value = timestamp;
+            document.getElementById('editModal').classList.remove('hidden');
+            document.getElementById('editModal').classList.add('flex');
+        }
+
+        function closeEditModal() {
+            document.getElementById('editModal').classList.remove('flex');
+            document.getElementById('editModal').classList.add('hidden');
+        }
+    </script>
+</body>
+</html>

@@ -681,26 +681,24 @@ def currency_payment_config_view(request):
                 code = request.POST.get('currency_code', '').strip().upper()
                 name = request.POST.get('currency_name', '').strip()
                 symbol = request.POST.get('currency_symbol', '').strip()
-                buy_str = request.POST.get('buy_rate', '').strip()
-                sell_str = request.POST.get('sell_rate', '').strip()
 
-                if not code or not name or not symbol or not buy_str or not sell_str:
-                    raise ValidationError("Todos los campos de la divisa (código, nombre, símbolo, compra y venta) son obligatorios.")
-                
-                buy_val = Decimal(buy_str)
-                sell_val = Decimal(sell_str)
-                if buy_val <= 0 or sell_val <= 0:
-                    raise ValidationError("Las tasas de compra y venta deben ser mayores a cero.")
+                if not code or not name or not symbol:
+                    raise ValidationError("Todos los campos de la divisa (código, nombre y símbolo) son obligatorios.")
 
-                ExchangeRate.objects.update_or_create(
+                rate_obj, created = ExchangeRate.objects.get_or_create(
                     currency_code=code,
                     defaults={
                         'currency_name': name,
                         'symbol': symbol,
-                        'buy_rate': buy_val,
-                        'sell_rate': sell_val
+                        'buy_rate': Decimal('0.0000'),
+                        'sell_rate': Decimal('0.0000')
                     }
                 )
+                if not created:
+                    rate_obj.currency_name = name
+                    rate_obj.symbol = symbol
+                    rate_obj.save()
+
                 success_message = f"Divisa {code} ({name}) guardada / actualizada exitosamente."
 
             elif action == 'delete_currency':
@@ -757,3 +755,132 @@ def currency_payment_config_view(request):
         'now': timezone.now(),
     }
     return render(request, 'tasas_cambio/currency_payment_config.html', context)
+
+
+@login_required
+def rates_manager_view(request):
+    """
+    Vista de administración y operador para el Gestor y CRUD de Cotizaciones de Divisas (PSE-30).
+    
+    Permite:
+    1. Actualizar en tiempo real los precios de compra y venta de cualquier divisa, registrando
+       automáticamente el cambio en el historial de trazabilidad (ExchangeRateHistory).
+    2. Crear nuevos registros históricos de cotización a una fecha y hora dadas.
+    3. Editar y eliminar errores de carga en cotizaciones históricas pasadas.
+    
+    Args:
+        request (HttpRequest): Solicitud HTTP del usuario administrador u operador.
+        
+    Returns:
+        HttpResponse: Página renderizada con el panel Gestor de Cotizaciones e Historial.
+    """
+    profile, _ = UserProfile.objects.get_or_create(user=request.user)
+    if not (request.user.is_superuser or (profile.role and profile.role.name.lower() in ['admin', 'administrador', 'operador', 'cajero'])):
+        return redirect('tasas_cambio:rates_board')
+
+    success_message = None
+    error_message = None
+
+    if request.method == 'POST':
+        action = request.POST.get('action')
+        try:
+            if action == 'update_live_rate':
+                code = request.POST.get('currency_code', '').strip().upper()
+                buy_str = request.POST.get('buy_rate', '').strip()
+                sell_str = request.POST.get('sell_rate', '').strip()
+
+                if not code or not buy_str or not sell_str:
+                    raise ValidationError("Código de divisa, tasa de compra y tasa de venta son obligatorios.")
+                
+                buy_val = Decimal(buy_str)
+                sell_val = Decimal(sell_str)
+                if buy_val <= 0 or sell_val <= 0:
+                    raise ValidationError("Las tasas de compra y venta deben ser mayores a cero.")
+
+                rate_obj, created = ExchangeRate.objects.get_or_create(currency_code=code)
+                rate_obj.buy_rate = buy_val
+                rate_obj.sell_rate = sell_val
+                rate_obj.save()
+
+                ExchangeRateHistory.objects.create(
+                    currency_code=code,
+                    buy_rate=buy_val,
+                    sell_rate=sell_val,
+                    timestamp=timezone.now()
+                )
+                success_message = f"Cotización en tiempo real para {code} actualizada exitosamente y registrada en el historial."
+
+            elif action == 'add_historical_rate':
+                code = request.POST.get('history_currency_code', '').strip().upper()
+                buy_str = request.POST.get('history_buy_rate', '').strip()
+                sell_str = request.POST.get('history_sell_rate', '').strip()
+                timestamp_str = request.POST.get('history_timestamp', '').strip()
+
+                if not code or not buy_str or not sell_str or not timestamp_str:
+                    raise ValidationError("Todos los campos del registro histórico son obligatorios.")
+
+                buy_val = Decimal(buy_str)
+                sell_val = Decimal(sell_str)
+                if buy_val <= 0 or sell_val <= 0:
+                    raise ValidationError("Las tasas históricas deben ser mayores a cero.")
+
+                dt = timezone.datetime.fromisoformat(timestamp_str)
+                if timezone.is_naive(dt):
+                    dt = timezone.make_aware(dt)
+
+                ExchangeRateHistory.objects.create(
+                    currency_code=code,
+                    buy_rate=buy_val,
+                    sell_rate=sell_val,
+                    timestamp=dt
+                )
+                success_message = f"Registro histórico para {code} creado exitosamente."
+
+            elif action == 'edit_historical_rate':
+                hist_id = request.POST.get('history_id')
+                buy_str = request.POST.get('history_buy_rate', '').strip()
+                sell_str = request.POST.get('history_sell_rate', '').strip()
+                timestamp_str = request.POST.get('history_timestamp', '').strip()
+
+                if not hist_id or not buy_str or not sell_str or not timestamp_str:
+                    raise ValidationError("Faltan datos requeridos para la edición histórica.")
+
+                hist_record = ExchangeRateHistory.objects.get(id=hist_id)
+                buy_val = Decimal(buy_str)
+                sell_val = Decimal(sell_str)
+                dt = timezone.datetime.fromisoformat(timestamp_str)
+                if timezone.is_naive(dt):
+                    dt = timezone.make_aware(dt)
+
+                hist_record.buy_rate = buy_val
+                hist_record.sell_rate = sell_val
+                hist_record.timestamp = dt
+                hist_record.save()
+                success_message = f"Registro histórico #{hist_id} actualizado correctamente."
+
+            elif action == 'delete_historical_rate':
+                hist_id = request.POST.get('history_id')
+                ExchangeRateHistory.objects.filter(id=hist_id).delete()
+                success_message = f"Registro histórico #{hist_id} eliminado exitosamente."
+
+        except ValidationError as e:
+            error_message = e.messages[0] if hasattr(e, 'messages') else str(e)
+        except Exception as e:
+            error_message = f"Error en la operación: {str(e)}"
+
+    currencies = ExchangeRate.objects.all().order_by('currency_code')
+    filter_currency = request.GET.get('filter_currency', '').strip().upper()
+    
+    history_qs = ExchangeRateHistory.objects.all().order_by('-timestamp')
+    if filter_currency:
+        history_qs = history_qs.filter(currency_code=filter_currency)
+
+    context = {
+        'currencies': currencies,
+        'history_records': history_qs[:100],
+        'filter_currency': filter_currency,
+        'success_message': success_message,
+        'error_message': error_message,
+        'now': timezone.now(),
+    }
+    return render(request, 'tasas_cambio/rates_manager.html', context)
