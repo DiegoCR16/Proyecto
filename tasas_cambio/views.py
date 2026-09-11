@@ -1,12 +1,47 @@
 # -*- coding: utf-8 -*-
-from django.shortcuts import render
+from django.shortcuts import render, redirect
 from django.http import JsonResponse
 from django.utils import timezone
 from django.core.exceptions import ValidationError
+from django.contrib.auth.decorators import login_required
 from decimal import Decimal
 from datetime import timedelta
 import random
-from .models import ExchangeRate, ExchangeRateHistory
+from authentication.models import UserProfile
+from .models import ExchangeRate, ExchangeRateHistory, ClientBenefitRule
+
+def ensure_default_benefit_rules():
+    """
+    Asegura que existan las reglas predeterminadas de beneficios por categoría en la base de datos (PSE-29).
+    """
+    ClientBenefitRule.objects.get_or_create(
+        category_code='MINORISTA',
+        defaults={
+            'category_name': 'Minorista',
+            'min_operation_amount': Decimal('0.00'),
+            'benefit_percentage': Decimal('0.00'),
+            'description': 'Clientes individuales de bajo volumen (sin beneficio / condiciones estándar).'
+        }
+    )
+    ClientBenefitRule.objects.get_or_create(
+        category_code='VIP',
+        defaults={
+            'category_name': 'VIP',
+            'min_operation_amount': Decimal('0.00'),
+            'benefit_percentage': Decimal('2.00'),
+            'description': 'Clientes con operaciones superiores a 50.000.000 PYG (2% de beneficio en compra de divisas).'
+        }
+    )
+    ClientBenefitRule.objects.get_or_create(
+        category_code='CORPORATIVO',
+        defaults={
+            'category_name': 'Corporativo',
+            'min_operation_amount': Decimal('0.00'),
+            'benefit_percentage': Decimal('4.00'),
+            'description': 'Clientes con operaciones superiores a 100.000.000 PYG (4% de beneficio en compra de divisas).'
+        }
+    )
+
 
 def public_rates_view(request):
     """
@@ -40,6 +75,7 @@ def public_rates_view(request):
             }
         )
 
+    ensure_default_benefit_rules()
     rates = ExchangeRate.objects.all().order_by('id')
 
     user_profile = None
@@ -51,16 +87,11 @@ def public_rates_view(request):
         try:
             user_profile = request.user.profile
             category = user_profile.category
-            if category == 'VIP':
-                benefit_percentage = Decimal('2.00')
-                benefit_label = '2% (VIP)'
-                category_display = 'VIP'
-            elif category == 'CORPORATIVO':
-                benefit_percentage = Decimal('4.00')
-                benefit_label = '4% (Corporativo)'
-                category_display = 'Corporativo'
-            else:
-                category_display = 'Minorista'
+            rule = ClientBenefitRule.objects.filter(category_code=category).first()
+            if rule:
+                benefit_percentage = rule.benefit_percentage
+                benefit_label = f"{benefit_percentage}% ({rule.category_name})"
+                category_display = rule.category_name
         except Exception:
             pass
 
@@ -99,14 +130,14 @@ def public_rates_view(request):
 
 class SimuladorConversionService:
     """
-    Servicio de dominio para la simulación de conversión de divisas (PSE-11).
-    Calcula conversiones exactas aplicando tipos de cambio vigentes y beneficios por categoría de cliente.
+    Servicio de dominio para la simulación de conversión de divisas (PSE-11 / PSE-29).
+    Calcula conversiones exactas aplicando tipos de cambio vigentes y beneficios dinámicos por categoría y umbrales.
     """
 
     @staticmethod
     def simular(from_currency, to_currency, amount, user=None):
         """
-        Simula una conversión monetaria entre dos divisas.
+        Simula una conversión monetaria entre dos divisas aplicando reglas de beneficio parametrizables.
 
         Args:
             from_currency (str): Código ISO de la moneda de origen (ej. 'USD', 'PYG').
@@ -115,7 +146,7 @@ class SimuladorConversionService:
             user (User, optional): Usuario solicitante para determinar categoría y beneficios (VIP, Corporativo).
 
         Returns:
-            dict: Diccionario con el resultado detallado de la simulación.
+            dict: Diccionario con el resultado detallado de la simulación y desglose transparente.
 
         Raises:
             ValidationError: Si faltan campos obligatorios, el monto es inválido o no existe la tasa de cambio.
@@ -131,24 +162,41 @@ class SimuladorConversionService:
         if amount_dec <= Decimal('0.00'):
             raise ValidationError("El monto de la simulación debe ser mayor a cero.")
 
+        ensure_default_benefit_rules()
         benefit_percentage = Decimal('0.00')
         category_name = 'Invitado / Minorista'
+        threshold_met = False
+        min_operation_amount = Decimal('0.00')
 
         if user and user.is_authenticated:
             try:
                 profile = user.profile
-                if profile.category == 'VIP':
-                    benefit_percentage = Decimal('2.00')
-                    category_name = 'VIP'
-                elif profile.category == 'CORPORATIVO':
-                    benefit_percentage = Decimal('4.00')
-                    category_name = 'Corporativo'
-                else:
-                    category_name = 'Minorista'
+                cat_code = profile.category
+                rule = ClientBenefitRule.objects.filter(category_code=cat_code).first()
+                if rule:
+                    category_name = rule.category_name
+                    min_operation_amount = rule.min_operation_amount
+
+                    # Evaluar equivalencia en PYG para umbral transaccional
+                    eval_amount = amount_dec
+                    if from_currency != 'PYG':
+                        try:
+                            r_from = ExchangeRate.objects.get(currency_code=from_currency)
+                            eval_amount = amount_dec * r_from.buy_rate
+                        except Exception:
+                            pass
+
+                    if eval_amount >= min_operation_amount:
+                        benefit_percentage = rule.benefit_percentage
+                        threshold_met = True
+                    else:
+                        benefit_percentage = Decimal('0.00')
+                        threshold_met = False
             except Exception:
                 pass
 
         factor = Decimal('1.00') - (benefit_percentage / Decimal('100.00'))
+        transparent_breakdown = f"Categoría: {category_name} | Umbral Mínimo: ₲ {min_operation_amount:,.2f} | Beneficio: {benefit_percentage}% {'(Aplicado)' if threshold_met else '(No alcanza umbral)'}"
 
         if from_currency == to_currency:
             return {
@@ -161,6 +209,9 @@ class SimuladorConversionService:
                 'operation_type': 'IDÉNTICA',
                 'benefit_percentage': benefit_percentage,
                 'category_name': category_name,
+                'threshold_met': threshold_met,
+                'min_operation_amount': min_operation_amount,
+                'transparent_breakdown': transparent_breakdown,
             }
 
         if from_currency == 'PYG':
@@ -186,6 +237,9 @@ class SimuladorConversionService:
                 'operation_type': 'COMPRA',
                 'benefit_percentage': benefit_percentage,
                 'category_name': category_name,
+                'threshold_met': threshold_met,
+                'min_operation_amount': min_operation_amount,
+                'transparent_breakdown': transparent_breakdown,
             }
 
         elif to_currency == 'PYG':
@@ -215,6 +269,9 @@ class SimuladorConversionService:
                 'operation_type': 'VENTA',
                 'benefit_percentage': benefit_percentage,
                 'category_name': category_name,
+                'threshold_met': threshold_met,
+                'min_operation_amount': min_operation_amount,
+                'transparent_breakdown': transparent_breakdown,
             }
 
         else:
@@ -254,6 +311,9 @@ class SimuladorConversionService:
                 'operation_type': 'CRUZADA',
                 'benefit_percentage': benefit_percentage,
                 'category_name': category_name,
+                'threshold_met': threshold_met,
+                'min_operation_amount': min_operation_amount,
+                'transparent_breakdown': transparent_breakdown,
             }
 
 
@@ -316,20 +376,17 @@ def currency_simulator_view(request):
             except Exception:
                 pass
 
+    ensure_default_benefit_rules()
     user_profile = None
     benefit_percentage = Decimal('0.00')
     category_display = 'Invitado / Minorista'
     if request.user.is_authenticated:
         try:
             user_profile = request.user.profile
-            if user_profile.category == 'VIP':
-                benefit_percentage = Decimal('2.00')
-                category_display = 'VIP'
-            elif user_profile.category == 'CORPORATIVO':
-                benefit_percentage = Decimal('4.00')
-                category_display = 'Corporativo'
-            else:
-                category_display = 'Minorista'
+            rule = ClientBenefitRule.objects.filter(category_code=user_profile.category).first()
+            if rule:
+                benefit_percentage = rule.benefit_percentage
+                category_display = rule.category_name
         except Exception:
             pass
 
@@ -501,3 +558,46 @@ def rates_evolution_view(request):
         'now': timezone.now(),
     }
     return render(request, 'tasas_cambio/rates_evolution.html', context)
+
+
+@login_required
+def client_benefit_config_view(request):
+    """
+    Vista del panel de administración para configurar dinámicamente los porcentajes de beneficio
+    y umbrales por categoría de cliente (PSE-29).
+    
+    Args:
+        request (HttpRequest): Solicitud HTTP del administrador.
+        
+    Returns:
+        HttpResponse: Página renderizada del panel de configuración de beneficios.
+    """
+    profile, _ = UserProfile.objects.get_or_create(user=request.user)
+    if not (request.user.is_superuser or (profile.role and profile.role.name.lower() in ['admin', 'administrador'])):
+        return redirect('tasas_cambio:rates_board')
+
+    ensure_default_benefit_rules()
+    success_message = None
+    error_message = None
+
+    if request.method == 'POST':
+        try:
+            for rule in ClientBenefitRule.objects.all():
+                min_amt_str = request.POST.get(f'min_amount_{rule.category_code}')
+                benefit_str = request.POST.get(f'benefit_{rule.category_code}')
+                if min_amt_str is not None and benefit_str is not None:
+                    rule.min_operation_amount = Decimal(min_amt_str)
+                    rule.benefit_percentage = Decimal(benefit_str)
+                    rule.save()
+            success_message = "Reglas de beneficio y umbrales actualizados exitosamente sin modificar código fuente."
+        except Exception as e:
+            error_message = f"Error al actualizar las reglas: {str(e)}"
+
+    rules = ClientBenefitRule.objects.all().order_by('id')
+    context = {
+        'rules': rules,
+        'success_message': success_message,
+        'error_message': error_message,
+        'now': timezone.now(),
+    }
+    return render(request, 'tasas_cambio/client_benefit_config.html', context)

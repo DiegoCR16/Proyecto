@@ -88,7 +88,12 @@
             <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
                 <h3 class="text-lg font-semibold text-slate-800 mb-2">Simulación de Tasas</h3>
                 <p class="text-sm text-slate-600 mb-4">Simule compra y venta de divisas con cotizaciones en tiempo real.</p>
-                <a href="#" class="text-blue-800 font-semibold text-sm hover:underline">Acceder &rarr;</a>
+                <a href="{% url 'tasas_cambio:simulator' %}" class="text-blue-800 font-semibold text-sm hover:underline">Acceder &rarr;</a>
+            </div>
+            <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                <h3 class="text-lg font-semibold text-slate-800 mb-2">Comisiones y Beneficios</h3>
+                <p class="text-sm text-slate-600 mb-4">Parametrice umbrales y porcentajes de beneficio por categoría de cliente.</p>
+                <a href="{% url 'tasas_cambio:client_benefit_config' %}" class="text-blue-800 font-semibold text-sm hover:underline">Configurar &rarr;</a>
             </div>
         </div>
     </main>

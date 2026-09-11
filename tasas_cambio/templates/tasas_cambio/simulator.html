@@ -129,10 +129,22 @@
                         </div>
                         <div class="flex justify-between items-center text-xs text-slate-400">
                             <span>Beneficio Aplicado:</span>
-                            <span class="text-green-400 font-semibold">{% if benefit_percentage > 0 %}{{ benefit_percentage }}%{% else %}Estándar (0%){% endif %}</span>
+                            <span class="text-green-400 font-semibold">{% if simulation_result.benefit_percentage > 0 %}{{ simulation_result.benefit_percentage }}%{% elif benefit_percentage > 0 %}{{ benefit_percentage }}%{% else %}Estándar (0%){% endif %}</span>
                         </div>
+                        {% if simulation_result %}
+                        <div class="flex justify-between items-center text-xs text-slate-400">
+                            <span>Umbral Requerido:</span>
+                            <span class="text-white font-mono">₲ {{ simulation_result.min_operation_amount|floatformat:2 }}</span>
+                        </div>
+                        <div class="flex justify-between items-center text-xs text-slate-400">
+                            <span>Estado Umbral:</span>
+                            <span class="{% if simulation_result.threshold_met %}text-green-400{% else %}text-amber-400{% endif %} font-semibold">
+                                {% if simulation_result.threshold_met %}Superado (Aplica Beneficio){% else %}No Alcanzado (Tarifa Estándar){% endif %}
+                            </span>
+                        </div>
+                        {% endif %}
                         <div class="border-t border-slate-700 pt-3">
-                            <span class="text-xs text-slate-400 block mb-1">Resultado Estimado:</span>
+                            <span class="text-xs text-slate-400 block mb-1">Resultado Estimado Ajustado:</span>
                             <div id="resultBox" class="text-2xl font-bold font-mono text-green-400">
                                 {% if simulation_result %}
                                     {{ simulation_result.converted_amount|floatformat:2 }} {{ simulation_result.to_currency }}
@@ -144,16 +156,19 @@
                     </div>
 
                     {% if simulation_result %}
-                    <div class="mt-4 space-y-2 text-xs text-slate-300">
+                    <div class="mt-4 space-y-2 text-xs text-slate-300 bg-slate-800/50 p-3 rounded-lg border border-slate-700">
                         <p><strong>Tipo de Operación:</strong> {{ simulation_result.operation_type }}</p>
-                        <p><strong>Tasa Aplicada:</strong> ₲ {{ simulation_result.applied_rate|floatformat:4 }}</p>
-                        <p class="text-slate-400 italic mt-2">Cotización exacta generada conforme a las tasas vigentes.</p>
+                        <p><strong>Tasa Base / Aplicada:</strong> ₲ {{ simulation_result.applied_rate|floatformat:4 }}</p>
+                        <p class="text-green-300 mt-1"><strong>Desglose Transparente:</strong> {{ simulation_result.transparent_breakdown }}</p>
                     </div>
                     {% endif %}
                 </div>
 
-                <div class="border-t border-slate-800 pt-4">
-                    <span class="text-xs text-slate-400 block text-center">🔒 Operación respaldada por Global Exchange</span>
+                <div class="border-t border-slate-800 pt-4 flex justify-between items-center text-xs text-slate-400">
+                    <span>🔒 Global Exchange</span>
+                    {% if user.is_authenticated and user.is_superuser %}
+                    <a href="{% url 'tasas_cambio:client_benefit_config' %}" class="text-blue-400 hover:underline">Configurar Reglas &rarr;</a>
+                    {% endif %}
                 </div>
             </div>
         </div>

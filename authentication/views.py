@@ -372,18 +372,23 @@ def dashboard_redirect_view(request):
     
     if has_client_mode:
         category = profile.category
-        if category == 'VIP':
-            benefit_percentage = Decimal('2.00')
-            benefit_label = '2% (VIP)'
-            category_display = 'VIP'
-        elif category == 'CORPORATIVO':
-            benefit_percentage = Decimal('4.00')
-            benefit_label = '4% (Corporativo)'
-            category_display = 'Corporativo'
-        else:
+        try:
+            from tasas_cambio.views import ensure_default_benefit_rules
+            from tasas_cambio.models import ClientBenefitRule
+            ensure_default_benefit_rules()
+            rule = ClientBenefitRule.objects.filter(category_code=category).first()
+            if rule:
+                benefit_percentage = rule.benefit_percentage
+                benefit_label = f"{benefit_percentage}% ({rule.category_name})"
+                category_display = rule.category_name
+            else:
+                benefit_percentage = Decimal('0.00')
+                benefit_label = 'Estándar'
+                category_display = category
+        except Exception:
             benefit_percentage = Decimal('0.00')
             benefit_label = 'Estándar'
-            category_display = 'Minorista'
+            category_display = category
     else:
         benefit_percentage = Decimal('0.00')
         benefit_label = 'Sin Beneficio'

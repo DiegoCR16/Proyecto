@@ -69,7 +69,7 @@
                     <span class="w-2 h-2 bg-green-600 rounded-full mr-2"></span> MFA Activo (iToken Verificado)
                 </div>
                 <div class="bg-blue-900 text-white px-4 py-2 rounded-lg text-sm font-semibold shadow-sm flex items-center">
-                    <span>🏢 Beneficio Corporativo: 4% Aplicado</span>
+                    <span>🏢 Beneficio Corporativo: {{ benefit_percentage }}% Aplicado</span>
                 </div>
             </div>
         </div>
@@ -150,7 +150,7 @@
                 </table>
             </div>
             <div class="px-6 py-3 bg-slate-50 border-t border-slate-200 text-xs text-slate-500">
-                <span class="text-indigo-800 font-semibold">🏢 Tarifa Corporativa Especial: Se ha aplicado automáticamente el 4% de beneficio corporativo en todas las divisas autorizadas.</span>
+                <span class="text-indigo-800 font-semibold">🏢 Tarifa Corporativa Especial: Se ha aplicado automáticamente el {{ benefit_percentage }}% de beneficio corporativo en todas las divisas autorizadas.</span>
             </div>
         </div>
     </main>
