@@ -56,7 +56,7 @@
             </div>
         </div>
 
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
             <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
                 <h3 class="text-lg font-semibold text-slate-800 mb-2">Monitoreo de Operaciones</h3>
                 <p class="text-sm text-slate-600 mb-4">Revisión de transacciones en tiempo real y validación de volúmenes de clientes.</p>
@@ -67,11 +67,20 @@
                 <p class="text-sm text-slate-600 mb-4">Consulta de eventos y registros de seguridad del sistema Global Exchange.</p>
                 <a href="{% url 'admin_audit_logs' %}" class="text-purple-800 font-semibold text-sm hover:underline">Consultar Auditoría &rarr;</a>
             </div>
-            <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-                <h3 class="text-lg font-semibold text-slate-800 mb-2">Tasas y Cotizaciones</h3>
-                <p class="text-sm text-slate-600 mb-4">Análisis de fluctuación de divisas y márgenes de compra/venta.</p>
-                <a href="#" class="text-purple-800 font-semibold text-sm hover:underline">Ver Pizarra &rarr;</a>
+        </div>
+
+        <!-- Banner to Visualizar Tasas / Gráfico de Evolución (Image 2 format) -->
+        <div class="mb-8 bg-gradient-to-r from-blue-900 to-slate-900 text-white p-6 rounded-2xl shadow-sm flex flex-col sm:flex-row items-center justify-between gap-4">
+            <div class="flex items-center space-x-4">
+                <div class="w-12 h-12 bg-blue-800 rounded-xl flex items-center justify-center font-bold text-xl shadow">📈</div>
+                <div>
+                    <h4 class="font-bold text-base">¿Analizando tendencias antes de convertir?</h4>
+                    <p class="text-xs text-slate-300">Consulta el gráfico interactivo de evolución histórica de tasas de cambio (1D, 7D, 1M, 1Y).</p>
+                </div>
             </div>
+            <a href="{% url 'tasas_cambio:rates_evolution' %}" class="bg-blue-600 hover:bg-blue-700 text-white px-5 py-3 rounded-xl font-semibold text-sm transition shadow-sm whitespace-nowrap">
+                Ver Gráfico de Evolución &rarr;
+            </a>
         </div>
 
         <!-- Pizarra de Cotizaciones -->

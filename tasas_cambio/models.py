@@ -22,3 +22,34 @@ class ExchangeRate(models.Model):
     def __str__(self):
         """Devuelve la representación en cadena de la tasa de cambio."""
         return f"{self.currency_code} - Compra: {self.buy_rate} | Venta: {self.sell_rate}"
+
+
+class ExchangeRateHistory(models.Model):
+    """
+    Modelo que representa el registro histórico de las tasas de cambio de una divisa.
+    Se utiliza para almacenar las variaciones en el tiempo y permitir graficar su evolución.
+    
+    Attributes:
+        currency_code (CharField): Código ISO de la divisa (USD, EUR, BRL, ARS, PYG).
+        buy_rate (DecimalField): Tasa de compra histórica en Guaraníes (Gs).
+        sell_rate (DecimalField): Tasa de venta histórica en Guaraníes (Gs).
+        timestamp (DateTimeField): Fecha y hora del registro histórico.
+    """
+    currency_code = models.CharField(max_length=10, verbose_name="Código de Divisa")
+    buy_rate = models.DecimalField(max_digits=12, decimal_places=4, default=Decimal('0.0000'), verbose_name="Tasa de Compra (Gs)")
+    sell_rate = models.DecimalField(max_digits=12, decimal_places=4, default=Decimal('0.0000'), verbose_name="Tasa de Venta (Gs)")
+    timestamp = models.DateTimeField(verbose_name="Fecha y Hora del Registro")
+
+    class Meta:
+        verbose_name = "Historial de Tasa de Cambio"
+        verbose_name_plural = "Historiales de Tasas de Cambio"
+        ordering = ['timestamp']
+
+    def __str__(self):
+        """
+        Devuelve la representación en cadena del registro histórico.
+
+        Returns:
+            str: Representación descriptiva del registro histórico.
+        """
+        return f"{self.currency_code} ({self.timestamp.strftime('%Y-%m-%d %H:%M:%S')}) - Compra: {self.buy_rate} | Venta: {self.sell_rate}"

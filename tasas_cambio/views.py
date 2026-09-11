@@ -1,9 +1,12 @@
 # -*- coding: utf-8 -*-
 from django.shortcuts import render
+from django.http import JsonResponse
 from django.utils import timezone
 from django.core.exceptions import ValidationError
 from decimal import Decimal
-from .models import ExchangeRate
+from datetime import timedelta
+import random
+from .models import ExchangeRate, ExchangeRateHistory
 
 def public_rates_view(request):
     """
@@ -366,3 +369,135 @@ def currency_simulator_view(request):
     }
 
     return render(request, 'tasas_cambio/simulator.html', context)
+
+
+def populate_mock_history():
+    """
+    Pobla datos históricos simulados de tasas de cambio si la tabla ExchangeRateHistory está vacía.
+    Genera registros diarios para el último año para las principales divisas (USD, EUR, BRL, ARS).
+    """
+    if ExchangeRateHistory.objects.exists():
+        return
+
+    base_rates = {
+        'USD': (Decimal('7300.0000'), Decimal('7450.0000')),
+        'EUR': (Decimal('7900.0000'), Decimal('8150.0000')),
+        'BRL': (Decimal('1350.0000'), Decimal('1450.0000')),
+        'ARS': (Decimal('7.5000'), Decimal('9.0000')),
+        'PYG': (Decimal('1.0000'), Decimal('1.0000')),
+    }
+
+    now = timezone.now()
+    random.seed(42)  # Semilla fija para consistencia en pruebas
+    for code, (base_buy, base_sell) in base_rates.items():
+        current_buy = base_buy
+        current_sell = base_sell
+        for i in range(365, -1, -1):
+            day_time = now - timedelta(days=i)
+            if code != 'PYG':
+                var_buy = float(current_buy) * random.uniform(-0.005, 0.005)
+                var_sell = float(current_sell) * random.uniform(-0.005, 0.005)
+                current_buy = (current_buy + Decimal(str(var_buy))).quantize(Decimal('0.0001'))
+                current_sell = (current_sell + Decimal(str(var_sell))).quantize(Decimal('0.0001'))
+
+            ExchangeRateHistory.objects.create(
+                currency_code=code,
+                buy_rate=current_buy,
+                sell_rate=current_sell,
+                timestamp=day_time
+            )
+
+
+def rates_evolution_api(request):
+    """
+    API JSON para obtener el historial de evolución de tasas de cambio (PSE-10).
+    
+    Args:
+        request (HttpRequest): Solicitud GET con parámetros 'currency' (ej. USD) y 'range' (1D, 7D, 1M, 1Y).
+        
+    Returns:
+        JsonResponse: Datos estructurados con etiquetas, tasas de compra, venta, estado y mensajes.
+    """
+    populate_mock_history()
+
+    currency = request.GET.get('currency', 'USD').upper()
+    time_range = request.GET.get('range', '30D').upper()
+
+    now = timezone.now()
+    
+    if time_range == '1D':
+        start_date = now - timedelta(days=1)
+    elif time_range == '7D':
+        start_date = now - timedelta(days=7)
+    elif time_range == '1M' or time_range == '30D':
+        start_date = now - timedelta(days=30)
+    elif time_range == '1Y':
+        start_date = now - timedelta(days=365)
+    else:
+        start_date = now - timedelta(days=30)
+
+    history_qs = ExchangeRateHistory.objects.filter(
+        currency_code=currency,
+        timestamp__gte=start_date
+    ).order_by('timestamp')
+
+    if not history_qs.exists():
+        return JsonResponse({
+            'has_data': False,
+            'currency': currency,
+            'range': time_range,
+            'message': f'No se registran datos históricos suficientes para la divisa {currency} en el rango seleccionado ({time_range}).',
+            'labels': [],
+            'buy_rates': [],
+            'sell_rates': [],
+        })
+
+    labels = []
+    buy_rates = []
+    sell_rates = []
+
+    for record in history_qs:
+        if time_range == '1D':
+            label = record.timestamp.strftime('%H:%M')
+        elif time_range in ['7D', '1M', '30D']:
+            label = record.timestamp.strftime('%d/%m/%Y')
+        else:
+            label = record.timestamp.strftime('%m/%Y')
+
+        labels.append(label)
+        buy_rates.append(float(record.buy_rate))
+        sell_rates.append(float(record.sell_rate))
+
+    return JsonResponse({
+        'has_data': True,
+        'currency': currency,
+        'range': time_range,
+        'message': '',
+        'labels': labels,
+        'buy_rates': buy_rates,
+        'sell_rates': sell_rates,
+    })
+
+
+def rates_evolution_view(request):
+    """
+    Vista web para el gráfico interactivo de evolución de tasas de cambio (PSE-10).
+    Renderiza la interfaz con panel de filtros y soporte para Chart.js.
+    
+    Args:
+        request (HttpRequest): Solicitud HTTP del cliente.
+        
+    Returns:
+        HttpResponse: Página renderizada del módulo de analítica y gráficos.
+    """
+    populate_mock_history()
+    
+    currencies = ExchangeRate.objects.all().order_by('currency_code')
+    
+    context = {
+        'currencies': currencies,
+        'selected_currency': request.GET.get('currency', 'USD'),
+        'selected_range': request.GET.get('range', '30D'),
+        'now': timezone.now(),
+    }
+    return render(request, 'tasas_cambio/rates_evolution.html', context)

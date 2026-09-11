@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Evolución Histórica de Tasas de Cambio - Global Exchange</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>body { font-family: 'Inter', sans-serif; }</style>
+</head>
+<body class="bg-slate-50 min-h-screen text-slate-900 flex flex-col justify-between">
+    <!-- Navbar / Header -->
+    <nav class="bg-slate-900 text-white shadow-md">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between h-16 items-center">
+                <div class="flex items-center space-x-3">
+                    <div class="w-10 h-10 bg-blue-800 rounded-xl flex items-center justify-center font-bold text-xl shadow">GX</div>
+                    <div>
+                        <span class="font-bold text-lg tracking-tight">Global Exchange</span>
+                        <span class="block text-xs text-slate-400">Casa de Cambios - Analítica Financiera</span>
+                    </div>
+                </div>
+                <div class="flex items-center space-x-6">
+                    {% if user.is_authenticated %}
+                        <span class="text-sm text-slate-300">Usuario: <strong class="text-white">{{ user.username }}</strong></span>
+                        <a href="/auth/logout/" class="bg-red-600 hover:bg-red-700 text-white px-3.5 py-1.5 rounded-lg text-sm font-medium transition shadow-sm">Cerrar Sesión</a>
+                    {% else %}
+                        <a href="/auth/login/" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition shadow-sm">Iniciar Sesión</a>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 flex-grow w-full space-y-8">
+        
+        <!-- Header & Breadcrumb -->
+        <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+            <div>
+                <h1 class="text-3xl font-bold text-slate-900 tracking-tight">Gráfico de Evolución de Tasas de Cambio</h1>
+                <p class="text-slate-600 mt-1">Visualice el historial y las tendencias de compra y venta de divisas en el tiempo antes de realizar su conversión.</p>
+            </div>
+            <div>
+                <a href="javascript:history.back()" class="inline-flex items-center text-sm font-semibold text-white bg-slate-900 hover:bg-slate-800 px-5 py-2.5 rounded-xl shadow-md transition">
+                    &larr; Volver al Panel
+                </a>
+            </div>
+        </div>
+
+        <!-- Filter Panel Card -->
+        <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+            <h3 class="text-sm font-bold text-slate-700 uppercase tracking-wider mb-4">Panel de Filtros y Rango Temporal</h3>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 items-end">
+                <!-- Currency Selector -->
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 uppercase mb-2">Seleccionar Divisa</label>
+                    <select id="currencySelect" class="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm font-medium focus:ring-2 focus:ring-blue-800 focus:outline-none bg-slate-50">
+                        {% for c in currencies %}
+                            <option value="{{ c.currency_code }}" {% if c.currency_code == selected_currency %}selected{% endif %}>
+                                {{ c.currency_code }} - {{ c.currency_name }}
+                            </option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <!-- Time Interval Buttons -->
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 uppercase mb-2">Rango de Tiempo</label>
+                    <div class="flex flex-wrap gap-2" id="rangeButtons">
+                        <button type="button" data-range="1D" class="range-btn px-4 py-2 rounded-xl text-xs font-semibold border border-slate-300 text-slate-700 hover:bg-slate-100 transition">1 Día</button>
+                        <button type="button" data-range="7D" class="range-btn px-4 py-2 rounded-xl text-xs font-semibold border border-slate-300 text-slate-700 hover:bg-slate-100 transition">7 Días</button>
+                        <button type="button" data-range="30D" class="range-btn px-4 py-2 rounded-xl text-xs font-semibold bg-blue-800 text-white shadow-sm transition">30 Días</button>
+                        <button type="button" data-range="1Y" class="range-btn px-4 py-2 rounded-xl text-xs font-semibold border border-slate-300 text-slate-700 hover:bg-slate-100 transition">1 Año</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Chart Container Card -->
+        <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 relative">
+            <div class="flex justify-between items-center mb-6">
+                <div>
+                    <h3 id="chartTitle" class="text-lg font-bold text-slate-900">Evolución de Tipo de Cambio - USD / PYG</h3>
+                    <p class="text-xs text-slate-500">Comparativa de cotizaciones de compra (azul) y venta (verde) en Guaraníes (Gs).</p>
+                </div>
+                <div class="flex items-center space-x-3 text-xs font-medium">
+                    <span class="flex items-center space-x-1.5"><span class="w-3 h-3 bg-blue-600 rounded-full inline-block"></span><span class="text-slate-700">Compra</span></span>
+                    <span class="flex items-center space-x-1.5"><span class="w-3 h-3 bg-green-600 rounded-full inline-block"></span><span class="text-slate-700">Venta</span></span>
+                </div>
+            </div>
+
+            <!-- Canvas wrapper -->
+            <div class="relative h-96 w-full">
+                <canvas id="evolutionChart"></canvas>
+            </div>
+
+            <!-- Empty State / Notification Banner (Hidden by default) -->
+            <div id="emptyState" class="hidden absolute inset-0 bg-white/95 rounded-2xl flex flex-col items-center justify-center p-8 text-center z-10">
+                <div class="w-16 h-16 bg-blue-50 text-blue-800 rounded-2xl flex items-center justify-center text-2xl mb-4 border border-blue-100 shadow-sm">
+                    📊
+                </div>
+                <h4 class="text-lg font-bold text-slate-900 mb-1">Sin datos históricos disponibles</h4>
+                <p id="emptyMessage" class="text-sm text-slate-600 max-w-md">No se registran datos históricos suficientes para el rango o divisa seleccionada.</p>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- Footer -->
+    <footer class="bg-white border-t border-slate-200 py-6 text-center text-xs text-slate-500">
+        <p>&copy; 2026 Global Exchange - Ingeniería de Software 2 (FPUNA). Todos los derechos reservados.</p>
+    </footer>
+
+    <!-- Chart Script -->
+    <script>
+        let evolutionChart = null;
+        let currentRange = '30D';
+        let currentCurrency = document.getElementById('currencySelect').value;
+
+        const ctx = document.getElementById('evolutionChart').getContext('2d');
+
+        function fetchChartData(currency, range) {
+            fetch(`{% url 'tasas_cambio:rates_evolution_api' %}?currency=${currency}&range=${range}`)
+                .then(response => response.json())
+                .then(data => {
+                    const emptyState = document.getElementById('emptyState');
+                    const emptyMessage = document.getElementById('emptyMessage');
+                    const chartTitle = document.getElementById('chartTitle');
+
+                    chartTitle.innerText = `Evolución de Tipo de Cambio - ${data.currency} / PYG (${range})`;
+
+                    if (!data.has_data) {
+                        emptyMessage.innerText = data.message;
+                        emptyState.classList.remove('hidden');
+                        if (evolutionChart) {
+                            evolutionChart.destroy();
+                            evolutionChart = null;
+                        }
+                        return;
+                    }
+
+                    emptyState.classList.add('hidden');
+
+                    if (evolutionChart) {
+                        evolutionChart.destroy();
+                    }
+
+                    evolutionChart = new Chart(ctx, {
+                        type: 'line',
+                        data: {
+                            labels: data.labels,
+                            datasets: [
+                                {
+                                    label: 'Compra (Gs)',
+                                    data: data.buy_rates,
+                                    borderColor: '#2563eb', // blue-600
+                                    backgroundColor: 'rgba(37, 99, 235, 0.08)',
+                                    borderWidth: 2.5,
+                                    pointRadius: data.labels.length > 50 ? 0 : 3,
+                                    pointHoverRadius: 6,
+                                    fill: true,
+                                    tension: 0.2
+                                },
+                                {
+                                    label: 'Venta (Gs)',
+                                    data: data.sell_rates,
+                                    borderColor: '#16a34a', // green-600
+                                    backgroundColor: 'rgba(22, 163, 74, 0.08)',
+                                    borderWidth: 2.5,
+                                    pointRadius: data.labels.length > 50 ? 0 : 3,
+                                    pointHoverRadius: 6,
+                                    fill: true,
+                                    tension: 0.2
+                                }
+                            ]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            plugins: {
+                                legend: {
+                                    display: false
+                                },
+                                tooltip: {
+                                    backgroundColor: '#0f172a',
+                                    titleFont: { size: 13, family: 'Inter' },
+                                    bodyFont: { size: 12, family: 'Inter' },
+                                    padding: 12,
+                                    cornerRadius: 8,
+                                    displayColors: true,
+                                    callbacks: {
+                                        label: function(context) {
+                                            let label = context.dataset.label || '';
+                                            if (label) {
+                                                label += ': ';
+                                            }
+                                            if (context.parsed.y !== null) {
+                                                label += '₲ ' + context.parsed.y.toLocaleString('es-PY', { minimumFractionDigits: 2, maximumFractionDigits: 4 });
+                                            }
+                                            return label;
+                                        }
+                                    }
+                                }
+                            },
+                            scales: {
+                                x: {
+                                    grid: { display: false },
+                                    ticks: { font: { size: 11, family: 'Inter' }, color: '#64748b' }
+                                },
+                                y: {
+                                    grid: { color: '#f1f5f9' },
+                                    ticks: {
+                                        font: { size: 11, family: 'Inter' },
+                                        color: '#64748b',
+                                        callback: function(value) {
+                                            return '₲ ' + value.toLocaleString('es-PY');
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    });
+                })
+                .catch(error => {
+                    console.error('Error fetching chart data:', error);
+                });
+        }
+
+        // Event listener for currency change
+        document.getElementById('currencySelect').addEventListener('change', function() {
+            currentCurrency = this.value;
+            fetchChartData(currentCurrency, currentRange);
+        });
+
+        // Event listeners for range buttons
+        document.querySelectorAll('.range-btn').forEach(button => {
+            button.addEventListener('click', function() {
+                document.querySelectorAll('.range-btn').forEach(btn => {
+                    btn.classList.remove('bg-blue-800', 'text-white', 'shadow-sm');
+                    btn.classList.add('border', 'border-slate-300', 'text-slate-700', 'hover:bg-slate-100');
+                });
+                this.classList.remove('border', 'border-slate-300', 'text-slate-700', 'hover:bg-slate-100');
+                this.classList.add('bg-blue-800', 'text-white', 'shadow-sm');
+
+                currentRange = this.getAttribute('data-range');
+                fetchChartData(currentCurrency, currentRange);
+            });
+        });
+
+        // Initial load
+        fetchChartData(currentCurrency, currentRange);
+    </script>
+</body>
+</html>

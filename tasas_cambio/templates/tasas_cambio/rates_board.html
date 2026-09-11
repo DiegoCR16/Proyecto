@@ -22,6 +22,8 @@
                 </div>
                 <div class="flex items-center space-x-4">
                     <a href="/tasas/" class="text-blue-400 hover:text-white text-sm font-medium transition">Tasas en Vivo</a>
+                    <a href="{% url 'tasas_cambio:simulator' %}" class="text-slate-300 hover:text-white text-sm font-medium transition">Simulador</a>
+                    <a href="{% url 'tasas_cambio:rates_evolution' %}" class="text-slate-300 hover:text-white text-sm font-medium transition">Evolución Histórica</a>
                     {% if user.is_authenticated %}
                         <span class="text-sm text-slate-300">Hola, <strong class="text-white">{{ user.username }}</strong></span>
                         <a href="/auth/logout/" class="bg-red-600 hover:bg-red-700 text-white px-3.5 py-1.5 rounded-lg text-sm font-medium transition">Cerrar Sesión</a>
@@ -71,6 +73,20 @@
                     </div>
                 </div>
             </div>
+        </div>
+
+        <!-- Banner to Evolution Chart (PSE-10) -->
+        <div class="mb-6 bg-gradient-to-r from-blue-900 to-slate-900 text-white p-5 rounded-2xl shadow-sm flex flex-col sm:flex-row items-center justify-between gap-4">
+            <div class="flex items-center space-x-3">
+                <div class="w-10 h-10 bg-blue-800 rounded-xl flex items-center justify-center font-bold text-lg">📈</div>
+                <div>
+                    <h4 class="font-bold text-sm">¿Analizando tendencias antes de convertir?</h4>
+                    <p class="text-xs text-slate-300">Consulta el gráfico interactivo de evolución histórica de tasas de cambio (1D, 7D, 1M, 1Y).</p>
+                </div>
+            </div>
+            <a href="{% url 'tasas_cambio:rates_evolution' %}" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-xl font-semibold text-xs transition shadow-sm whitespace-nowrap">
+                Ver Gráfico de Evolución &rarr;
+            </a>
         </div>
 
         <!-- Rates Table Grid -->

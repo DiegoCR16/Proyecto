@@ -56,7 +56,7 @@
             </div>
         </div>
 
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
             <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
                 <h3 class="text-lg font-semibold text-slate-800 mb-2">Operación de Caja</h3>
                 <p class="text-sm text-slate-600 mb-4">Ejecutar transacciones de ventanilla (compra/venta de efectivo y billetes).</p>
@@ -67,11 +67,20 @@
                 <p class="text-sm text-slate-600 mb-4">Control de saldos, desglose físico de billetes y cierre de turno diario.</p>
                 <a href="#" class="text-amber-800 font-semibold text-sm hover:underline">Realizar Arqueo &rarr;</a>
             </div>
-            <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-                <h3 class="text-lg font-semibold text-slate-800 mb-2">Historial de Ventanilla</h3>
-                <p class="text-sm text-slate-600 mb-4">Consulta de comprobantes y recibos emitidos en el turno actual.</p>
-                <a href="#" class="text-amber-800 font-semibold text-sm hover:underline">Ver Comprobantes &rarr;</a>
+        </div>
+
+        <!-- Banner to Visualizar Tasas / Gráfico de Evolución (Image 2 format) -->
+        <div class="mb-8 bg-gradient-to-r from-blue-900 to-slate-900 text-white p-6 rounded-2xl shadow-sm flex flex-col sm:flex-row items-center justify-between gap-4">
+            <div class="flex items-center space-x-4">
+                <div class="w-12 h-12 bg-blue-800 rounded-xl flex items-center justify-center font-bold text-xl shadow">📈</div>
+                <div>
+                    <h4 class="font-bold text-base">¿Analizando tendencias antes de convertir?</h4>
+                    <p class="text-xs text-slate-300">Consulta el gráfico interactivo de evolución histórica de tasas de cambio (1D, 7D, 1M, 1Y).</p>
+                </div>
             </div>
+            <a href="{% url 'tasas_cambio:rates_evolution' %}" class="bg-blue-600 hover:bg-blue-700 text-white px-5 py-3 rounded-xl font-semibold text-sm transition shadow-sm whitespace-nowrap">
+                Ver Gráfico de Evolución &rarr;
+            </a>
         </div>
 
         <!-- Pizarra de Cotizaciones -->
