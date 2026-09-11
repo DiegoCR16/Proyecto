@@ -8,7 +8,7 @@ from decimal import Decimal
 from datetime import timedelta
 import random
 from authentication.models import UserProfile
-from .models import ExchangeRate, ExchangeRateHistory, ClientBenefitRule
+from .models import ExchangeRate, ExchangeRateHistory, ClientBenefitRule, PaymentMethod
 
 def ensure_default_benefit_rules():
     """
@@ -601,3 +601,159 @@ def client_benefit_config_view(request):
         'now': timezone.now(),
     }
     return render(request, 'tasas_cambio/client_benefit_config.html', context)
+
+
+def ensure_default_payment_methods():
+    """
+    Asegura que existan los métodos de pago predeterminados en la base de datos (PSE-25).
+    """
+    PaymentMethod.objects.get_or_create(
+        code='TRANSFERENCIA',
+        defaults={
+            'name': 'Transferencia Bancaria',
+            'description': 'Transferencia directa entre cuentas bancarias autorizadas.',
+            'is_active': True
+        }
+    )
+    PaymentMethod.objects.get_or_create(
+        code='TARJETA',
+        defaults={
+            'name': 'Tarjeta de Crédito / Débito',
+            'description': 'Cobro mediante pasarela de tarjetas Visa, Mastercard, etc.',
+            'is_active': True
+        }
+    )
+    PaymentMethod.objects.get_or_create(
+        code='BILLETERA',
+        defaults={
+            'name': 'Billeteras Electrónicas',
+            'description': 'Pagos a través de billeteras móviles (Zimple, Tigo Money, etc.).',
+            'is_active': True
+        }
+    )
+    PaymentMethod.objects.get_or_create(
+        code='EFECTIVO',
+        defaults={
+            'name': 'Efectivo en Sucursal',
+            'description': 'Pago presencial en ventanilla de caja.',
+            'is_active': True
+        }
+    )
+
+
+@login_required
+def currency_payment_config_view(request):
+    """
+    Vista de administración con funcionalidad CRUD completa para Divisas y Métodos de Pago (PSE-25).
+    
+    Args:
+        request (HttpRequest): Solicitud HTTP del administrador.
+        
+    Returns:
+        HttpResponse: Página renderizada del panel CRUD de divisas y métodos de pago.
+    """
+    profile, _ = UserProfile.objects.get_or_create(user=request.user)
+    if not (request.user.is_superuser or (profile.role and profile.role.name.lower() in ['admin', 'administrador'])):
+        return redirect('tasas_cambio:rates_board')
+
+    ensure_default_payment_methods()
+    
+    default_rates = [
+        ('USD', 'Dólar Estadounidense', '$', Decimal('7300.0000'), Decimal('7450.0000')),
+        ('EUR', 'Euro', '€', Decimal('7900.0000'), Decimal('8150.0000')),
+        ('BRL', 'Real Brasileño', 'R$', Decimal('1350.0000'), Decimal('1450.0000')),
+        ('ARS', 'Peso Argentino', '$', Decimal('7.5000'), Decimal('9.0000')),
+        ('PYG', 'Guaraní Paraguayo', '₲', Decimal('1.0000'), Decimal('1.0000')),
+    ]
+    for code, name, symbol, buy, sell in default_rates:
+        ExchangeRate.objects.get_or_create(
+            currency_code=code,
+            defaults={'currency_name': name, 'symbol': symbol, 'buy_rate': buy, 'sell_rate': sell}
+        )
+
+    success_message = None
+    error_message = None
+
+    if request.method == 'POST':
+        action = request.POST.get('action')
+        try:
+            if action == 'add_currency':
+                code = request.POST.get('currency_code', '').strip().upper()
+                name = request.POST.get('currency_name', '').strip()
+                symbol = request.POST.get('currency_symbol', '').strip()
+                buy_str = request.POST.get('buy_rate', '').strip()
+                sell_str = request.POST.get('sell_rate', '').strip()
+
+                if not code or not name or not symbol or not buy_str or not sell_str:
+                    raise ValidationError("Todos los campos de la divisa (código, nombre, símbolo, compra y venta) son obligatorios.")
+                
+                buy_val = Decimal(buy_str)
+                sell_val = Decimal(sell_str)
+                if buy_val <= 0 or sell_val <= 0:
+                    raise ValidationError("Las tasas de compra y venta deben ser mayores a cero.")
+
+                ExchangeRate.objects.update_or_create(
+                    currency_code=code,
+                    defaults={
+                        'currency_name': name,
+                        'symbol': symbol,
+                        'buy_rate': buy_val,
+                        'sell_rate': sell_val
+                    }
+                )
+                success_message = f"Divisa {code} ({name}) guardada / actualizada exitosamente."
+
+            elif action == 'delete_currency':
+                code = request.POST.get('currency_code')
+                if code == 'PYG':
+                    raise ValidationError("No se puede eliminar la divisa base del sistema (PYG).")
+                ExchangeRate.objects.filter(currency_code=code).delete()
+                success_message = f"Divisa {code} eliminada exitosamente."
+
+            elif action == 'add_payment_method':
+                code = request.POST.get('pm_code', '').strip().upper()
+                name = request.POST.get('pm_name', '').strip()
+                description = request.POST.get('pm_description', '').strip()
+                is_active = request.POST.get('pm_is_active') == 'on'
+
+                if not code or not name:
+                    raise ValidationError("Código y nombre del método de pago son obligatorios.")
+
+                PaymentMethod.objects.update_or_create(
+                    code=code,
+                    defaults={
+                        'name': name,
+                        'description': description,
+                        'is_active': is_active
+                    }
+                )
+                success_message = f"Método de pago '{name}' guardado / actualizado exitosamente."
+
+            elif action == 'toggle_payment_method':
+                pm_code = request.POST.get('payment_method_code')
+                pm = PaymentMethod.objects.get(code=pm_code)
+                pm.is_active = not pm.is_active
+                pm.save()
+                success_message = f"Estado del método de pago '{pm.name}' actualizado a {'Habilitado' if pm.is_active else 'Deshabilitado'}."
+
+            elif action == 'delete_payment_method':
+                pm_code = request.POST.get('payment_method_code')
+                PaymentMethod.objects.filter(code=pm_code).delete()
+                success_message = "Método de pago eliminado exitosamente."
+
+        except ValidationError as e:
+            error_message = e.messages[0] if hasattr(e, 'messages') else str(e)
+        except Exception as e:
+            error_message = f"Error en la operación: {str(e)}"
+
+    currencies = ExchangeRate.objects.all().order_by('currency_code')
+    payment_methods = PaymentMethod.objects.all().order_by('id')
+
+    context = {
+        'currencies': currencies,
+        'payment_methods': payment_methods,
+        'success_message': success_message,
+        'error_message': error_message,
+        'now': timezone.now(),
+    }
+    return render(request, 'tasas_cambio/currency_payment_config.html', context)

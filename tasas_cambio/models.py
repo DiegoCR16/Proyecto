@@ -9,19 +9,21 @@ class ExchangeRate(models.Model):
     Attributes:
         currency_code (CharField): Código ISO de la divisa (USD, EUR, BRL, ARS, PYG).
         currency_name (CharField): Nombre descriptivo de la divisa.
+        symbol (CharField): Símbolo cambiario ($, €, R$, ₲).
         buy_rate (DecimalField): Tasa de compra estándar en Guaraníes (Gs).
         sell_rate (DecimalField): Tasa de venta estándar en Guaraníes (Gs).
         last_updated (DateTimeField): Fecha y hora de última actualización en tiempo real.
     """
     currency_code = models.CharField(max_length=10, unique=True, verbose_name="Código de Divisa")
     currency_name = models.CharField(max_length=100, verbose_name="Nombre de Divisa")
+    symbol = models.CharField(max_length=10, default='$', verbose_name="Símbolo Cambiario")
     buy_rate = models.DecimalField(max_digits=12, decimal_places=4, default=Decimal('0.0000'), verbose_name="Tasa de Compra (Gs)")
     sell_rate = models.DecimalField(max_digits=12, decimal_places=4, default=Decimal('0.0000'), verbose_name="Tasa de Venta (Gs)")
     last_updated = models.DateTimeField(auto_now=True, verbose_name="Última Actualización")
 
     def __str__(self):
         """Devuelve la representación en cadena de la tasa de cambio."""
-        return f"{self.currency_code} - Compra: {self.buy_rate} | Venta: {self.sell_rate}"
+        return f"{self.currency_code} ({self.symbol}) - Compra: {self.buy_rate} | Venta: {self.sell_rate}"
 
 
 class ExchangeRateHistory(models.Model):
@@ -87,3 +89,34 @@ class ClientBenefitRule(models.Model):
             str: Representación descriptiva de la regla.
         """
         return f"{self.category_name} - {self.benefit_percentage}% (Mín: {self.min_operation_amount:,.2f} Gs)"
+
+
+class PaymentMethod(models.Model):
+    """
+    Modelo que representa un método de pago parametrizable (tarjeta, transferencia, billeteras electrónicas, etc.) (PSE-25).
+    
+    Attributes:
+        code (CharField): Código único del método de pago (ej. 'TARJETA', 'TRANSFERENCIA', 'BILLETERA').
+        name (CharField): Nombre descriptivo del método de pago.
+        description (TextField): Descripción o detalles del método de pago.
+        is_active (BooleanField): Estado de habilitación (True = Activo/Habilitado, False = Inactivo/Deshabilitado).
+        updated_at (DateTimeField): Fecha de última actualización.
+    """
+    code = models.CharField(max_length=50, unique=True, verbose_name="Código de Método de Pago")
+    name = models.CharField(max_length=100, verbose_name="Nombre del Método de Pago")
+    description = models.TextField(blank=True, null=True, verbose_name="Descripción")
+    is_active = models.BooleanField(default=True, verbose_name="Habilitado / Activo")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="Última Actualización")
+
+    class Meta:
+        verbose_name = "Método de Pago"
+        verbose_name_plural = "Métodos de Pago"
+
+    def __str__(self):
+        """
+        Devuelve la representación en cadena del método de pago.
+
+        Returns:
+            str: Representación descriptiva del método de pago.
+        """
+        return f"{self.name} ({'Activo' if self.is_active else 'Inactivo'})"
