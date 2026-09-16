@@ -36,7 +36,18 @@
                         </select>
                     </div>
                     {% endif %}
-                    {% if corporate_groups %}
+                    {% if clientes_asociados %}
+                    <div class="flex items-center space-x-2">
+                        <span class="text-xs text-slate-300">Cliente:</span>
+                        <select onchange="window.location.href=this.value" class="bg-slate-800 text-white text-xs px-2 py-1 rounded border border-slate-700">
+                            {% for c in clientes_asociados %}
+                            <option value="{% url 'switch_client' c.id %}" {% if active_client and active_client.id == c.id %}selected{% endif %}>
+                                {{ c.nombre_o_razon_social }} ({{ c.categoria }})
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    {% elif corporate_groups %}
                     <div class="flex items-center space-x-2">
                         <span class="text-xs text-slate-300">Cliente/Grupo:</span>
                         <select onchange="window.location.href=this.value" class="bg-slate-800 text-white text-xs px-2 py-1 rounded border border-slate-700">
@@ -64,17 +75,7 @@
 
     <!-- Main Content -->
     <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 flex-grow w-full">
-        {% if not has_own_group %}
-        <div class="mb-8 bg-gradient-to-r from-blue-900 to-indigo-900 text-white p-6 rounded-2xl shadow-md flex flex-col md:flex-row items-center justify-between gap-4">
-            <div>
-                <h3 class="text-xl font-bold mb-1">¿Deseas operar como Cliente en Global Exchange?</h3>
-                <p class="text-sm text-blue-200">Actualmente estás operando como usuario regular sin grupo de cliente asignado. Solicita tu registro de cliente (Persona Física o Jurídica).</p>
-            </div>
-            <a href="{% url 'register' %}" class="whitespace-nowrap bg-white text-blue-900 hover:bg-blue-50 font-semibold px-5 py-2.5 rounded-xl shadow transition duration-200 text-sm">
-                Solicitar ser Cliente &rarr;
-            </a>
-        </div>
-        {% endif %}
+
 
         {% if active_group and is_group_owner %}
         <div class="mb-8 bg-white border border-slate-200 p-6 rounded-2xl shadow-sm">

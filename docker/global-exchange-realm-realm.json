@@ -572,7 +572,8 @@
       ],
       "clientRoles": {
         "realm-management": [
-          "manage-users"
+          "manage-users",
+          "realm-admin"
         ]
       },
       "notBefore": 0,
@@ -786,7 +787,7 @@
       "enabled": true,
       "alwaysDisplayInConsole": false,
       "clientAuthenticatorType": "client-secret",
-      "secret": "**********",
+      "secret": "govQPT0CppZDdLm98GLYnrqbLzWcqPLQ",
       "redirectUris": [
         "http://localhost:8000/auth/callback/"
       ],

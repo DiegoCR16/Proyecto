@@ -1,10 +1,11 @@
+import re
 import requests
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import User
 from django.conf import settings
 from django.db import models, IntegrityError
-from authentication.models import UserProfile, AuditLog, Role, CorporateGroup, GroupMembership, ClientRegistrationRequest, MemberRequest
+from authentication.models import UserProfile, AuditLog, Role, CorporateGroup, GroupMembership, ClientRegistrationRequest, MemberRequest, Cliente, UsuarioClienteRelacion
 
 def get_client_ip(request):
     """
@@ -188,213 +189,261 @@ def sync_keycloak_clients():
 @login_required
 def admin_client_list_view(request):
     """
-    Vista del panel administrativo para consultar, filtrar y buscar clientes según categoría y naturaleza.
+    Vista del panel administrativo para consultar, filtrar y buscar clientes (entidades de base de datos) según categoría y naturaleza.
     """
     profile, _ = UserProfile.objects.get_or_create(user=request.user)
     if not (request.user.is_superuser or (profile.role and profile.role.name.lower() in ['admin', 'administrador'])):
         return redirect('dashboard_redirect')
 
-    sync_keycloak_clients()
+    error = None
+    success = None
+
+    if request.method == 'POST':
+        action = request.POST.get('action', '').strip()
+        if action == 'create_client':
+            nombre = request.POST.get('nombre_o_razon_social', '').strip()
+            doc = request.POST.get('documento_identidad', '').strip()
+            tipo = request.POST.get('tipo_cliente', 'FISICA').strip()
+            email = request.POST.get('email', '').strip()
+            cat = request.POST.get('categoria', 'MINORISTA').strip()
+            vol = request.POST.get('transaction_volume', '0').strip()
+
+            if not nombre or not doc or not email:
+                error = "Nombre, Cédula/RUC y Correo son obligatorios."
+            elif Cliente.objects.filter(documento_identidad=doc).exists():
+                error = "Ya existe un cliente con este número de Cédula o RUC."
+            else:
+                try:
+                    vol_dec = Decimal(vol) if vol else Decimal('0.00')
+                except Exception:
+                    vol_dec = Decimal('0.00')
+
+                Cliente.objects.create(
+                    nombre_o_razon_social=nombre,
+                    documento_identidad=doc,
+                    tipo_cliente=tipo,
+                    email=email,
+                    categoria=cat,
+                    transaction_volume=vol_dec
+                )
+                success = "Cliente creado exitosamente."
+                AuditLog.objects.create(
+                    user=request.user,
+                    action="CREATE_CLIENT",
+                    ip_address=get_client_ip(request),
+                    details=f"Admin {request.user.username} creó el cliente {nombre} (Doc: {doc}, Cat: {cat})."
+                )
 
     query = request.GET.get('q', '').strip()
     category_filter = request.GET.get('category', '').strip()
 
-    profiles = UserProfile.objects.select_related('user', 'role').filter(
-        models.Q(role__name__iexact='Cliente') |
-        models.Q(role__name__iexact='Corporate') |
-        models.Q(role__name__iexact='Individual') |
-        models.Q(is_corporate=True) |
-        models.Q(category__in=['MINORISTA', 'CORPORATIVO', 'VIP'])
-    ).exclude(
-        models.Q(role__name__icontains='admin') | models.Q(user__is_superuser=True)
-    )
+    clientes = Cliente.objects.all().order_by('-creado_en')
 
     if query:
-        profiles = profiles.filter(
-            models.Q(user__username__icontains=query) |
-            models.Q(user__email__icontains=query) |
-            models.Q(ci_ruc__icontains=query) |
-            models.Q(user__first_name__icontains=query)
+        clientes = clientes.filter(
+            models.Q(nombre_o_razon_social__icontains=query) |
+            models.Q(email__icontains=query) |
+            models.Q(documento_identidad__icontains=query)
         )
 
-    if category_filter in ['MINORISTA', 'CORPORATIVO', 'VIP']:
-        profiles = profiles.filter(category=category_filter)
+    if category_filter:
+        clientes = clientes.filter(categoria__iexact=category_filter)
 
     pending_client_requests = ClientRegistrationRequest.objects.filter(status='PENDING').select_related('user', 'corporate_group')
     pending_member_requests = MemberRequest.objects.filter(status='PENDING').select_related('corporate_group', 'requester')
 
     return render(request, 'gestion_clientes/admin_client_list.html', {
-        'profiles': profiles,
+        'clientes': clientes,
         'query': query,
         'category_filter': category_filter,
         'pending_client_requests': pending_client_requests,
         'pending_member_requests': pending_member_requests,
+        'error': error,
+        'success': success,
     })
 
 @login_required
-def admin_client_detail_view(request, user_id):
+@login_required
+def admin_client_detail_view(request, cliente_id):
     """
-    Vista de detalle y gestión de la ficha de un cliente (PSE-7).
+    Vista de detalle y gestión de la ficha de un cliente (basado en el modelo Cliente y grupo Keycloak).
     """
     admin_profile, _ = UserProfile.objects.get_or_create(user=request.user)
     if not (request.user.is_superuser or (admin_profile.role and admin_profile.role.name.lower() in ['admin', 'administrador'])):
         return redirect('dashboard_redirect')
 
-    target_user = get_object_or_404(User, id=user_id)
-    target_profile, _ = UserProfile.objects.get_or_create(user=target_user)
+    cliente = get_object_or_404(Cliente, id=cliente_id)
+    corporate_group = CorporateGroup.objects.filter(group_name=cliente.nombre_o_razon_social).first()
 
     error = None
     success = None
 
-    if target_profile.is_corporate:
-        corporate_group = setup_keycloak_corporate_group(target_profile)
-    else:
-        corporate_group = None
-
     if request.method == 'POST':
-        action = request.POST.get('action', 'update_category').strip()
+        action = request.POST.get('action', '').strip()
 
-        if action == 'create_direct' and target_profile.is_corporate:
-            new_name = request.POST.get('new_username', '').strip()
-            new_email = request.POST.get('new_email', '').strip()
-            new_ci_ruc = request.POST.get('new_ci_ruc', '').strip()
-            new_password = request.POST.get('new_password', '').strip()
-            role_in_group = request.POST.get('role_in_group', 'OPERADOR').strip()
-
-            if not new_name or not new_email or not new_password or not new_ci_ruc:
-                error = "Todos los campos para la creación directa son obligatorios."
-            elif UserProfile.objects.filter(ci_ruc=new_ci_ruc).exists():
-                error = "El número de cédula o RUC ya se encuentra registrado."
-            else:
+        if action == 'update_category':
+            new_cat = request.POST.get('category', '').strip()
+            new_vol = request.POST.get('transaction_volume', '0').strip()
+            if new_cat:
+                cliente.categoria = new_cat
                 try:
-                    token_url = f"{settings.KEYCLOAK_SERVER_URL}/realms/{settings.KEYCLOAK_REALM}/protocol/openid-connect/token"
-                    token_data = {
-                        'grant_type': 'client_credentials',
-                        'client_id': settings.KEYCLOAK_CLIENT_ID,
-                        'client_secret': getattr(settings, 'KEYCLOAK_CLIENT_SECRET', ''),
-                    }
-                    token_resp = requests.post(token_url, data=token_data, timeout=3)
-                    if token_resp.status_code == 200:
-                        admin_token = token_resp.json().get('access_token')
-                        headers = {'Authorization': f'Bearer {admin_token}', 'Content-Type': 'application/json'}
-                        create_user_url = f"{settings.KEYCLOAK_SERVER_URL}/admin/realms/{settings.KEYCLOAK_REALM}/users"
-                        user_payload = {
-                            "username": new_email,
-                            "email": new_email,
-                            "firstName": new_name,
-                            "enabled": True,
-                            "attributes": {
-                                "category": ["MINORISTA"],
-                                "userType": ["fisica"],
-                                "ci_ruc": [new_ci_ruc]
-                            },
-                            "credentials": [{"type": "password", "value": new_password, "temporary": False}]
-                        }
-                        create_resp = requests.post(create_user_url, json=user_payload, headers=headers, timeout=3)
-                        if create_resp.status_code not in [200, 201, 204]:
-                            error = f"Error al crear usuario en Keycloak: {create_resp.text}"
-                        else:
-                            search_url = f"{settings.KEYCLOAK_SERVER_URL}/admin/realms/{settings.KEYCLOAK_REALM}/users?email={new_email}"
-                            search_resp = requests.get(search_url, headers=headers, timeout=3)
-                            if search_resp.status_code == 200 and search_resp.json():
-                                kc_id = search_resp.json()[0].get('id')
-                                
-                                fisica_user, _ = User.objects.get_or_create(username=new_email, defaults={'email': new_email, 'first_name': new_name})
-                                if not fisica_user.email:
-                                    fisica_user.email = new_email
-                                    fisica_user.save()
-                                
-                                client_role, _ = Role.objects.get_or_create(name="Cliente")
-                                fisica_profile, _ = UserProfile.objects.get_or_create(user=fisica_user)
-                                fisica_profile.keycloak_id = kc_id
-                                fisica_profile.role = client_role
-                                fisica_profile.is_corporate = False
-                                fisica_profile.ci_ruc = new_ci_ruc
-                                fisica_profile.save()
-
-                                link_physical_to_corporate_group(corporate_group, fisica_profile, role_in_group)
-
-                                AuditLog.objects.create(
-                                    user=request.user,
-                                    action="CREATE_PHYSICAL_MEMBER_FOR_CORPORATE",
-                                    ip_address=get_client_ip(request),
-                                    details=f"Admin {request.user.username} creó cuenta física '{new_email}' y la asoció al grupo {corporate_group.group_name} como {role_in_group}."
-                                )
-                                success = f"Cuenta creada y asociada exitosamente como {role_in_group}."
-                            else:
-                                error = "Cuenta creada en Keycloak pero no se pudo obtener el ID."
-                    else:
-                        error = "Error al conectar con la API de Keycloak."
-                except Exception as e:
-                    error = f"Error: {str(e)}"
-
-        elif action == 'link_physical_member':
-            fisica_profile_id = request.POST.get('fisica_profile_id', '').strip()
-            role_in_group = request.POST.get('role_in_group', 'OPERADOR').strip()
-            if fisica_profile_id and corporate_group:
-                fisica_profile = get_object_or_404(UserProfile, id=fisica_profile_id, is_corporate=False)
-                link_physical_to_corporate_group(corporate_group, fisica_profile, role_in_group)
-                success = f"Persona física vinculada exitosamente como {role_in_group}."
+                    cliente.transaction_volume = Decimal(new_vol)
+                except Exception:
+                    pass
+                cliente.save()
+                success = "Categoría del cliente actualizada exitosamente."
                 AuditLog.objects.create(
                     user=request.user,
-                    action="CORPORATE_GROUP_MEMBER_LINK",
+                    action="UPDATE_CLIENT_CATEGORY",
                     ip_address=get_client_ip(request),
-                    details=f"Admin {request.user.username} vinculó a {fisica_profile.user.username} al grupo {corporate_group.group_name} con rol {role_in_group}."
+                    details=f"Admin {request.user.username} actualizó el cliente {cliente.nombre_o_razon_social}: Categoría={new_cat}, Volumen={cliente.transaction_volume} Gs."
                 )
 
-        elif action == 'link_to_corporate_group':
-            corp_group_id = request.POST.get('corporate_group_id', '').strip()
-            role_in_group = request.POST.get('role_in_group', 'OPERADOR').strip()
-            if corp_group_id and not target_profile.is_corporate:
-                corp_group = get_object_or_404(CorporateGroup, id=corp_group_id)
-                link_physical_to_corporate_group(corp_group, target_profile, role_in_group)
-                success = f"Vinculación exitosa al grupo '{corp_group.group_name}' como {role_in_group}."
-                AuditLog.objects.create(
-                    user=request.user,
-                    action="PHYSICAL_TO_CORPORATE_GROUP_LINK",
-                    ip_address=get_client_ip(request),
-                    details=f"Admin {request.user.username} vinculó a {target_user.username} al grupo {corp_group.group_name} como {role_in_group}."
-                )
+        elif action == 'update_client_info':
+            nombre = request.POST.get('nombre_o_razon_social', '').strip()
+            doc = request.POST.get('documento_identidad', '').strip()
+            tipo = request.POST.get('tipo_cliente', 'FISICA').strip()
+            email = request.POST.get('email', '').strip()
+            cat = request.POST.get('category', '').strip()
+            vol = request.POST.get('transaction_volume', '0').strip()
 
-        else:
-            new_category = request.POST.get('category', '').strip()
-            new_volume_str = request.POST.get('transaction_volume', '0').strip()
-
+            if nombre:
+                cliente.nombre_o_razon_social = nombre
+            if doc:
+                cliente.documento_identidad = doc
+            if tipo:
+                cliente.tipo_cliente = tipo
+            if email:
+                cliente.email = email
+            if cat:
+                cliente.categoria = cat
             try:
-                new_volume = float(new_volume_str) if new_volume_str else 0.0
-                target_profile.clean_category_assignment(new_category, new_volume)
-                
-                old_category = target_profile.category
-                target_profile.category = new_category
-                target_profile.transaction_volume = new_volume
-                target_profile.save()
+                cliente.transaction_volume = Decimal(vol) if vol else Decimal('0.00')
+            except Exception:
+                pass
+            cliente.save()
+            success = "Información del cliente actualizada exitosamente."
+            AuditLog.objects.create(
+                user=request.user,
+                action="UPDATE_CLIENT",
+                ip_address=get_client_ip(request),
+                details=f"Admin {request.user.username} actualizó la información del cliente {cliente.nombre_o_razon_social}."
+            )
 
-                AuditLog.objects.create(
-                    user=request.user,
-                    action="CLIENT_CATEGORY_UPDATE",
-                    ip_address=get_client_ip(request),
-                    details=f"Admin {request.user.username} modificó categoría de {target_user.username} de {old_category} a {new_category}."
-                )
-                success = "Categoría y volumen transaccional actualizados exitosamente."
-            except ValueError as e:
-                error = str(e)
+        elif action == 'delete_client':
+            nombre_cliente = cliente.nombre_o_razon_social
+            cliente.delete()
+            AuditLog.objects.create(
+                user=request.user,
+                action="DELETE_CLIENT",
+                ip_address=get_client_ip(request),
+                details=f"Admin {request.user.username} eliminó el cliente {nombre_cliente}."
+            )
+            return redirect('admin_client_list')
 
-    available_physical_profiles = UserProfile.objects.filter(is_corporate=False).select_related('user') if target_profile.is_corporate else None
-    all_corporate_groups = CorporateGroup.objects.all().select_related('juridica_profile__user') if not target_profile.is_corporate else None
+        elif action == 'create_user_and_associate':
+            username = request.POST.get('new_username', '').strip()
+            email = request.POST.get('new_email', '').strip()
+            password = request.POST.get('new_password', '').strip()
+            rol_en_cliente = request.POST.get('rol_en_cliente', 'OPERADOR').strip()
+
+            if not username or not email or not password:
+                error = "Todos los campos de usuario son obligatorios."
+            else:
+                is_valid_pw, pw_msg = validate_password_complexity(password)
+                if not is_valid_pw:
+                    error = pw_msg
+                elif User.objects.filter(username=username).exists():
+                    error = "El nombre de usuario ya existe."
+                else:
+                    try:
+                        role_obj, _ = Role.objects.get_or_create(name="Cliente")
+                        kc_id = sync_user_roles_to_keycloak(
+                            username=username,
+                            email=email,
+                            password=password,
+                            is_active=True,
+                            role_obj=role_obj,
+                            additional_roles=[],
+                            existing_kc_id=None
+                        )
+                        new_user = User.objects.create_user(username=username, email=email, password=password)
+                        new_profile = UserProfile.objects.create(user=new_user, role=role_obj, keycloak_id=kc_id)
+
+                        UsuarioClienteRelacion.objects.get_or_create(
+                            keycloak_user_id=kc_id or str(new_user.id),
+                            cliente=cliente,
+                            defaults={'rol_en_cliente': rol_en_cliente}
+                        )
+                        success = f"Usuario {username} creado y asociado exitosamente al cliente."
+                        AuditLog.objects.create(
+                            user=request.user,
+                            action="CREATE_AND_ASSOCIATE_USER",
+                            ip_address=get_client_ip(request),
+                            details=f"Admin {request.user.username} creó el usuario {username} y lo asoció al cliente {cliente.nombre_o_razon_social} con rol {rol_en_cliente}."
+                        )
+                    except Exception as e:
+                        error = f"Error al crear usuario: {str(e)}"
+
+        elif action == 'associate_existing_user':
+            user_id = request.POST.get('user_id', '').strip()
+            rol_en_cliente = request.POST.get('rol_en_cliente', 'OPERADOR').strip()
+
+            if user_id:
+                target_user = User.objects.filter(id=user_id).first()
+                if target_user:
+                    target_profile, _ = UserProfile.objects.get_or_create(user=target_user)
+                    kc_uid = target_profile.keycloak_id or str(target_user.id)
+                    UsuarioClienteRelacion.objects.get_or_create(
+                        keycloak_user_id=kc_uid,
+                        cliente=cliente,
+                        defaults={'rol_en_cliente': rol_en_cliente}
+                    )
+                    success = f"Usuario {target_user.username} asociado exitosamente al cliente."
+                    AuditLog.objects.create(
+                        user=request.user,
+                        action="ASSOCIATE_EXISTING_USER",
+                        ip_address=get_client_ip(request),
+                        details=f"Admin {request.user.username} asoció al usuario existente {target_user.username} al cliente {cliente.nombre_o_razon_social} con rol {rol_en_cliente}."
+                    )
+
+        elif action == 'unassign_user':
+            rel_id = request.POST.get('rel_id', '').strip()
+            if rel_id:
+                rel = UsuarioClienteRelacion.objects.filter(id=rel_id, cliente=cliente).first()
+                if rel:
+                    kc_uid = rel.keycloak_user_id
+                    rel.delete()
+                    success = "Asociación de usuario desasignada exitosamente."
+                    AuditLog.objects.create(
+                        user=request.user,
+                        action="UNASSIGN_USER_FROM_CLIENT",
+                        ip_address=get_client_ip(request),
+                        details=f"Admin {request.user.username} desasignó al usuario (KC ID: {kc_uid}) del cliente {cliente.nombre_o_razon_social}."
+                    )
+
+    usuarios_relacionados = cliente.usuarios_relacionados.all()
+    for rel in usuarios_relacionados:
+        u = User.objects.filter(profile__keycloak_id=rel.keycloak_user_id).first() or User.objects.filter(id=rel.keycloak_user_id).first()
+        rel.resolved_username = u.username if u else rel.keycloak_user_id
+        rel.resolved_email = u.email if u else ""
+
+    associated_kc_ids = list(usuarios_relacionados.values_list('keycloak_user_id', flat=True))
+    available_users = User.objects.exclude(profile__keycloak_id__in=associated_kc_ids).select_related('profile')
 
     audit_logs = AuditLog.objects.filter(
-        models.Q(user=target_user) | models.Q(details__icontains=target_user.username)
-    ).order_by('-timestamp')[:10]
+        models.Q(details__icontains=cliente.nombre_o_razon_social) | 
+        models.Q(details__icontains=cliente.documento_identidad)
+    ).order_by('-timestamp')[:20]
 
-    return render(request, 'gestion_clientes/client_user_mapping.html', {
-        'target_profile': target_profile,
-        'target_user': target_user,
+    return render(request, 'gestion_clientes/admin_client_detail.html', {
+        'cliente': cliente,
         'corporate_group': corporate_group,
-        'available_physical_profiles': available_physical_profiles,
-        'all_corporate_groups': all_corporate_groups,
+        'usuarios_relacionados': usuarios_relacionados,
+        'available_users': available_users,
+        'audit_logs': audit_logs,
         'error': error,
         'success': success,
-        'audit_logs': audit_logs
     })
 
 @login_required
@@ -511,13 +560,28 @@ def admin_approve_client_request(request, request_id):
         client_req.status = 'APPROVED'
         
         req_profile, _ = UserProfile.objects.get_or_create(user=client_req.user)
-        group_name_full = f"{client_req.client_name} ({client_req.ci_ruc})"
+        group_name_full = client_req.client_name
         corp_group = CorporateGroup.objects.create(
             juridica_profile=req_profile,
             group_name=group_name_full
         )
         client_req.corporate_group = corp_group
         client_req.save()
+
+        cliente_obj, _ = Cliente.objects.update_or_create(
+            documento_identidad=client_req.ci_ruc,
+            defaults={
+                'nombre_o_razon_social': client_req.client_name,
+                'tipo_cliente': client_req.client_type,
+                'email': client_req.user.email or f"{client_req.ci_ruc}@globalexchange.com"
+            }
+        )
+        if req_profile.keycloak_id:
+            UsuarioClienteRelacion.objects.get_or_create(
+                keycloak_user_id=req_profile.keycloak_id,
+                cliente=cliente_obj,
+                defaults={'rol_en_cliente': 'ADMIN'}
+            )
 
         GroupMembership.objects.get_or_create(
             corporate_group=corp_group,
@@ -550,6 +614,15 @@ def admin_approve_client_request(request, request_id):
                                 break
 
                 if corp_group.keycloak_group_id:
+                    # Guardar atributo ci_ruc en el grupo de Keycloak
+                    update_group_url = f"{settings.KEYCLOAK_SERVER_URL}/admin/realms/{settings.KEYCLOAK_REALM}/groups/{corp_group.keycloak_group_id}"
+                    requests.put(update_group_url, json={
+                        "name": corp_group.group_name,
+                        "attributes": {
+                            "ci_ruc": [client_req.ci_ruc]
+                        }
+                    }, headers=headers, timeout=3)
+
                     roles_to_create = ['CLIENTE', 'OPERADOR', 'ANALISTA']
                     roles_url = f"{settings.KEYCLOAK_SERVER_URL}/admin/realms/{settings.KEYCLOAK_REALM}/roles"
                     for rname in roles_to_create:
@@ -643,6 +716,37 @@ def switch_group_view(request, group_id):
             )
     return redirect('dashboard_redirect')
 
+@login_required
+def switch_client_view(request, client_id):
+    """
+    Permite al usuario cambiar dinámicamente de cliente activo para reflejar su categoría y beneficios.
+    """
+    ip = get_client_ip(request)
+    profile, _ = UserProfile.objects.get_or_create(user=request.user)
+    
+    cliente = Cliente.objects.filter(id=client_id).first()
+    if not cliente and str(client_id).isdigit():
+        cliente = Cliente.objects.filter(id=int(client_id)).first()
+
+    if cliente:
+        has_access = request.user.is_superuser or (profile.role and 'admin' in profile.role.name.lower())
+        if not has_access and profile.keycloak_id:
+            has_access = UsuarioClienteRelacion.objects.filter(keycloak_user_id=profile.keycloak_id, cliente=cliente).exists()
+
+        if has_access:
+            request.session['active_client_id'] = str(cliente.id)
+            corp_group = CorporateGroup.objects.filter(group_name=cliente.nombre_o_razon_social).first()
+            if corp_group:
+                request.session['active_group_id'] = corp_group.keycloak_group_id or str(corp_group.id)
+
+            AuditLog.objects.create(
+                user=request.user,
+                action="SWITCH_CLIENT",
+                ip_address=ip,
+                details=f"Usuario {request.user.username} cambió al cliente activo: {cliente.nombre_o_razon_social} (Categoría: {cliente.categoria})"
+            )
+    return redirect('dashboard_redirect')
+
 def get_user_interface_context(request, profile):
     """
     Determina dinámicamente la insignia (badge), el rol activo, el grupo activo y las opciones de cambio de grupo,
@@ -703,6 +807,22 @@ def get_user_interface_context(request, profile):
         request.session['active_group_id'] = active_group.keycloak_group_id or str(active_group.id)
         active_membership = GroupMembership.objects.filter(corporate_group=active_group, fisica_profile=profile).first()
 
+    clientes_asociados = []
+    if profile.keycloak_id:
+        relaciones = UsuarioClienteRelacion.objects.filter(keycloak_user_id=profile.keycloak_id).select_related('cliente')
+        clientes_asociados = [rel.cliente for rel in relaciones]
+
+    active_client_id = request.session.get('active_client_id')
+    active_client = None
+    if active_client_id:
+        active_client = Cliente.objects.filter(id=active_client_id).first()
+        if not active_client and str(active_client_id).isdigit():
+            active_client = Cliente.objects.filter(id=int(active_client_id)).first()
+
+    if not active_client and clientes_asociados:
+        active_client = clientes_asociados[0]
+        request.session['active_client_id'] = str(active_client.id)
+
     badge_text = None
     if is_admin:
         badge_text = "Administrador"
@@ -744,7 +864,142 @@ def get_user_interface_context(request, profile):
         'user_roles': user_roles,
         'active_role': active_role,
         'is_group_owner': is_group_owner,
+        'clientes_asociados': clientes_asociados,
+        'active_client': active_client,
     }
+
+def validate_password_complexity(password):
+    """
+    Valida que la contraseña cumpla con los requisitos mínimos de seguridad:
+    - Mínimo 8 caracteres.
+    - Al menos una letra mayúscula.
+    - Al menos un número.
+    - Al menos un carácter especial.
+    """
+    if not password:
+        return True, ""
+    if len(password) < 8:
+        return False, "La contraseña debe tener al menos 8 caracteres."
+    if not re.search(r'[A-Z]', password):
+        return False, "La contraseña debe contener al menos una letra mayúscula."
+    if not re.search(r'\d', password):
+        return False, "La contraseña debe contener al menos un número."
+    if not re.search(r'[^A-Za-z0-9]', password):
+        return False, "La contraseña debe contener al menos un carácter especial."
+    return True, ""
+
+def sync_user_roles_to_keycloak(username, email, password, is_active, role_obj, additional_roles, existing_kc_id=None):
+    """
+    Sincroniza un usuario y sus roles asignados con Keycloak Admin API.
+    """
+    try:
+        token_url = f"{settings.KEYCLOAK_SERVER_URL}/realms/{settings.KEYCLOAK_REALM}/protocol/openid-connect/token"
+        token_data = {
+            'grant_type': 'client_credentials',
+            'client_id': settings.KEYCLOAK_CLIENT_ID,
+            'client_secret': getattr(settings, 'KEYCLOAK_CLIENT_SECRET', ''),
+        }
+        token_resp = requests.post(token_url, data=token_data, timeout=5)
+        if token_resp.status_code != 200:
+            print(f"DEBUG KEYCLOAK TOKEN FAIL: {token_resp.status_code} - {token_resp.text}")
+            return existing_kc_id
+
+        admin_token = token_resp.json().get('access_token')
+        headers = {'Authorization': f'Bearer {admin_token}', 'Content-Type': 'application/json'}
+        base_url = f"{settings.KEYCLOAK_SERVER_URL}/admin/realms/{settings.KEYCLOAK_REALM}"
+
+        kc_id = existing_kc_id
+        if not kc_id:
+            search_url = f"{base_url}/users?username={username}"
+            search_resp = requests.get(search_url, headers=headers, timeout=5)
+            if search_resp.status_code == 200 and search_resp.json():
+                kc_id = search_resp.json()[0].get('id')
+            elif email:
+                search_email_url = f"{base_url}/users?email={email}"
+                search_email_resp = requests.get(search_email_url, headers=headers, timeout=5)
+                if search_email_resp.status_code == 200 and search_email_resp.json():
+                    kc_id = search_email_resp.json()[0].get('id')
+
+        user_payload = {
+            "username": username,
+            "email": email,
+            "firstName": username,
+            "enabled": is_active,
+            "attributes": {
+                "category": ["MINORISTA"],
+                "userType": ["fisica"]
+            }
+        }
+        if password:
+            user_payload["credentials"] = [{"type": "password", "value": password, "temporary": False}]
+
+        if kc_id:
+            put_resp = requests.put(f"{base_url}/users/{kc_id}", json=user_payload, headers=headers, timeout=5)
+            print(f"DEBUG KEYCLOAK PUT USER {kc_id}: {put_resp.status_code}")
+        else:
+            create_resp = requests.post(f"{base_url}/users", json=user_payload, headers=headers, timeout=5)
+            print(f"DEBUG KEYCLOAK CREATE USER: {create_resp.status_code} - {create_resp.text}")
+            if create_resp.status_code in [200, 201, 204, 409]:
+                search_resp = requests.get(f"{base_url}/users?username={username}", headers=headers, timeout=5)
+                if search_resp.status_code == 200 and search_resp.json():
+                    kc_id = search_resp.json()[0].get('id')
+
+        if kc_id:
+            roles_mapping_url = f"{base_url}/users/{kc_id}/role-mappings/realm"
+
+            roles_to_assign = []
+            if role_obj:
+                roles_to_assign.append(role_obj)
+            if additional_roles:
+                roles_to_assign.extend(additional_roles)
+
+            all_kc_roles_resp = requests.get(f"{base_url}/roles", headers=headers, timeout=5)
+            print(f"DEBUG KEYCLOAK GET ROLES: {all_kc_roles_resp.status_code}")
+            all_kc_roles = all_kc_roles_resp.json() if all_kc_roles_resp.status_code == 200 else []
+
+            role_reps_to_assign = []
+            for r in roles_to_assign:
+                if not r or not r.name:
+                    continue
+                r_name = r.name
+                
+                role_rep = None
+                for kc_role in all_kc_roles:
+                    if kc_role.get('name', '').lower() == r_name.lower():
+                        role_rep = kc_role
+                        break
+
+                if not role_rep:
+                    create_role_resp = requests.post(f"{base_url}/roles", json={"name": r_name, "description": r.description or ""}, headers=headers, timeout=5)
+                    print(f"DEBUG KEYCLOAK CREATE ROLE {r_name}: {create_role_resp.status_code}")
+                    if create_role_resp.status_code in [200, 201, 204, 409]:
+                        all_kc_roles_resp = requests.get(f"{base_url}/roles", headers=headers, timeout=5)
+                        all_kc_roles = all_kc_roles_resp.json() if all_kc_roles_resp.status_code == 200 else []
+                        for kc_role in all_kc_roles:
+                            if kc_role.get('name', '').lower() == r_name.lower():
+                                role_rep = kc_role
+                                break
+
+                if role_rep:
+                    role_reps_to_assign.append(role_rep)
+
+            print(f"DEBUG KEYCLOAK ROLES TO ASSIGN: {[r.get('name') for r in role_reps_to_assign]}")
+
+            cur_roles_resp = requests.get(roles_mapping_url, headers=headers, timeout=5)
+            if cur_roles_resp.status_code == 200:
+                current_role_reps = cur_roles_resp.json()
+                if current_role_reps:
+                    del_resp = requests.delete(roles_mapping_url, json=current_role_reps, headers=headers, timeout=5)
+                    print(f"DEBUG KEYCLOAK DELETE OLD ROLES: {del_resp.status_code}")
+
+            if role_reps_to_assign:
+                assign_resp = requests.post(roles_mapping_url, json=role_reps_to_assign, headers=headers, timeout=5)
+                print(f"DEBUG KEYCLOAK ASSIGN ROLES RESPONSE: {assign_resp.status_code} - {assign_resp.text}")
+
+        return kc_id
+    except Exception as e:
+        print(f"DEBUG KEYCLOAK SYNC EXCEPTION: {str(e)}")
+        return existing_kc_id
 
 @login_required
 def admin_user_list_view(request):
@@ -789,6 +1044,16 @@ def admin_user_create_view(request):
             ctx.update(interface_ctx)
             return render(request, 'gestion_clientes/admin_user_form.html', ctx)
 
+        is_valid_pw, pw_msg = validate_password_complexity(password)
+        if not is_valid_pw:
+            ctx = {
+                'error': pw_msg,
+                'all_roles': all_roles,
+                'edit_mode': False
+            }
+            ctx.update(interface_ctx)
+            return render(request, 'gestion_clientes/admin_user_form.html', ctx)
+
         if User.objects.filter(username=username).exists():
             ctx = {
                 'error': 'El nombre de usuario ya existe.',
@@ -799,44 +1064,23 @@ def admin_user_create_view(request):
             return render(request, 'gestion_clientes/admin_user_form.html', ctx)
 
         try:
-            kc_id = None
-            try:
-                token_url = f"{settings.KEYCLOAK_SERVER_URL}/realms/{settings.KEYCLOAK_REALM}/protocol/openid-connect/token"
-                token_data = {
-                    'grant_type': 'client_credentials',
-                    'client_id': settings.KEYCLOAK_CLIENT_ID,
-                    'client_secret': getattr(settings, 'KEYCLOAK_CLIENT_SECRET', ''),
-                }
-                token_resp = requests.post(token_url, data=token_data, timeout=3)
-                if token_resp.status_code == 200:
-                    admin_token = token_resp.json().get('access_token')
-                    headers = {'Authorization': f'Bearer {admin_token}', 'Content-Type': 'application/json'}
-                    create_user_url = f"{settings.KEYCLOAK_SERVER_URL}/admin/realms/{settings.KEYCLOAK_REALM}/users"
-                    user_payload = {
-                        "username": username,
-                        "email": email,
-                        "firstName": username,
-                        "enabled": is_active,
-                        "attributes": {
-                            "category": ["MINORISTA"],
-                            "userType": ["fisica"]
-                        },
-                        "credentials": [{"type": "password", "value": password, "temporary": False}]
-                    }
-                    create_resp = requests.post(create_user_url, json=user_payload, headers=headers, timeout=3)
-                    if create_resp.status_code in [200, 201, 204]:
-                        search_url = f"{settings.KEYCLOAK_SERVER_URL}/admin/realms/{settings.KEYCLOAK_REALM}/users?username={username}"
-                        search_resp = requests.get(search_url, headers=headers, timeout=3)
-                        if search_resp.status_code == 200 and search_resp.json():
-                            kc_id = search_resp.json()[0].get('id')
-            except Exception:
-                pass
+            role_obj = Role.objects.filter(id=int(role_id)).first() if role_id else None
+            additional_role_objs = Role.objects.filter(id__in=[int(rid) for rid in additional_roles]) if additional_roles else []
+
+            kc_id = sync_user_roles_to_keycloak(
+                username=username,
+                email=email,
+                password=password,
+                is_active=is_active,
+                role_obj=role_obj,
+                additional_roles=additional_role_objs,
+                existing_kc_id=None
+            )
 
             new_user = User.objects.create_user(username=username, email=email, password=password, is_active=is_active)
-            role_obj = Role.objects.filter(id=int(role_id)).first() if role_id else None
             new_profile = UserProfile.objects.create(user=new_user, role=role_obj, keycloak_id=kc_id)
-            if additional_roles:
-                new_profile.roles.set(Role.objects.filter(id__in=[int(rid) for rid in additional_roles]))
+            if additional_role_objs:
+                new_profile.roles.set(additional_role_objs)
 
             AuditLog.objects.create(
                 user=request.user,
@@ -890,7 +1134,32 @@ def admin_user_edit_view(request, user_id):
             ctx.update(interface_ctx)
             return render(request, 'gestion_clientes/admin_user_form.html', ctx)
 
+        if password:
+            is_valid_pw, pw_msg = validate_password_complexity(password)
+            if not is_valid_pw:
+                ctx = {
+                    'error': pw_msg,
+                    'target_user': target_user,
+                    'all_roles': all_roles,
+                    'edit_mode': True
+                }
+                ctx.update(interface_ctx)
+                return render(request, 'gestion_clientes/admin_user_form.html', ctx)
+
         try:
+            role_obj = Role.objects.filter(id=int(role_id)).first() if role_id else None
+            additional_role_objs = Role.objects.filter(id__in=[int(rid) for rid in additional_roles]) if additional_roles else []
+
+            kc_id = sync_user_roles_to_keycloak(
+                username=username,
+                email=email,
+                password=password,
+                is_active=is_active,
+                role_obj=role_obj,
+                additional_roles=additional_role_objs,
+                existing_kc_id=target_profile.keycloak_id
+            )
+
             target_user.username = username
             target_user.email = email
             target_user.is_active = is_active
@@ -898,10 +1167,10 @@ def admin_user_edit_view(request, user_id):
                 target_user.set_password(password)
             target_user.save()
 
-            role_obj = Role.objects.filter(id=int(role_id)).first() if role_id else None
             target_profile.role = role_obj
+            target_profile.keycloak_id = kc_id or target_profile.keycloak_id
             target_profile.save()
-            target_profile.roles.set(Role.objects.filter(id__in=[int(rid) for rid in additional_roles]))
+            target_profile.roles.set(additional_role_objs)
 
             AuditLog.objects.create(
                 user=request.user,

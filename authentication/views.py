@@ -368,10 +368,13 @@ def dashboard_redirect_view(request):
 
     rates = ExchangeRate.objects.all().order_by('id')
 
-    has_client_mode = interface_ctx['active_group'] or profile.is_corporate or (profile.role and profile.role.name.lower() in ['cliente', 'corporate', 'corporativo', 'vip'])
+    has_client_mode = bool(interface_ctx.get('active_client') or interface_ctx['active_group'] or interface_ctx['corporate_groups'] or profile.is_corporate)
     
     if has_client_mode:
-        category = profile.category
+        if interface_ctx.get('active_client'):
+            category = interface_ctx['active_client'].categoria
+        else:
+            category = profile.category
         try:
             from tasas_cambio.views import ensure_default_benefit_rules
             from tasas_cambio.models import ClientBenefitRule
@@ -436,10 +439,12 @@ def dashboard_redirect_view(request):
         if user_mode:
             return render(request, 'authentication/user_dashboard.html', context)
         return render(request, 'authentication/corporate_dashboard.html', context)
-    else:
-        if not has_client_mode or user_mode:
+    elif has_client_mode:
+        if user_mode:
             return render(request, 'authentication/user_dashboard.html', context)
         return render(request, 'authentication/client_dashboard.html', context)
+    else:
+        return render(request, 'authentication/user_dashboard.html', context)
 
 @login_required
 def switch_to_user_mode_view(request):

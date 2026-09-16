@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Asociación de Cuentas Keycloak y Ficha de Cliente - Global Exchange</title>
+    <title>Ficha de Cliente y Gestión de Usuarios - Global Exchange</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>body { font-family: 'Inter', sans-serif; }</style>
@@ -16,7 +16,7 @@
                 <div class="flex items-center space-x-3">
                     <div class="w-9 h-9 bg-blue-800 rounded-lg flex items-center justify-center font-bold text-lg">GX</div>
                     <span class="font-bold text-lg">Global Exchange</span>
-                    <span class="bg-blue-800 text-xs px-2.5 py-1 rounded-full font-medium ml-2">Administrador (PSE-7)</span>
+                    <span class="bg-blue-800 text-xs px-2.5 py-1 rounded-full font-medium ml-2">Administrador</span>
                 </div>
                 <div class="flex items-center space-x-4">
                     <a href="{% url 'admin_client_list' %}" class="text-slate-300 hover:text-white text-sm font-medium">Listado de Clientes</a>
@@ -33,8 +33,8 @@
     <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div class="mb-6 flex items-center justify-between">
             <div>
-                <h1 class="text-3xl font-bold text-slate-900">Ficha del Cliente & Grupos Keycloak</h1>
-                <p class="text-slate-600 mt-1">Gestión de cuentas Keycloak, grupos corporativos (Jefe) y roles de personas físicas (Operador / Analista).</p>
+                <h1 class="text-3xl font-bold text-slate-900">Ficha del Cliente: {{ cliente.nombre_o_razon_social }}</h1>
+                <p class="text-slate-600 mt-1">Gestión integral de datos, segmentación, volumen transaccional y asignación de usuarios.</p>
             </div>
             <a href="{% url 'admin_client_list' %}" class="bg-slate-200 hover:bg-slate-300 text-slate-700 px-4 py-2 rounded-lg text-sm font-medium transition">
                 &larr; Volver al Listado
@@ -58,232 +58,252 @@
         {% endif %}
 
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <!-- Client Info & Status Badge Card -->
+            <!-- Client Info Card -->
             <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200 lg:col-span-1 space-y-6">
                 <div>
                     <h3 class="text-lg font-semibold text-slate-800 mb-4 pb-2 border-b border-slate-200">Información del Cliente</h3>
                     <div class="space-y-3 text-sm">
                         <div>
-                            <span class="text-slate-500 block text-xs uppercase font-medium">Nombre / Empresa</span>
-                            <strong class="text-slate-900 text-base">{{ target_user.get_full_name|default:target_user.username }}</strong>
+                            <span class="text-slate-500 block text-xs uppercase font-medium">Nombre / Razón Social</span>
+                            <strong class="text-slate-900 text-base">{{ cliente.nombre_o_razon_social }}</strong>
                         </div>
                         <div>
                             <span class="text-slate-500 block text-xs uppercase font-medium">Correo Electrónico</span>
-                            <span class="text-slate-800">{{ target_user.email }}</span>
+                            <span class="text-slate-800">{{ cliente.email }}</span>
                         </div>
                         <div>
                             <span class="text-slate-500 block text-xs uppercase font-medium">Cédula o RUC</span>
-                            <span class="text-slate-800 font-mono">{{ target_profile.ci_ruc|default:"N/D" }}</span>
+                            <span class="text-slate-800 font-mono">{{ cliente.documento_identidad }}</span>
                         </div>
                         <div>
                             <span class="text-slate-500 block text-xs uppercase font-medium">Naturaleza</span>
-                            {% if target_profile.is_corporate %}
-                                <span class="bg-indigo-100 text-indigo-800 text-xs px-2.5 py-1 rounded-full font-medium inline-block mt-1">Persona Jurídica (Jefe)</span>
+                            {% if cliente.tipo_cliente == 'JURIDICO' or cliente.tipo_cliente == 'JURIDICA' %}
+                                <span class="bg-indigo-100 text-indigo-800 text-xs px-2.5 py-1 rounded-full font-medium inline-block mt-1">Persona Jurídica</span>
                             {% else %}
                                 <span class="bg-slate-100 text-slate-700 text-xs px-2.5 py-1 rounded-full font-medium inline-block mt-1">Persona Física</span>
                             {% endif %}
                         </div>
                         <div>
                             <span class="text-slate-500 block text-xs uppercase font-medium">Categoría Actual</span>
-                            <span class="text-blue-800 font-bold text-base">{{ target_profile.get_category_display }}</span>
+                            <span class="text-blue-800 font-bold text-base">{{ cliente.categoria }}</span>
                         </div>
                         <div>
                             <span class="text-slate-500 block text-xs uppercase font-medium">Volumen Transaccional</span>
-                            <span class="text-slate-900 font-mono font-semibold">₲ {{ target_profile.transaction_volume|floatformat:0 }}</span>
+                            <span class="text-slate-900 font-mono font-semibold">₲ {{ cliente.transaction_volume|floatformat:0 }}</span>
+                        </div>
+                        <div>
+                            <span class="text-slate-500 block text-xs uppercase font-medium">Fecha de Creación</span>
+                            <span class="text-slate-700 text-xs">{{ cliente.creado_en|date:"d/m/Y H:i" }}</span>
                         </div>
                     </div>
                 </div>
 
-                <!-- Status Badge Keycloak -->
+                <!-- Status Keycloak Group -->
                 <div class="bg-slate-50 p-4 rounded-lg border border-slate-200">
-                    <span class="text-slate-500 block text-xs uppercase font-medium mb-1">Estado de Cuenta Keycloak</span>
-                    {% if target_profile.keycloak_id %}
+                    <span class="text-slate-500 block text-xs uppercase font-medium mb-1">Estado en Keycloak</span>
+                    {% if corporate_group and corporate_group.keycloak_group_id %}
                         <div class="flex items-center space-x-2">
                             <span class="w-3 h-3 bg-green-600 rounded-full inline-block"></span>
-                            <span class="text-green-700 font-semibold text-sm">Vinculado y Activo</span>
+                            <span class="text-green-700 font-semibold text-sm">Grupo Sincronizado</span>
                         </div>
-                        <span class="text-xs text-slate-500 block mt-1 font-mono">ID: {{ target_profile.keycloak_id }}</span>
+                        <span class="text-xs text-slate-500 block mt-1 font-mono">ID: {{ corporate_group.keycloak_group_id }}</span>
                     {% else %}
                         <div class="flex items-center space-x-2">
-                            <span class="w-3 h-3 bg-red-600 rounded-full inline-block"></span>
-                            <span class="text-red-600 font-semibold text-sm">No Vinculado (Bloqueo Operativo)</span>
+                            <span class="w-3 h-3 bg-amber-500 rounded-full inline-block"></span>
+                            <span class="text-amber-700 font-semibold text-sm">Sin Grupo Keycloak Asociado</span>
                         </div>
                     {% endif %}
                 </div>
             </div>
 
-            <!-- Association & Management Forms -->
+            <!-- Management & Audit Cards -->
             <div class="lg:col-span-2 space-y-6">
-                <!-- Direct Creation of Physical Person for this Corporate Group (Only visible for Persona Jurídica) -->
-                {% if target_profile.is_corporate %}
+                <!-- Edit General Client Info Form & Delete -->
                 <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-                    <h3 class="text-lg font-semibold text-slate-800 mb-2 pb-2 border-b border-slate-200">1. Creación de Cuenta para Persona Física y Asignación a la Empresa</h3>
-                    <p class="text-xs text-slate-600 mb-4">Cree una cuenta para una persona física directamente en Keycloak y asígnela automáticamente al grupo de esta empresa con su rol correspondiente.</p>
+                    <h3 class="text-lg font-semibold text-slate-800 mb-2 pb-2 border-b border-slate-200">Editar Información General y Eliminar Cliente</h3>
+                    <p class="text-xs text-slate-600 mb-4">Actualice el nombre, correo, cédula/RUC o naturaleza del cliente, o elimine el registro del sistema.</p>
                     
-                    <form method="POST" class="space-y-4">
+                    <form method="POST" class="space-y-4 mb-6">
                         {% csrf_token %}
-                        <input type="hidden" name="action" value="create_direct">
+                        <input type="hidden" name="action" value="update_client_info">
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div>
-                                <label class="block text-sm font-medium text-slate-700 mb-1">Nombre Completo (firstName)</label>
-                                <input type="text" name="new_username" placeholder="ej. Juan Pérez" required class="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-800">
+                                <label class="block text-sm font-medium text-slate-700 mb-1">Nombre / Razón Social</label>
+                                <input type="text" name="nombre_o_razon_social" value="{{ cliente.nombre_o_razon_social }}" required class="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-800">
                             </div>
                             <div>
-                                <label class="block text-sm font-medium text-slate-700 mb-1">Correo Electrónico (Username & Email)</label>
-                                <input type="email" name="new_email" placeholder="operador@empresa.com" required class="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-800">
+                                <label class="block text-sm font-medium text-slate-700 mb-1">Correo Electrónico</label>
+                                <input type="email" name="email" value="{{ cliente.email }}" required class="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-800">
                             </div>
                         </div>
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div>
                                 <label class="block text-sm font-medium text-slate-700 mb-1">Cédula o RUC</label>
-                                <input type="text" name="new_ci_ruc" placeholder="ej. 1234567" required class="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-800">
+                                <input type="text" name="documento_identidad" value="{{ cliente.documento_identidad }}" required class="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-800">
                             </div>
                             <div>
-                                <label class="block text-sm font-medium text-slate-700 mb-1">Rol en la Empresa</label>
-                                <select name="role_in_group" required class="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-800 font-medium">
-                                    <option value="OPERADOR">Operador</option>
-                                    <option value="ANALISTA">Analista</option>
+                                <label class="block text-sm font-medium text-slate-700 mb-1">Naturaleza</label>
+                                <select name="tipo_cliente" required class="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-800">
+                                    <option value="FISICA" {% if cliente.tipo_cliente == 'FISICA' %}selected{% endif %}>Persona Física</option>
+                                    <option value="JURIDICA" {% if cliente.tipo_cliente == 'JURIDICO' or cliente.tipo_cliente == 'JURIDICA' %}selected{% endif %}>Persona Jurídica</option>
                                 </select>
                             </div>
                         </div>
+                        <div class="flex justify-end">
+                            <button type="submit" class="bg-blue-800 hover:bg-blue-900 text-white px-5 py-2 rounded-lg text-sm font-medium transition">
+                                Actualizar Datos
+                            </button>
+                        </div>
+                    </form>
+
+                    <div class="pt-4 border-t border-slate-200 flex items-center justify-between">
                         <div>
-                            <label class="block text-sm font-medium text-slate-700 mb-1">Contraseña Inicial</label>
-                            <input type="password" name="new_password" placeholder="Mínimo 8 caracteres" required class="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-800">
+                            <h4 class="font-semibold text-slate-800 text-sm">Zona de Peligro (Eliminar Cliente)</h4>
+                            <p class="text-xs text-slate-500">Esta acción eliminará permanentemente al cliente y sus registros asociados.</p>
                         </div>
-                        <div class="flex justify-end">
-                            <button type="submit" class="bg-green-600 hover:bg-green-700 text-white px-5 py-2 rounded-lg text-sm font-medium transition">
-                                Crear Cuenta y Vincular al Grupo
+                        <form method="POST" onsubmit="return confirm('¿Está seguro de que desea eliminar este cliente permanentemente?');">
+                            {% csrf_token %}
+                            <input type="hidden" name="action" value="delete_client">
+                            <button type="submit" class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-xs font-semibold transition">
+                                Eliminar Cliente
                             </button>
-                        </div>
-                    </form>
-                </div>
-
-                <!-- Corporate Group & Physical Members List -->
-                {% if corporate_group %}
-                <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-                    <h3 class="text-lg font-semibold text-slate-800 mb-2 pb-2 border-b border-slate-200">2. Miembros del Grupo Corporativo (Personas Físicas)</h3>
-                    <p class="text-xs text-slate-600 mb-4">Grupo Keycloak: <code class="bg-slate-100 px-1.5 py-0.5 rounded text-blue-800 font-mono font-semibold">{{ corporate_group.group_name }}</code></p>
-                    
-                    <div class="mb-4">
-                        <ul class="divide-y divide-slate-200 text-sm mb-4">
-                            {% for m in corporate_group.memberships.all %}
-                            <li class="py-2.5 flex justify-between items-center">
-                                <div>
-                                    <strong class="text-slate-900">{{ m.fisica_profile.user.get_full_name|default:m.fisica_profile.user.username }}</strong>
-                                    <span class="text-xs text-slate-500 block font-mono">{{ m.fisica_profile.user.email }}</span>
-                                </div>
-                                <span class="bg-blue-100 text-blue-800 text-xs px-2.5 py-1 rounded-full font-medium">{{ m.get_role_in_group_display }}</span>
-                            </li>
-                            {% empty %}
-                            <li class="py-2 text-slate-500 text-xs">No hay personas físicas vinculadas a este grupo corporativo todavía.</li>
-                            {% endfor %}
-                        </ul>
+                        </form>
                     </div>
-
-                    <form method="POST" class="space-y-4 pt-4 border-t border-slate-200">
-                        {% csrf_token %}
-                        <input type="hidden" name="action" value="link_physical_member">
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div>
-                                <label class="block text-sm font-medium text-slate-700 mb-1">Vincular Persona Física Existente</label>
-                                <select name="fisica_profile_id" required class="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-800 font-medium">
-                                    <option value="">-- Seleccionar Persona Física --</option>
-                                    {% for fp in available_physical_profiles %}
-                                        <option value="{{ fp.id }}">{{ fp.user.get_full_name|default:fp.user.username }} ({{ fp.user.email }})</option>
-                                    {% endfor %}
-                                </select>
-                            </div>
-                            <div>
-                                <label class="block text-sm font-medium text-slate-700 mb-1">Rol en el Grupo</label>
-                                <select name="role_in_group" required class="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-800 font-medium">
-                                    <option value="OPERADOR">Operador</option>
-                                    <option value="ANALISTA">Analista</option>
-                                </select>
-                            </div>
-                        </div>
-                        <div class="flex justify-end">
-                            <button type="submit" class="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2 rounded-lg text-sm font-medium transition">
-                                Vincular Persona Física Existente
-                            </button>
-                        </div>
-                    </form>
                 </div>
-                {% endif %}
-                {% endif %}
 
-                {% if not target_profile.is_corporate %}
+                <!-- Update Category & Transaction Volume Form -->
                 <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-                    <h3 class="text-lg font-semibold text-slate-800 mb-2 pb-2 border-b border-slate-200">1. Grupos Corporativos Vinculados (Persona Física)</h3>
-                    <p class="text-xs text-slate-600 mb-4">Una persona física puede pertenecer a múltiples grupos corporativos con roles de Operador o Analista.</p>
+                    <h3 class="text-lg font-semibold text-slate-800 mb-2 pb-2 border-b border-slate-200">Actualizar Categoría y Volumen Transaccional</h3>
+                    <p class="text-xs text-slate-600 mb-4">Modifique la categoría y el volumen transaccional del cliente para ajustar sus beneficios y tasas preferenciales.</p>
                     
-                    <div class="mb-4">
-                        <h4 class="text-sm font-semibold text-slate-700 mb-2">Grupos Actuales de esta Persona Física:</h4>
-                        <ul class="divide-y divide-slate-200 text-sm mb-4">
-                            {% for mem in target_profile.group_memberships.all %}
-                            <li class="py-2.5 flex justify-between items-center">
-                                <span>Empresa / Grupo: <strong class="text-slate-900">{{ mem.corporate_group.group_name }}</strong></span>
-                                <span class="bg-indigo-100 text-indigo-800 text-xs px-2.5 py-1 rounded-full font-medium">{{ mem.get_role_in_group_display }}</span>
-                            </li>
-                            {% empty %}
-                            <li class="py-2 text-slate-500 text-xs">Esta persona física aún no está vinculada a ningún grupo corporativo.</li>
-                            {% endfor %}
-                        </ul>
-                    </div>
-
-                    <form method="POST" class="space-y-4 pt-4 border-t border-slate-200">
-                        {% csrf_token %}
-                        <input type="hidden" name="action" value="link_to_corporate_group">
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div>
-                                <label class="block text-sm font-medium text-slate-700 mb-1">Seleccionar Grupo Corporativo</label>
-                                <select name="corporate_group_id" required class="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-800 font-medium">
-                                    <option value="">-- Seleccionar Grupo Corporativo --</option>
-                                    {% for cg in all_corporate_groups %}
-                                        <option value="{{ cg.id }}">{{ cg.group_name }}</option>
-                                    {% endfor %}
-                                </select>
-                            </div>
-                            <div>
-                                <label class="block text-sm font-medium text-slate-700 mb-1">Rol en el Grupo (Operador / Analista)</label>
-                                <select name="role_in_group" required class="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-800 font-medium">
-                                    <option value="OPERADOR">Operador</option>
-                                    <option value="ANALISTA">Analista</option>
-                                </select>
-                            </div>
-                        </div>
-                        <div class="flex justify-end">
-                            <button type="submit" class="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2 rounded-lg text-sm font-medium transition">
-                                Vincular a este Grupo Corporativo
-                            </button>
-                        </div>
-                    </form>
-                </div>
-                {% endif %}
-
-                <!-- 3. Update Category -->
-                <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-                    <h3 class="text-lg font-semibold text-slate-800 mb-4 pb-2 border-b border-slate-200">Actualizar Segmentación y Volumen</h3>
                     <form method="POST" class="space-y-4">
                         {% csrf_token %}
                         <input type="hidden" name="action" value="update_category">
-                        <div>
-                            <label class="block text-sm font-medium text-slate-700 mb-1">Categoría de Cliente</label>
-                            <select name="category" class="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-800 font-medium">
-                                <option value="MINORISTA" {% if target_profile.category == 'MINORISTA' %}selected{% endif %}>Minorista</option>
-                                <option value="CORPORATIVO" {% if target_profile.category == 'CORPORATIVO' %}selected{% endif %}>Corporativo</option>
-                                <option value="VIP" {% if target_profile.category == 'VIP' %}selected{% endif %}>VIP</option>
-                            </select>
-                        </div>
-                        <div>
-                            <label class="block text-sm font-medium text-slate-700 mb-1">Volumen Transaccional (Gs)</label>
-                            <input type="number" step="0.01" name="transaction_volume" value="{{ target_profile.transaction_volume }}" class="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-800">
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-sm font-medium text-slate-700 mb-1">Categoría</label>
+                                <select name="category" required class="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-800 font-medium bg-white">
+                                    <option value="MINORISTA" {% if cliente.categoria == 'MINORISTA' %}selected{% endif %}>Minorista</option>
+                                    <option value="CORPORATIVO" {% if cliente.categoria == 'CORPORATIVO' %}selected{% endif %}>Corporativo</option>
+                                    <option value="VIP" {% if cliente.categoria == 'VIP' %}selected{% endif %}>VIP</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-slate-700 mb-1">Volumen Transaccional (Gs)</label>
+                                <input type="number" step="0.01" name="transaction_volume" value="{{ cliente.transaction_volume }}" required class="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-800">
+                            </div>
                         </div>
                         <div class="flex justify-end">
-                            <button type="submit" class="bg-blue-800 hover:bg-blue-900 text-white px-6 py-2.5 rounded-lg text-semibold transition">
+                            <button type="submit" class="bg-blue-800 hover:bg-blue-900 text-white px-5 py-2 rounded-lg text-sm font-medium transition">
                                 Guardar Segmentación
                             </button>
                         </div>
                     </form>
+                </div>
+
+                <!-- Create New User & Associate -->
+                <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                    <h3 class="text-lg font-semibold text-slate-800 mb-2 pb-2 border-b border-slate-200">Crear Nuevo Usuario y Asociar al Cliente</h3>
+                    <p class="text-xs text-slate-600 mb-4">Cree una cuenta para un nuevo usuario en la plataforma y asígnela directamente a este cliente.</p>
+                    
+                    <form method="POST" class="space-y-4">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="create_user_and_associate">
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-sm font-medium text-slate-700 mb-1">Usuario</label>
+                                <input type="text" name="new_username" placeholder="ej. juanperez" required class="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-800">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-slate-700 mb-1">Correo Electrónico</label>
+                                <input type="email" name="new_email" placeholder="usuario@dominio.com" required class="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-800">
+                            </div>
+                        </div>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-sm font-medium text-slate-700 mb-1">Contraseña Inicial</label>
+                                <input type="password" name="new_password" placeholder="Mínimo 8 caracteres" required class="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-800">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-slate-700 mb-1">Rol en el Cliente</label>
+                                <select name="rol_en_cliente" required class="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-800 font-medium bg-white">
+                                    <option value="ADMIN">Dueño / Admin</option>
+                                    <option value="OPERADOR">Operador</option>
+                                    <option value="ANALISTA">Analista</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="flex justify-end">
+                            <button type="submit" class="bg-green-600 hover:bg-green-700 text-white px-5 py-2 rounded-lg text-sm font-medium transition">
+                                Crear Usuario y Asociar
+                            </button>
+                        </div>
+                    </form>
+                </div>
+
+                <!-- Associated Users & Association Combined Card -->
+                <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                    <h3 class="text-lg font-semibold text-slate-800 mb-2 pb-2 border-b border-slate-200">Usuarios Operativos Asociados y Asociación</h3>
+                    <p class="text-xs text-slate-600 mb-4">Visualice los usuarios asociados a este cliente, desasígnelos o asocie nuevos usuarios existentes.</p>
+                    
+                    <!-- List of Associated Users -->
+                    <div class="mb-6">
+                        <h4 class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Usuarios Actualmente Asociados:</h4>
+                        <ul class="divide-y divide-slate-200 text-sm">
+                            {% for rel in usuarios_relacionados %}
+                            <li class="py-3 flex justify-between items-center">
+                                <div>
+                                    <strong class="text-slate-900 text-base">{{ rel.resolved_username }}</strong>
+                                    {% if rel.resolved_email %}<span class="text-xs text-slate-500 block">{{ rel.resolved_email }}</span>{% endif %}
+                                    <span class="bg-blue-100 text-blue-800 text-xs px-2.5 py-0.5 rounded-full font-medium inline-block mt-1">Rol: {{ rel.rol_en_cliente }}</span>
+                                </div>
+                                <form method="POST" class="inline">
+                                    {% csrf_token %}
+                                    <input type="hidden" name="action" value="unassign_user">
+                                    <input type="hidden" name="rel_id" value="{{ rel.id }}">
+                                    <button type="submit" onclick="return confirm('¿Está seguro de desasignar este usuario del cliente?');" class="bg-red-100 hover:bg-red-200 text-red-700 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition">
+                                        Desasignar
+                                    </button>
+                                </form>
+                            </li>
+                            {% empty %}
+                            <li class="py-3 text-slate-500 text-xs">No hay usuarios asociados a este cliente actualmente.</li>
+                            {% endfor %}
+                        </ul>
+                    </div>
+
+                    <!-- Form to Associate Existing User -->
+                    <div class="pt-4 border-t border-slate-200">
+                        <h4 class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Asociar Usuario Existente:</h4>
+                        <form method="POST" class="space-y-4">
+                            {% csrf_token %}
+                            <input type="hidden" name="action" value="associate_existing_user">
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block text-xs font-medium text-slate-700 mb-1">Usuario Existente</label>
+                                    <select name="user_id" required class="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-800 font-medium bg-white">
+                                        <option value="">-- Seleccionar Usuario --</option>
+                                        {% for u in available_users %}
+                                            <option value="{{ u.id }}">{{ u.username }} ({{ u.email }})</option>
+                                        {% endfor %}
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-medium text-slate-700 mb-1">Rol en el Cliente</label>
+                                    <select name="rol_en_cliente" required class="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-800 font-medium bg-white">
+                                        <option value="ADMIN">Dueño / Admin</option>
+                                        <option value="OPERADOR">Operador</option>
+                                        <option value="ANALISTA">Analista</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="flex justify-end">
+                                <button type="submit" class="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-lg text-sm font-semibold transition">
+                                    Asociar Usuario Existente
+                                </button>
+                            </div>
+                        </form>
+                    </div>
                 </div>
 
                 <!-- Audit History -->
@@ -308,7 +328,7 @@
                                 {% empty %}
                                 <tr>
                                     <td colspan="3" class="px-4 py-6 text-center text-slate-500 text-xs">
-                                        No hay registros de auditoría.
+                                        No hay registros de auditoría para este cliente.
                                     </td>
                                 </tr>
                                 {% endfor %}

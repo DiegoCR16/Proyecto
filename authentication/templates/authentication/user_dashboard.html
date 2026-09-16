@@ -22,7 +22,7 @@
                     <span class="bg-slate-700 text-xs px-2.5 py-1 rounded-full font-medium ml-2">Usuario</span>
                 </div>
                 <div class="flex items-center space-x-4">
-                    {% if corporate_groups or is_corporate or active_group or user_roles %}
+                    {% if corporate_groups or active_group %}
                     <div class="flex items-center space-x-2">
                         <a href="{% url 'switch_to_client_mode' %}" class="bg-blue-600 hover:bg-blue-700 text-white text-xs px-3 py-1.5 rounded-lg font-medium transition">
                             Volver a Panel de Cliente

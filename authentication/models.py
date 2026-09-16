@@ -1,6 +1,7 @@
 from django.db import models
 from django.contrib.auth.models import User
 from decimal import Decimal
+import uuid
 
 class Permission(models.Model):
     """
@@ -241,5 +242,37 @@ class MemberRequest(models.Model):
 
     def __str__(self):
         return f"Solicitud Miembro ({self.role_requested}): {self.target_email} -> {self.corporate_group.group_name} ({self.status})"
+
+class Cliente(models.Model):
+    """
+    Modelo que representa un Cliente (Persona Física o Jurídica) almacenado en la base de datos relacional (PostgreSQL).
+    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    nombre_o_razon_social = models.CharField(max_length=255, verbose_name="Nombre o Razón Social")
+    tipo_cliente = models.CharField(max_length=20, choices=[('FISICA', 'Persona Física'), ('FISICO', 'Persona Física'), ('JURIDICA', 'Persona Jurídica'), ('JURIDICO', 'Persona Jurídica')], default='FISICA', verbose_name="Tipo de Cliente")
+    documento_identidad = models.CharField(max_length=50, unique=True, db_index=True, verbose_name="Cédula o RUC")
+    email = models.EmailField(verbose_name="Correo Electrónico")
+    categoria = models.CharField(max_length=50, default='MINORISTA', verbose_name="Categoría")
+    transaction_volume = models.DecimalField(max_digits=15, decimal_places=2, default=0.00, verbose_name="Volumen Transaccional (Gs)")
+    creado_en = models.DateTimeField(auto_now_add=True, verbose_name="Fecha de Creación")
+
+    def __str__(self):
+        return f"{self.nombre_o_razon_social} ({self.documento_identidad}) - {self.tipo_cliente}"
+
+class UsuarioClienteRelacion(models.Model):
+    """
+    Modelo para mapear qué usuarios operan en qué cliente y con qué rol.
+    """
+    keycloak_user_id = models.CharField(max_length=255, db_index=True, verbose_name="Keycloak User ID")
+    cliente = models.ForeignKey(Cliente, on_delete=models.CASCADE, related_name='usuarios_relacionados', verbose_name="Cliente")
+    rol_en_cliente = models.CharField(max_length=50, default='ADMIN', verbose_name="Rol en el Cliente")
+
+    class Meta:
+        unique_together = ('keycloak_user_id', 'cliente')
+        verbose_name = "Relación Usuario-Cliente"
+        verbose_name_plural = "Relaciones Usuario-Cliente"
+
+    def __str__(self):
+        return f"User {self.keycloak_user_id} -> {self.cliente.nombre_o_razon_social} ({self.rol_en_cliente})"
 
 

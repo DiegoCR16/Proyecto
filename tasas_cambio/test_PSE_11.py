@@ -153,3 +153,21 @@ class SimuladorConversionPSE11Tests(TestCase):
         })
         self.assertEqual(response_error.status_code, 200)
         self.assertContains(response_error, "Error en la Simulación")
+
+    def test_user_mode_no_benefits(self):
+        """
+        Valida que si el usuario VIP se encuentra en 'modo usuario' (user_mode=True),
+        el simulador no aplique ningún beneficio y realice la simulación estándar (Minorista, 0% beneficio).
+        """
+        session = self.client.session
+        session['user_mode'] = True
+        session.save()
+
+        self.client.force_login(self.user_vip)
+        response = self.client.post(self.simulator_url, {
+            'from_currency': 'PYG',
+            'to_currency': 'USD',
+            'amount': '745000'
+        })
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "100.00")

@@ -7,7 +7,7 @@ from django.contrib.auth.decorators import login_required
 from decimal import Decimal
 from datetime import timedelta
 import random
-from authentication.models import UserProfile
+from authentication.models import UserProfile, Cliente, UsuarioClienteRelacion
 from .models import ExchangeRate, ExchangeRateHistory, ClientBenefitRule, PaymentMethod
 
 def ensure_default_benefit_rules():
@@ -128,6 +128,47 @@ def public_rates_view(request):
     return render(request, 'tasas_cambio/rates_board.html', context)
 
 
+def get_user_effective_category(user, request=None):
+    """
+    Determina la categoría efectiva del cliente con el que se está operando,
+    considerando si el usuario está en 'modo usuario' (user_mode=True), en cuyo caso
+    opera como usuario regular sin beneficios de cliente.
+    Si está en modo cliente, considera el cliente activo en sesión (active_client_id),
+    las relaciones en UsuarioClienteRelacion, o el perfil del usuario.
+    """
+    cat_code = 'MINORISTA'
+    if not user or not user.is_authenticated:
+        return cat_code
+
+    try:
+        if request and request.session.get('user_mode', False):
+            return 'MINORISTA'
+
+        active_client = None
+        active_client_id = request.session.get('active_client_id') if request else None
+
+        if active_client_id:
+            active_client = Cliente.objects.filter(id=active_client_id).first()
+            if not active_client and str(active_client_id).isdigit():
+                active_client = Cliente.objects.filter(id=int(active_client_id)).first()
+
+        if not active_client and hasattr(user, 'profile') and user.profile.keycloak_id:
+            rel = UsuarioClienteRelacion.objects.filter(keycloak_user_id=user.profile.keycloak_id).select_related('cliente').first()
+            if rel:
+                active_client = rel.cliente
+                if request:
+                    request.session['active_client_id'] = str(active_client.id)
+
+        if active_client:
+            cat_code = active_client.categoria
+        elif hasattr(user, 'profile') and user.profile.category:
+            cat_code = user.profile.category
+    except Exception:
+        pass
+
+    return cat_code
+
+
 class SimuladorConversionService:
     """
     Servicio de dominio para la simulación de conversión de divisas (PSE-11 / PSE-29).
@@ -135,7 +176,7 @@ class SimuladorConversionService:
     """
 
     @staticmethod
-    def simular(from_currency, to_currency, amount, user=None):
+    def simular(from_currency, to_currency, amount, user=None, request=None):
         """
         Simula una conversión monetaria entre dos divisas aplicando reglas de beneficio parametrizables.
 
@@ -170,8 +211,7 @@ class SimuladorConversionService:
 
         if user and user.is_authenticated:
             try:
-                profile = user.profile
-                cat_code = profile.category
+                cat_code = get_user_effective_category(user, request=request)
                 rule = ClientBenefitRule.objects.filter(category_code=cat_code).first()
                 if rule:
                     category_name = rule.category_name
@@ -356,7 +396,8 @@ def currency_simulator_view(request):
                 from_currency=from_currency,
                 to_currency=to_currency,
                 amount=amount_str,
-                user=request.user
+                user=request.user,
+                request=request
             )
         except ValidationError as e:
             error_message = e.messages[0] if hasattr(e, 'messages') else str(e)
@@ -369,7 +410,8 @@ def currency_simulator_view(request):
                     from_currency=from_currency,
                     to_currency=to_currency,
                     amount=amount_str,
-                    user=request.user
+                    user=request.user,
+                    request=request
                 )
             except ValidationError as e:
                 error_message = e.messages[0] if hasattr(e, 'messages') else str(e)
@@ -380,13 +422,16 @@ def currency_simulator_view(request):
     user_profile = None
     benefit_percentage = Decimal('0.00')
     category_display = 'Invitado / Minorista'
+    cat_code = get_user_effective_category(request.user, request=request)
     if request.user.is_authenticated:
         try:
             user_profile = request.user.profile
-            rule = ClientBenefitRule.objects.filter(category_code=user_profile.category).first()
+            rule = ClientBenefitRule.objects.filter(category_code=cat_code).first()
             if rule:
                 benefit_percentage = rule.benefit_percentage
                 category_display = rule.category_name
+            else:
+                category_display = cat_code
         except Exception:
             pass
 
