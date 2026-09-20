@@ -368,7 +368,7 @@ def dashboard_redirect_view(request):
 
     rates = ExchangeRate.objects.all().order_by('id')
 
-    has_client_mode = bool(interface_ctx.get('active_client') or interface_ctx['active_group'] or interface_ctx['corporate_groups'] or profile.is_corporate)
+    has_client_mode = bool(interface_ctx.get('active_client') or interface_ctx.get('clientes_asociados') or interface_ctx['active_group'] or interface_ctx['corporate_groups'] or profile.is_corporate)
     
     if has_client_mode:
         if interface_ctx.get('active_client'):

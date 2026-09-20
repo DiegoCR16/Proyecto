@@ -650,29 +650,58 @@ def client_benefit_config_view(request):
 
 def ensure_default_payment_methods():
     """
-    Asegura que existan los métodos de pago predeterminados en la base de datos (PSE-25).
+    Asegura que existan los métodos de pago predeterminados en la base de datos (PSE-25),
+    incluyendo tarjetas de crédito y débito, transferencias y billeteras con campos de número de cuenta y banco.
     """
     PaymentMethod.objects.get_or_create(
-        code='TRANSFERENCIA',
+        code='TARJETA_CREDITO',
         defaults={
-            'name': 'Transferencia Bancaria',
-            'description': 'Transferencia directa entre cuentas bancarias autorizadas.',
+            'name': 'Tarjeta de Crédito Visa / Mastercard',
+            'method_type': 'TARJETA_CREDITO',
+            'account_number': '4532-xxxx-xxxx-8890',
+            'bank_name': 'Banco Regional / Processed by Bancard',
+            'account_type': 'Crédito',
+            'holder_name': 'Global Exchange S.A.',
+            'description': 'Cobro automatizado mediante pasarela de tarjeta de crédito.',
             'is_active': True
         }
     )
     PaymentMethod.objects.get_or_create(
-        code='TARJETA',
+        code='TARJETA_DEBITO',
         defaults={
-            'name': 'Tarjeta de Crédito / Débito',
-            'description': 'Cobro mediante pasarela de tarjetas Visa, Mastercard, etc.',
+            'name': 'Tarjeta de Débito Bancaria',
+            'method_type': 'TARJETA_DEBITO',
+            'account_number': '5412-xxxx-xxxx-3321',
+            'bank_name': 'Red Bancard / Itaú',
+            'account_type': 'Débito',
+            'holder_name': 'Global Exchange S.A.',
+            'description': 'Cobro inmediato con tarjeta de débito en POS o pasarela.',
+            'is_active': True
+        }
+    )
+    PaymentMethod.objects.get_or_create(
+        code='TRANSFERENCIA',
+        defaults={
+            'name': 'Transferencia Bancaria',
+            'method_type': 'TRANSFERENCIA',
+            'account_number': '1029384756',
+            'bank_name': 'Banco Itaú Paraguay',
+            'account_type': 'Cuenta Corriente',
+            'holder_name': 'Global Exchange S.A.',
+            'description': 'Transferencia directa entre cuentas bancarias autorizadas.',
             'is_active': True
         }
     )
     PaymentMethod.objects.get_or_create(
         code='BILLETERA',
         defaults={
-            'name': 'Billeteras Electrónicas',
-            'description': 'Pagos a través de billeteras móviles (Zimple, Tigo Money, etc.).',
+            'name': 'Billeteras Electrónicas (Zimple / Tigo Money)',
+            'method_type': 'BILLETERA',
+            'account_number': '0981-555-444',
+            'bank_name': 'Telecel / Bancard',
+            'account_type': 'Billetera Móvil',
+            'holder_name': 'Global Exchange S.A.',
+            'description': 'Pagos a través de billeteras móviles.',
             'is_active': True
         }
     )
@@ -680,6 +709,11 @@ def ensure_default_payment_methods():
         code='EFECTIVO',
         defaults={
             'name': 'Efectivo en Sucursal',
+            'method_type': 'EFECTIVO',
+            'account_number': 'Caja Central N° 1',
+            'bank_name': 'Ventanilla Global Exchange',
+            'account_type': 'Efectivo',
+            'holder_name': 'Caja General',
             'description': 'Pago presencial en ventanilla de caja.',
             'is_active': True
         }
@@ -689,7 +723,8 @@ def ensure_default_payment_methods():
 @login_required
 def currency_payment_config_view(request):
     """
-    Vista de administración con funcionalidad CRUD completa para Divisas y Métodos de Pago (PSE-25).
+    Vista de administración con funcionalidad CRUD completa para Divisas y Métodos de Pago (PSE-25),
+    incluyendo campos específicos por tipo (número de cuenta, tarjeta, banco, titular).
     
     Args:
         request (HttpRequest): Solicitud HTTP del administrador.
@@ -756,6 +791,11 @@ def currency_payment_config_view(request):
             elif action == 'add_payment_method':
                 code = request.POST.get('pm_code', '').strip().upper()
                 name = request.POST.get('pm_name', '').strip()
+                method_type = request.POST.get('pm_method_type', 'TRANSFERENCIA').strip()
+                account_number = request.POST.get('pm_account_number', '').strip()
+                bank_name = request.POST.get('pm_bank_name', '').strip()
+                account_type = request.POST.get('pm_account_type', '').strip()
+                holder_name = request.POST.get('pm_holder_name', '').strip()
                 description = request.POST.get('pm_description', '').strip()
                 is_active = request.POST.get('pm_is_active') == 'on'
 
@@ -766,6 +806,11 @@ def currency_payment_config_view(request):
                     code=code,
                     defaults={
                         'name': name,
+                        'method_type': method_type,
+                        'account_number': account_number,
+                        'bank_name': bank_name,
+                        'account_type': account_type,
+                        'holder_name': holder_name,
                         'description': description,
                         'is_active': is_active
                     }

@@ -282,3 +282,73 @@ class AuthenticationPSE4Tests(TestCase):
         self.assertEqual(dash2.status_code, 200)
         self.assertContains(dash2, "Corporativo")
         self.assertContains(dash2, "4.00%")
+
+    def test_operator_analyst_client_mode_return(self):
+        """Verifica que un usuario normal asociado como operador a un cliente pueda cambiar a modo usuario y volver al panel de cliente, mostrando su rol de operador/analista junto al nombre del cliente."""
+        from authentication.models import Cliente, UsuarioClienteRelacion
+        user = User.objects.create_user(username="operadoruser", password="password123")
+        profile = UserProfile.objects.create(user=user, role=None, keycloak_id="kc-op-id")
+        cliente_op = Cliente.objects.create(nombre_o_razon_social="Cliente Operador SA", documento_identidad="888888", email="op@test.com", categoria="CORPORATIVO")
+        UsuarioClienteRelacion.objects.create(keycloak_user_id="kc-op-id", cliente=cliente_op, rol_en_cliente="OPERADOR")
+
+        self.client.login(username="operadoruser", password="password123")
+        
+        # 1. Al ingresar sale la interfaz del cliente asociado
+        resp_client = self.client.get('/auth/dashboard/')
+        self.assertEqual(resp_client.status_code, 200)
+        self.assertTemplateUsed(resp_client, 'authentication/client_dashboard.html')
+        self.assertContains(resp_client, "Cliente Operador SA")
+        self.assertContains(resp_client, "OPERADOR")
+
+        # 2. Mudarse a modo usuario
+        resp_mode = self.client.get('/auth/mode/user/')
+        self.assertRedirects(resp_mode, '/auth/dashboard/', fetch_redirect_response=False)
+        resp_user = self.client.get('/auth/dashboard/')
+        self.assertEqual(resp_user.status_code, 200)
+        self.assertTemplateUsed(resp_user, 'authentication/user_dashboard.html')
+        self.assertContains(resp_user, "Volver a Panel de Cliente")
+
+        # 3. Volver al panel del cliente
+        resp_back = self.client.get('/auth/mode/client/')
+        self.assertRedirects(resp_back, '/auth/dashboard/', fetch_redirect_response=False)
+        resp_back_dash = self.client.get('/auth/dashboard/')
+        self.assertEqual(resp_back_dash.status_code, 200)
+        self.assertTemplateUsed(resp_back_dash, 'authentication/client_dashboard.html')
+        self.assertContains(resp_back_dash, "Cliente Operador SA")
+        self.assertContains(resp_back_dash, "OPERADOR")
+
+    def test_analyst_vs_owner_request_member_form(self):
+        """Verifica que un usuario que es analista en un cliente y dueño en otro no vea el formulario de solicitud de miembros cuando está en el cliente donde es analista."""
+        from authentication.models import Cliente, UsuarioClienteRelacion
+        user = User.objects.create_user(username="multiroleuser", password="password123")
+        profile = UserProfile.objects.create(user=user, role=None, keycloak_id="kc-multi-id", is_corporate=False)
+
+        cliente_analista = Cliente.objects.create(nombre_o_razon_social="Cliente Analista SA", documento_identidad="777777", email="analista@test.com", categoria="MINORISTA")
+        cliente_dueno = Cliente.objects.create(nombre_o_razon_social="Cliente Dueno SA", documento_identidad="999999", email="dueno@test.com", categoria="MINORISTA")
+
+        UsuarioClienteRelacion.objects.create(keycloak_user_id="kc-multi-id", cliente=cliente_analista, rol_en_cliente="ANALISTA")
+        UsuarioClienteRelacion.objects.create(keycloak_user_id="kc-multi-id", cliente=cliente_dueno, rol_en_cliente="ADMIN")
+        from authentication.models import CorporateGroup
+        CorporateGroup.objects.create(juridica_profile=profile, group_name="Cliente Dueno SA", keycloak_group_id="group-dueno")
+
+        self.client.login(username="multiroleuser", password="password123")
+
+        # Set active client to analyst client first
+        resp = self.client.get(f'/auth/switch-client/{cliente_analista.id}/')
+        self.assertRedirects(resp, '/auth/dashboard/', fetch_redirect_response=False)
+        dash_analyst = self.client.get('/auth/dashboard/')
+        self.assertEqual(dash_analyst.status_code, 200)
+        self.assertContains(dash_analyst, "Cliente Analista SA")
+        self.assertContains(dash_analyst, "Analista")
+        self.assertNotContains(dash_analyst, "Solicitar Asociar Usuario al Grupo Cliente")
+
+        # Switch to owner client
+        resp_owner = self.client.get(f'/auth/switch-client/{cliente_dueno.id}/')
+        self.assertRedirects(resp_owner, '/auth/dashboard/', fetch_redirect_response=False)
+        dash_owner = self.client.get('/auth/dashboard/')
+        self.assertEqual(dash_owner.status_code, 200)
+        self.assertContains(dash_owner, "Cliente Dueno SA")
+        self.assertContains(dash_owner, "Cliente")
+        self.assertContains(dash_owner, "Solicitar Asociar Usuario al Grupo Cliente")
+
+

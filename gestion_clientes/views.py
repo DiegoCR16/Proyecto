@@ -708,6 +708,11 @@ def switch_group_view(request, group_id):
         membership = GroupMembership.objects.filter(corporate_group=corp_group, fisica_profile=profile).first()
         if membership or profile.is_corporate or request.user.is_superuser:
             request.session['active_group_id'] = group_id
+            cliente = Cliente.objects.filter(nombre_o_razon_social=corp_group.group_name).first()
+            if cliente:
+                request.session['active_client_id'] = str(cliente.id)
+            else:
+                request.session.pop('active_client_id', None)
             AuditLog.objects.create(
                 user=request.user,
                 action="SWITCH_GROUP",
@@ -738,6 +743,8 @@ def switch_client_view(request, client_id):
             corp_group = CorporateGroup.objects.filter(group_name=cliente.nombre_o_razon_social).first()
             if corp_group:
                 request.session['active_group_id'] = corp_group.keycloak_group_id or str(corp_group.id)
+            else:
+                request.session.pop('active_group_id', None)
 
             AuditLog.objects.create(
                 user=request.user,
@@ -807,10 +814,27 @@ def get_user_interface_context(request, profile):
         request.session['active_group_id'] = active_group.keycloak_group_id or str(active_group.id)
         active_membership = GroupMembership.objects.filter(corporate_group=active_group, fisica_profile=profile).first()
 
+    is_group_owner = False
+    if active_group and active_group.juridica_profile == profile:
+        is_group_owner = True
+
     clientes_asociados = []
-    if profile.keycloak_id:
-        relaciones = UsuarioClienteRelacion.objects.filter(keycloak_user_id=profile.keycloak_id).select_related('cliente')
-        clientes_asociados = [rel.cliente for rel in relaciones]
+    relaciones = UsuarioClienteRelacion.objects.filter(
+        models.Q(keycloak_user_id=profile.keycloak_id) | models.Q(keycloak_user_id=str(profile.user.id))
+    ).select_related('cliente')
+    for rel in relaciones:
+        rc = rel.rol_en_cliente.upper()
+        if rc in ['OPERADOR']:
+            rel.cliente.rol_display = 'Operador'
+            rel.cliente.rol_en_cliente = 'OPERADOR'
+        elif rc in ['ANALISTA']:
+            rel.cliente.rol_display = 'Analista'
+            rel.cliente.rol_en_cliente = 'ANALISTA'
+        else:
+            rel.cliente.rol_display = 'Cliente'
+            rel.cliente.rol_en_cliente = 'CLIENTE'
+        if rel.cliente not in clientes_asociados:
+            clientes_asociados.append(rel.cliente)
 
     active_client_id = request.session.get('active_client_id')
     active_client = None
@@ -823,12 +847,60 @@ def get_user_interface_context(request, profile):
         active_client = clientes_asociados[0]
         request.session['active_client_id'] = str(active_client.id)
 
+    if active_client:
+        corp_group_for_client = CorporateGroup.objects.filter(group_name=active_client.nombre_o_razon_social).first()
+        if corp_group_for_client:
+            active_group = corp_group_for_client
+            request.session['active_group_id'] = active_group.keycloak_group_id or str(active_group.id)
+            active_membership = GroupMembership.objects.filter(corporate_group=active_group, fisica_profile=profile).first()
+        else:
+            active_group = None
+            active_membership = None
+            request.session.pop('active_group_id', None)
+
+    client_role_display = 'Cliente'
+    if active_client:
+        rel_active = UsuarioClienteRelacion.objects.filter(
+            models.Q(keycloak_user_id=profile.keycloak_id) | models.Q(keycloak_user_id=str(profile.user.id)),
+            cliente=active_client
+        ).first()
+        if rel_active:
+            rc = rel_active.rol_en_cliente.upper()
+            if rc in ['OPERADOR']:
+                client_role_display = 'Operador'
+                active_client.rol_en_cliente = 'OPERADOR'
+            elif rc in ['ANALISTA']:
+                client_role_display = 'Analista'
+                active_client.rol_en_cliente = 'ANALISTA'
+            else:
+                client_role_display = 'Cliente'
+                active_client.rol_en_cliente = 'CLIENTE'
+        else:
+            if profile.is_corporate or is_group_owner:
+                client_role_display = 'Cliente'
+                active_client.rol_en_cliente = 'CLIENTE'
+            else:
+                client_role_display = 'Cliente'
+                active_client.rol_en_cliente = 'CLIENTE'
+        active_client.rol_display = client_role_display
+    elif active_group:
+        if is_group_owner or profile.is_corporate or (active_membership and active_membership.role_in_group.upper() in ['CLIENTE', 'ADMIN', 'JEFE']):
+            client_role_display = 'Cliente'
+        elif active_membership and active_membership.role_in_group.upper() == 'OPERADOR':
+            client_role_display = 'Operador'
+        elif active_membership and active_membership.role_in_group.upper() == 'ANALISTA':
+            client_role_display = 'Analista'
+        else:
+            client_role_display = 'Cliente'
+
     badge_text = None
     if is_admin:
         badge_text = "Administrador"
+    elif active_client:
+        client_name = active_client.nombre_o_razon_social
+        badge_text = f"{client_name} - {client_role_display.upper()}"
     elif active_group:
-        role_name = active_membership.role_in_group if active_membership else ("Corporativo" if profile.is_corporate else "Cliente")
-        badge_text = f"{active_group.group_name} - {role_name}"
+        badge_text = f"{active_group.group_name} - {client_role_display.upper()}"
     elif profile.role and profile.role.name.lower() not in ['cliente', 'individual', '']:
         badge_text = profile.role.name
     else:
@@ -850,10 +922,6 @@ def get_user_interface_context(request, profile):
 
     is_admin = request.user.is_superuser or (active_role and 'admin' in active_role.name.lower()) or (profile.role and 'admin' in profile.role.name.lower())
 
-    is_group_owner = False
-    if active_group and active_group.juridica_profile == profile:
-        is_group_owner = True
-
     return {
         'is_admin': is_admin,
         'badge_text': badge_text,
@@ -866,6 +934,7 @@ def get_user_interface_context(request, profile):
         'is_group_owner': is_group_owner,
         'clientes_asociados': clientes_asociados,
         'active_client': active_client,
+        'client_role_display': client_role_display,
     }
 
 def validate_password_complexity(password):

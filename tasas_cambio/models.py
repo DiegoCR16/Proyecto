@@ -93,17 +93,37 @@ class ClientBenefitRule(models.Model):
 
 class PaymentMethod(models.Model):
     """
-    Modelo que representa un método de pago parametrizable (tarjeta, transferencia, billeteras electrónicas, etc.) (PSE-25).
+    Modelo que representa un método de pago parametrizable (tarjeta de crédito, débito, transferencia, billeteras electrónicas, etc.)
+    con sus campos específicos por tipo (PSE-25).
     
     Attributes:
-        code (CharField): Código único del método de pago (ej. 'TARJETA', 'TRANSFERENCIA', 'BILLETERA').
+        code (CharField): Código único del método de pago.
         name (CharField): Nombre descriptivo del método de pago.
+        method_type (CharField): Tipo de método de pago (TARJETA_CREDITO, TARJETA_DEBITO, TRANSFERENCIA, BILLETERA, EFECTIVO, OTRO).
+        account_number (CharField): Número de cuenta, número de tarjeta o identificador.
+        bank_name (CharField): Nombre del banco o entidad emisora.
+        account_type (CharField): Tipo de cuenta (Corriente, Ahorro, etc.).
+        holder_name (CharField): Titular de la cuenta o tarjeta.
         description (TextField): Descripción o detalles del método de pago.
-        is_active (BooleanField): Estado de habilitación (True = Activo/Habilitado, False = Inactivo/Deshabilitado).
+        is_active (BooleanField): Estado de habilitación (True = Activo, False = Inactivo).
         updated_at (DateTimeField): Fecha de última actualización.
     """
+    METHOD_TYPES = [
+        ('TARJETA_CREDITO', 'Tarjeta de Crédito'),
+        ('TARJETA_DEBITO', 'Tarjeta de Débito'),
+        ('TRANSFERENCIA', 'Transferencia Bancaria'),
+        ('BILLETERA', 'Billetera Electrónica'),
+        ('EFECTIVO', 'Efectivo en Sucursal'),
+        ('OTRO', 'Otro / Personalizado'),
+    ]
+
     code = models.CharField(max_length=50, unique=True, verbose_name="Código de Método de Pago")
     name = models.CharField(max_length=100, verbose_name="Nombre del Método de Pago")
+    method_type = models.CharField(max_length=30, choices=METHOD_TYPES, default='TRANSFERENCIA', verbose_name="Tipo de Método de Pago")
+    account_number = models.CharField(max_length=100, blank=True, null=True, verbose_name="Número de Cuenta / Tarjeta")
+    bank_name = models.CharField(max_length=100, blank=True, null=True, verbose_name="Banco / Emisor")
+    account_type = models.CharField(max_length=50, blank=True, null=True, verbose_name="Tipo de Cuenta")
+    holder_name = models.CharField(max_length=150, blank=True, null=True, verbose_name="Titular")
     description = models.TextField(blank=True, null=True, verbose_name="Descripción")
     is_active = models.BooleanField(default=True, verbose_name="Habilitado / Activo")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="Última Actualización")
@@ -119,4 +139,5 @@ class PaymentMethod(models.Model):
         Returns:
             str: Representación descriptiva del método de pago.
         """
-        return f"{self.name} ({'Activo' if self.is_active else 'Inactivo'})"
+        acc_info = f" - N°: {self.account_number}" if self.account_number else ""
+        return f"{self.name} ({self.get_method_type_display()}){acc_info} ({'Activo' if self.is_active else 'Inactivo'})"

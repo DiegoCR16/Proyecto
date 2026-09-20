@@ -42,7 +42,12 @@
                         <select onchange="window.location.href=this.value" class="bg-slate-800 text-white text-xs px-2 py-1 rounded border border-slate-700">
                             {% for c in clientes_asociados %}
                             <option value="{% url 'switch_client' c.id %}" {% if active_client and active_client.id == c.id %}selected{% endif %}>
-                                {{ c.nombre_o_razon_social }} ({{ c.categoria }})
+                                {{ c.nombre_o_razon_social }} 
+                                {% if c.rol_display %}
+                                    ({{ c.rol_display }})
+                                {% else %}
+                                    ({{ c.categoria }})
+                                {% endif %}
                             </option>
                             {% endfor %}
                         </select>
@@ -105,7 +110,22 @@
 
         <div class="mb-8 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
             <div>
-                <h1 class="text-3xl font-bold text-slate-900">Panel de Cliente Personal</h1>
+                <h1 class="text-3xl font-bold text-slate-900">
+                    Panel de Cliente: 
+                    {% if active_client %}
+                        <span class="text-blue-800">{{ active_client.nombre_o_razon_social }}</span>
+                        {% if client_role_display %}
+                            <span class="bg-amber-100 text-amber-800 text-xs px-2.5 py-1 rounded-full font-semibold ml-2 inline-block align-middle">{{ client_role_display }}</span>
+                        {% endif %}
+                    {% elif active_group %}
+                        <span class="text-blue-800">{{ active_group.group_name }}</span>
+                        {% if client_role_display %}
+                            <span class="bg-amber-100 text-amber-800 text-xs px-2.5 py-1 rounded-full font-semibold ml-2 inline-block align-middle">{{ client_role_display }}</span>
+                        {% endif %}
+                    {% else %}
+                        Personal
+                    {% endif %}
+                </h1>
                 <p class="text-slate-600 mt-1">Consulte cotizaciones y realice operaciones de cambio de divisas.</p>
             </div>
             

@@ -42,7 +42,12 @@
                         <select onchange="window.location.href=this.value" class="bg-slate-800 text-white text-xs px-2 py-1 rounded border border-slate-700">
                             {% for c in clientes_asociados %}
                             <option value="{% url 'switch_client' c.id %}" {% if active_client and active_client.id == c.id %}selected{% endif %}>
-                                {{ c.nombre_o_razon_social }} ({{ c.categoria }})
+                                {{ c.nombre_o_razon_social }} 
+                                {% if c.rol_display %}
+                                    ({{ c.rol_display }})
+                                {% else %}
+                                    ({{ c.categoria }})
+                                {% endif %}
                             </option>
                             {% endfor %}
                         </select>

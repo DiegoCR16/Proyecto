@@ -72,25 +72,32 @@ class ParametrizacionDivisasMetodosPSE25Tests(TestCase):
 
     def test_payment_method_crud_and_toggle(self):
         """
-        Valida el CRUD completo y los toggles de estado de los métodos de pago de clientes.
+        Valida el CRUD completo, tipos de método de pago (tarjeta crédito/débito, número de cuenta) y toggles de estado.
         """
-        # Create
+        # Create Credit Card payment method with account/card number
         pm = PaymentMethod.objects.create(
-            code='QR',
-            name='Pago QR',
-            description='Código QR interbancario.',
+            code='TC_VISA',
+            name='Tarjeta de Crédito Visa',
+            method_type='TARJETA_CREDITO',
+            account_number='4532-1111-2222-3334',
+            bank_name='Banco Itaú',
+            account_type='Crédito',
+            holder_name='Global Exchange S.A.',
+            description='Tarjeta corporativa de crédito.',
             is_active=True
         )
-        self.assertTrue(PaymentMethod.objects.filter(code='QR').exists())
+        self.assertTrue(PaymentMethod.objects.filter(code='TC_VISA').exists())
+        self.assertEqual(pm.account_number, '4532-1111-2222-3334')
+        self.assertEqual(pm.method_type, 'TARJETA_CREDITO')
 
         # Toggle state
         pm.is_active = False
         pm.save()
-        self.assertFalse(PaymentMethod.objects.get(code='QR').is_active)
+        self.assertFalse(PaymentMethod.objects.get(code='TC_VISA').is_active)
 
         # Delete
         pm.delete()
-        self.assertFalse(PaymentMethod.objects.filter(code='QR').exists())
+        self.assertFalse(PaymentMethod.objects.filter(code='TC_VISA').exists())
 
     def test_admin_permission_restriction(self):
         """
@@ -103,11 +110,11 @@ class ParametrizacionDivisasMetodosPSE25Tests(TestCase):
         self.client.force_login(self.admin_user)
         response_admin = self.client.get(self.config_url)
         self.assertEqual(response_admin.status_code, 200)
-        self.assertContains(response_admin, "CRUD de Divisas y Métodos de Pago")
+        self.assertContains(response_admin, "Catálogo de Métodos de Pago")
 
     def test_admin_post_crud_integration(self):
         """
-        Valida las operaciones POST administrativas de creación y eliminación de divisas y métodos de pago.
+        Valida las operaciones POST administrativas de creación y eliminación de divisas y métodos de pago (incluyendo tarjetas con número de cuenta).
         """
         self.client.force_login(self.admin_user)
 
@@ -121,16 +128,24 @@ class ParametrizacionDivisasMetodosPSE25Tests(TestCase):
         self.assertEqual(resp_curr.status_code, 200)
         self.assertTrue(ExchangeRate.objects.filter(currency_code='CLP').exists())
 
-        # POST Crear método de pago BILLETERIAMOVIL
+        # POST Crear método de pago Tarjeta de Débito con número de cuenta
         resp_pm = self.client.post(self.config_url, {
             'action': 'add_payment_method',
-            'pm_code': 'BILLETERAMOVIL',
-            'pm_name': 'Billetera Móvil Express',
-            'pm_description': 'Pago mediante billetera digital.',
+            'pm_code': 'TD_MASTER',
+            'pm_name': 'Tarjeta Débito Mastercard',
+            'pm_method_type': 'TARJETA_DEBITO',
+            'pm_account_number': '5412-9999-8888-7776',
+            'pm_bank_name': 'Vision Banco',
+            'pm_account_type': 'Débito',
+            'pm_holder_name': 'Global Exchange S.A.',
+            'pm_description': 'Cobro con tarjeta de débito.',
             'pm_is_active': 'on'
         })
         self.assertEqual(resp_pm.status_code, 200)
-        self.assertTrue(PaymentMethod.objects.filter(code='BILLETERAMOVIL').exists())
+        pm_created = PaymentMethod.objects.get(code='TD_MASTER')
+        self.assertTrue(pm_created)
+        self.assertEqual(pm_created.method_type, 'TARJETA_DEBITO')
+        self.assertEqual(pm_created.account_number, '5412-9999-8888-7776')
 
         # POST Eliminar divisa CLP
         resp_del_curr = self.client.post(self.config_url, {
