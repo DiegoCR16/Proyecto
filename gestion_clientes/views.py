@@ -5,7 +5,7 @@ from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import User
 from django.conf import settings
 from django.db import models, IntegrityError
-from authentication.models import UserProfile, AuditLog, Role, CorporateGroup, GroupMembership, ClientRegistrationRequest, MemberRequest, Cliente, UsuarioClienteRelacion
+from authentication.models import UserProfile, AuditLog, Role, CorporateGroup, GroupMembership, ClientRegistrationRequest, MemberRequest, Cliente, UsuarioClienteRelacion, ClientAccreditationMethod
 
 def get_client_ip(request):
     """
@@ -1300,3 +1300,162 @@ def switch_role_view(request, role_id):
             details=f"Usuario {request.user.username} cambió a la interfaz del rol: {role.name}"
         )
     return redirect('dashboard_redirect')
+
+
+@login_required
+def client_acreditation_management_view(request):
+    """
+    Vista y CRUD de Medios de Acreditación de Fondos del Cliente (PSE-33):
+    Permite registrar, consultar, editar, desvincular y marcar como predeterminado
+    los medios de acreditación (cuentas bancarias, alias de transferencias y billeteras electrónicas).
+    
+    Args:
+        request (HttpRequest): Petición HTTP de Django.
+        
+    Returns:
+        HttpResponse: Renderiza la plantilla de gestión de medios de acreditación con diseño Corporate Modern.
+    """
+    profile, _ = UserProfile.objects.get_or_create(user=request.user)
+    interface_ctx = get_user_interface_context(request, profile)
+
+    is_admin = interface_ctx.get('is_admin', False)
+    is_group_owner = interface_ctx.get('is_group_owner', False)
+    is_corporate = profile.is_corporate
+    client_role = interface_ctx.get('client_role_display', '').lower()
+
+    can_manage = is_admin or is_group_owner or is_corporate or client_role in ['cliente', '']
+    if not can_manage:
+        return redirect('dashboard_redirect')
+
+    active_client = interface_ctx.get('active_client')
+
+    if not active_client:
+        active_client = Cliente.objects.filter(email=request.user.email).first()
+        if not active_client:
+            active_client = Cliente.objects.filter(documento_identidad=profile.ci_ruc).first() if profile.ci_ruc else None
+        if not active_client:
+            active_client = Cliente.objects.create(
+                nombre_o_razon_social=request.user.get_full_name() or request.user.username,
+                documento_identidad=profile.ci_ruc or f"CI-{request.user.id}",
+                tipo_cliente='FISICA',
+                email=request.user.email or f"{request.user.username}@globalexchange.com",
+                categoria=profile.category
+            )
+
+    error = None
+    success = None
+
+    if request.method == 'POST':
+        action = request.POST.get('action', '').strip()
+
+        if action == 'create_method':
+            tipo_medio = request.POST.get('tipo_medio', 'CUENTA_BANCARIA').strip()
+            entidad = request.POST.get('entidad_financiera', '').strip()
+            numero_cuenta = request.POST.get('numero_cuenta', '').strip()
+            tipo_cuenta = request.POST.get('tipo_cuenta', '').strip()
+            numero_telefono = request.POST.get('numero_telefono', '').strip()
+            alias_transferencia = request.POST.get('alias_transferencia', '').strip()
+            titularidad = request.POST.get('titularidad', '').strip()
+            es_pred = request.POST.get('es_predeterminado') == 'on'
+
+            try:
+                method = ClientAccreditationMethod(
+                    cliente=active_client,
+                    user=request.user,
+                    tipo_medio=tipo_medio,
+                    entidad_financiera=entidad,
+                    numero_cuenta=numero_cuenta if tipo_medio == 'CUENTA_BANCARIA' else None,
+                    tipo_cuenta=tipo_cuenta if tipo_medio == 'CUENTA_BANCARIA' else None,
+                    numero_telefono=numero_telefono if tipo_medio == 'BILLETERA' else None,
+                    alias_transferencia=alias_transferencia if tipo_medio == 'ALIAS' else None,
+                    titularidad=titularidad,
+                    estado='VERIFICADO',
+                    es_predeterminado=es_pred
+                )
+                method.full_clean()
+                method.save()
+                success = "Medio de acreditación registrado y verificado exitosamente."
+                AuditLog.objects.create(
+                    user=request.user,
+                    action="CREATE_ACREDITATION_METHOD",
+                    ip_address=get_client_ip(request),
+                    details=f"Usuario {request.user.username} registró medio de acreditación ({tipo_medio}) en {entidad}."
+                )
+            except Exception as e:
+                error = f"Error de validación: {str(e)}"
+
+        elif action == 'update_method':
+            method_id = request.POST.get('method_id')
+            method = get_object_or_404(ClientAccreditationMethod, id=method_id, cliente=active_client)
+            
+            tipo_medio = request.POST.get('tipo_medio', method.tipo_medio).strip()
+            entidad = request.POST.get('entidad_financiera', method.entidad_financiera).strip()
+            numero_cuenta = request.POST.get('numero_cuenta', method.numero_cuenta or '').strip()
+            tipo_cuenta = request.POST.get('tipo_cuenta', method.tipo_cuenta or '').strip()
+            numero_telefono = request.POST.get('numero_telefono', method.numero_telefono or '').strip()
+            alias_transferencia = request.POST.get('alias_transferencia', method.alias_transferencia or '').strip()
+            titularidad = request.POST.get('titularidad', method.titularidad).strip()
+            es_pred = request.POST.get('es_predeterminado') == 'on'
+
+            try:
+                method.tipo_medio = tipo_medio
+                method.entidad_financiera = entidad
+                method.numero_cuenta = numero_cuenta if tipo_medio == 'CUENTA_BANCARIA' else None
+                method.tipo_cuenta = tipo_cuenta if tipo_medio == 'CUENTA_BANCARIA' else None
+                method.numero_telefono = numero_telefono if tipo_medio == 'BILLETERA' else None
+                method.alias_transferencia = alias_transferencia if tipo_medio == 'ALIAS' else None
+                method.titularidad = titularidad
+                method.es_predeterminado = es_pred
+                method.full_clean()
+                method.save()
+                success = "Medio de acreditación actualizado exitosamente."
+                AuditLog.objects.create(
+                    user=request.user,
+                    action="UPDATE_ACREDITATION_METHOD",
+                    ip_address=get_client_ip(request),
+                    details=f"Usuario {request.user.username} actualizó medio de acreditación ID {method.id}."
+                )
+            except Exception as e:
+                error = f"Error al actualizar: {str(e)}"
+
+        elif action == 'delete_method':
+            method_id = request.POST.get('method_id')
+            method = get_object_or_404(ClientAccreditationMethod, id=method_id, cliente=active_client)
+            
+            if method.has_pending_transactions():
+                error = "No se puede desvincular o eliminar el medio de acreditación porque está asociado a una transacción de venta en proceso (Pendiente)."
+            else:
+                method_name = str(method)
+                method.delete()
+                success = "Medio de acreditación desvinculado exitosamente."
+                AuditLog.objects.create(
+                    user=request.user,
+                    action="DELETE_ACREDITATION_METHOD",
+                    ip_address=get_client_ip(request),
+                    details=f"Usuario {request.user.username} desvinculó el medio de acreditación: {method_name}."
+                )
+
+        elif action == 'set_default':
+            method_id = request.POST.get('method_id')
+            method = get_object_or_404(ClientAccreditationMethod, id=method_id, cliente=active_client)
+            method.es_predeterminado = True
+            method.save()
+            success = "Medio de acreditación establecido como predeterminado para futuras operaciones."
+            AuditLog.objects.create(
+                user=request.user,
+                action="SET_DEFAULT_ACREDITATION_METHOD",
+                ip_address=get_client_ip(request),
+                details=f"Usuario {request.user.username} marcó como predeterminado el medio ID {method.id}."
+            )
+
+    methods = active_client.acreditation_methods.all()
+
+    context = {
+        'methods': methods,
+        'active_client': active_client,
+        'error': error,
+        'success': success,
+    }
+    context.update(interface_ctx)
+    return render(request, 'gestion_clientes/client_acreditation_list.html', context)
+

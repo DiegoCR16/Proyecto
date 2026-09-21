@@ -150,7 +150,7 @@
             </div>
         </div>
 
-        <div class="grid grid-cols-1 {% if client_role_display|lower != 'analista' and profile.role.name|lower != 'analista' %}md:grid-cols-4{% else %}md:grid-cols-2{% endif %} gap-6 mb-8">
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6 mb-8">
             {% if client_role_display|lower != 'analista' and profile.role.name|lower != 'analista' %}
             <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200 hover:border-blue-500 transition cursor-pointer" onclick="window.location.href='{% url 'procesamiento_operaciones:currency_purchase' %}'">
                 <h3 class="text-lg font-semibold text-slate-800 mb-2">Comprar Divisas</h3>
@@ -172,9 +172,16 @@
                 <h3 class="text-lg font-semibold text-slate-800 mb-2">Mis Transacciones</h3>
                 <p class="text-sm text-slate-600 mb-4">Volumen Transaccional Acumulado: <strong class="font-mono text-slate-900">₲ {{ active_client.transaction_volume|default:profile.transaction_volume|floatformat:0 }}</strong></p>
                 <div class="flex flex-col space-y-1 text-sm">
-                    <a href="{% url 'procesamiento_operaciones:currency_transactions_history' %}" class="text-blue-800 font-semibold hover:underline">Ver Historial Unificado (Compras y Ventas) &rarr;</a>
+                    <a href="{% url 'procesamiento_operaciones:currency_transactions_history' %}" class="text-blue-800 font-semibold hover:underline">Ver Historial Unificado &rarr;</a>
                 </div>
             </div>
+            {% if client_role_display|lower == 'cliente' or is_group_owner or profile.is_corporate or is_admin %}
+            <div class="bg-white p-6 rounded-xl shadow-sm border border-blue-200 bg-blue-50/40 hover:border-blue-500 transition cursor-pointer" onclick="window.location.href='{% url 'client_acreditation_methods' %}'">
+                <h3 class="text-lg font-semibold text-blue-900 mb-2">Medios de Acreditación</h3>
+                <p class="text-sm text-slate-600 mb-4">Gestione sus cuentas bancarias, billeteras electrónicas y alias predeterminados para recibir fondos.</p>
+                <a href="{% url 'client_acreditation_methods' %}" class="text-blue-800 font-semibold text-sm hover:underline">Gestionar Cuentas &rarr;</a>
+            </div>
+            {% endif %}
         </div>
 
         <!-- Banner to Visualizar Tasas / Gráfico de Evolución (Image 2 format) -->

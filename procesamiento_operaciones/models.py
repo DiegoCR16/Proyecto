@@ -2,7 +2,7 @@
 from django.db import models
 from django.core.exceptions import ValidationError
 from django.contrib.auth.models import User
-from authentication.models import Cliente
+from authentication.models import Cliente, ClientAccreditationMethod
 from tasas_cambio.models import PaymentMethod
 from decimal import Decimal
 
@@ -107,6 +107,7 @@ class CurrencySaleTransaction(models.Model):
     applied_rate = models.DecimalField(max_digits=12, decimal_places=4, verbose_name="Tasa Aplicada")
     standard_rate = models.DecimalField(max_digits=12, decimal_places=4, verbose_name="Tasa Estándar")
     linked_account = models.ForeignKey(PaymentMethod, on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Cuenta o Billetera Vinculada")
+    acreditation_method = models.ForeignKey(ClientAccreditationMethod, on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Medio de Acreditación del Cliente")
     benefit_percentage = models.DecimalField(max_digits=5, decimal_places=2, default=Decimal('0.00'), verbose_name="Descuento por Perfil (%)")
     commission_amount = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'), verbose_name="Comisión (Gs)")
     tax_amount = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'), verbose_name="Impuestos (Gs)")

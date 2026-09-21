@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Medios de Acreditación - Global Exchange</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+    </style>
+</head>
+<body class="bg-slate-50 min-h-screen flex flex-col justify-between">
+    <!-- Navbar -->
+    <nav class="bg-slate-900 text-white shadow">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between h-16 items-center">
+                <div class="flex items-center space-x-3">
+                    <div class="w-9 h-9 bg-blue-800 rounded-lg flex items-center justify-center font-bold text-lg">GX</div>
+                    <span class="font-bold text-lg">Global Exchange</span>
+                </div>
+                <div class="flex items-center space-x-4">
+                    <a href="{% url 'dashboard_redirect' %}" class="text-slate-300 hover:text-white text-sm font-medium">Panel Principal</a>
+                    <span class="text-sm text-slate-300">Cliente: <strong class="text-white">{{ active_client.nombre_o_razon_social }}</strong></span>
+                    <a href="{% url 'logout' %}" class="bg-red-600 hover:bg-red-700 text-white px-3.5 py-1.5 rounded-lg text-sm font-medium transition duration-200">
+                        Cerrar Sesión
+                    </a>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 flex-grow w-full">
+        <div class="mb-8 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+            <div>
+                <h1 class="text-3xl font-bold text-slate-950">Gestión de Medios de Acreditación</h1>
+                <p class="text-slate-600 mt-1">Configure sus cuentas bancarias, alias de transferencias y billeteras electrónicas para recibir fondos convertidos.</p>
+            </div>
+            <div class="flex items-center space-x-3">
+                <button onclick="openModal('createModal')" class="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-xl font-semibold text-sm transition shadow-sm flex items-center space-x-2">
+                    <span>+ Agregar Nuevo Medio</span>
+                </button>
+                <a href="/auth/dashboard/" class="inline-flex items-center bg-slate-900 hover:bg-slate-800 text-white px-4 py-2.5 rounded-xl text-sm font-medium shadow-sm transition">
+                    &larr; Volver al Panel
+                </a>
+            </div>
+        </div>
+
+        {% if error %}
+        <div class="mb-6 bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded-xl text-sm flex items-center justify-between">
+            <span><strong>Aviso de Seguridad / Validación:</strong> {{ error }}</span>
+            <button onclick="this.parentElement.style.display='none'" class="text-red-600 hover:text-red-900 font-bold">&times;</button>
+        </div>
+        {% endif %}
+
+        {% if success %}
+        <div class="mb-6 bg-green-50 border border-green-200 text-green-800 px-4 py-3 rounded-xl text-sm flex items-center justify-between">
+            <span><strong>Éxito:</strong> {{ success }}</span>
+            <button onclick="this.parentElement.style.display='none'" class="text-green-600 hover:text-green-900 font-bold">&times;</button>
+        </div>
+        {% endif %}
+
+        <!-- Grid of Methods / Cards -->
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {% for m in methods %}
+            <div class="bg-white rounded-2xl border {% if m.es_predeterminado %}border-blue-600 ring-2 ring-blue-100{% else %}border-slate-200{% endif %} p-6 shadow-sm flex flex-col justify-between relative">
+                {% if m.es_predeterminado %}
+                <div class="absolute top-4 right-4 bg-emerald-600 text-white text-[10px] font-bold px-2.5 py-1 rounded-full flex items-center space-x-1 shadow-sm">
+                    <span>★ Predeterminado</span>
+                </div>
+                {% endif %}
+
+                <div>
+                    <div class="flex items-center space-x-3 mb-4">
+                        <div class="w-10 h-10 rounded-xl {% if m.tipo_medio == 'CUENTA_BANCARIA' %}bg-blue-100 text-blue-800{% elif m.tipo_medio == 'BILLETERA' %}bg-purple-100 text-purple-800{% else %}bg-amber-100 text-amber-800{% endif %} flex items-center justify-center font-bold text-lg">
+                            {% if m.tipo_medio == 'CUENTA_BANCARIA' %}🏦{% elif m.tipo_medio == 'BILLETERA' %}📱{% else %}🔗{% endif %}
+                        </div>
+                        <div>
+                            <span class="text-xs text-slate-500 font-medium uppercase tracking-wider block">{{ m.get_tipo_medio_display }}</span>
+                            <h3 class="font-bold text-slate-900 text-base">{{ m.entidad_financiera }}</h3>
+                        </div>
+                    </div>
+
+                    <div class="space-y-2 mb-6 text-sm">
+                        {% if m.tipo_medio == 'CUENTA_BANCARIA' %}
+                        <div class="flex justify-between py-1 border-b border-slate-100">
+                            <span class="text-slate-500">N° Cuenta:</span>
+                            <strong class="font-mono text-slate-900">{{ m.numero_cuenta }}</strong>
+                        </div>
+                        <div class="flex justify-between py-1 border-b border-slate-100">
+                            <span class="text-slate-500">Tipo Cuenta:</span>
+                            <span class="text-slate-800 font-medium">{{ m.get_tipo_cuenta_display }}</span>
+                        </div>
+                        {% elif m.tipo_medio == 'BILLETERA' %}
+                        <div class="flex justify-between py-1 border-b border-slate-100">
+                            <span class="text-slate-500">Teléfono / Cuenta:</span>
+                            <strong class="font-mono text-slate-900">{{ m.numero_telefono }}</strong>
+                        </div>
+                        {% else %}
+                        <div class="flex justify-between py-1 border-b border-slate-100">
+                            <span class="text-slate-500">Alias:</span>
+                            <strong class="font-mono text-slate-900">{{ m.alias_transferencia }}</strong>
+                        </div>
+                        {% endif %}
+
+                        <div class="flex justify-between py-1 border-b border-slate-100">
+                            <span class="text-slate-500">Titular:</span>
+                            <span class="text-slate-800 font-medium truncate max-w-[180px]" title="{{ m.titularidad }}">{{ m.titularidad }}</span>
+                        </div>
+                        <div class="flex justify-between py-1">
+                            <span class="text-slate-500">Estado:</span>
+                            {% if m.estado == 'VERIFICADO' %}
+                            <span class="bg-green-100 text-green-800 text-xs px-2 py-0.5 rounded-full font-semibold">Verificado</span>
+                            {% else %}
+                            <span class="bg-yellow-100 text-yellow-800 text-xs px-2 py-0.5 rounded-full font-semibold">Pendiente</span>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+
+                <div class="pt-4 border-t border-slate-100 flex items-center justify-between gap-2">
+                    {% if not m.es_predeterminado %}
+                    <form method="POST" class="inline">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="set_default">
+                        <input type="hidden" name="method_id" value="{{ m.id }}">
+                        <button type="submit" class="text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold px-3 py-1.5 rounded-lg transition">
+                            Hacer Predeterminado
+                        </button>
+                    </form>
+                    {% else %}
+                    <span class="text-xs text-emerald-700 font-bold flex items-center">✓ Seleccionado</span>
+                    {% endif %}
+
+                    <div class="flex items-center space-x-2">
+                        <button onclick="openEditModal('{{ m.id }}', '{{ m.tipo_medio }}', '{{ m.entidad_financiera }}', '{{ m.numero_cuenta|default:'' }}', '{{ m.tipo_cuenta|default:'' }}', '{{ m.numero_telefono|default:'' }}', '{{ m.alias_transferencia|default:'' }}', '{{ m.titularidad }}', '{{ m.es_predeterminado|yesno:'true,false' }}')" class="text-xs bg-blue-50 hover:bg-blue-100 text-blue-700 font-semibold px-2.5 py-1.5 rounded-lg transition">
+                            Editar
+                        </button>
+                        <form method="POST" class="inline" onsubmit="return confirm('¿Confirma que desea desvincular este medio de acreditación?');">
+                            {% csrf_token %}
+                            <input type="hidden" name="action" value="delete_method">
+                            <input type="hidden" name="method_id" value="{{ m.id }}">
+                            <button type="submit" class="text-xs bg-red-50 hover:bg-red-100 text-red-600 font-semibold px-2.5 py-1.5 rounded-lg transition">
+                                Desvincular
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+            {% empty %}
+            <div class="col-span-full bg-white rounded-2xl border border-slate-200 p-12 text-center">
+                <div class="w-16 h-16 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center text-3xl mx-auto mb-4">💳</div>
+                <h3 class="text-lg font-bold text-slate-800 mb-2">No hay medios de acreditación vinculados</h3>
+                <p class="text-sm text-slate-600 mb-6 max-w-md mx-auto">Agregue una cuenta bancaria, billetera electrónica o alias de transferencia para recibir sus fondos en operaciones de venta de divisas.</p>
+                <button onclick="openModal('createModal')" class="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-xl font-semibold text-sm transition">
+                    + Registrar Primer Medio
+                </button>
+            </div>
+            {% endfor %}
+        </div>
+    </main>
+
+    <!-- Create Modal -->
+    <div id="createModal" class="fixed inset-0 bg-slate-950/60 backdrop-blur-xs hidden items-center justify-center p-4 z-50">
+        <div class="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-bold text-slate-900">Registrar Medio de Acreditación</h3>
+                <button onclick="closeModal('createModal')" class="text-slate-400 hover:text-slate-600 font-bold text-xl">&times;</button>
+            </div>
+            <form method="POST" class="space-y-4">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="create_method">
+                <div>
+                    <label class="block text-xs font-semibold text-slate-700 mb-1">Tipo de Medio</label>
+                    <select name="tipo_medio" id="create_tipo_medio" required onchange="toggleFields('create')" class="w-full px-3.5 py-2 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-800 bg-white">
+                        <option value="CUENTA_BANCARIA">Cuenta Bancaria</option>
+                        <option value="BILLETERA">Billetera Electrónica</option>
+                        <option value="ALIAS">Alias de Transferencia</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-700 mb-1">Banco / Entidad / Proveedor</label>
+                    <input type="text" name="entidad_financiera" required placeholder="Ej. Banco Itaú, Ueno, Tigo Money" class="w-full px-3.5 py-2 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-800">
+                </div>
+
+                <!-- Campos específicos Cuenta Bancaria -->
+                <div id="create_cuenta_fields" class="space-y-4">
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">Número de Cuenta</label>
+                        <input type="text" name="numero_cuenta" placeholder="Ej. 020193847" class="w-full px-3.5 py-2 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-800 font-mono">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">Tipo de Cuenta</label>
+                        <select name="tipo_cuenta" class="w-full px-3.5 py-2 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-800 bg-white">
+                            <option value="CORRIENTE">Cuenta Corriente</option>
+                            <option value="AHORRO">Caja de Ahorro</option>
+                            <option value="OTRO">Otro / General</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Campos específicos Billetera -->
+                <div id="create_billetera_fields" class="space-y-4 hidden">
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">Número de Teléfono / Cuenta Billetera</label>
+                        <input type="text" name="numero_telefono" placeholder="Ej. +595981123456" class="w-full px-3.5 py-2 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-800 font-mono">
+                    </div>
+                </div>
+
+                <!-- Campos específicos Alias -->
+                <div id="create_alias_fields" class="space-y-4 hidden">
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">Alias de Transferencia</label>
+                        <input type="text" name="alias_transferencia" placeholder="Ej. mi.alias.banco" class="w-full px-3.5 py-2 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-800 font-mono">
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-semibold text-slate-700 mb-1">Titularidad (Validación Autenticada)</label>
+                    <input type="text" name="titularidad" required value="{{ active_client.nombre_o_razon_social }}" class="w-full px-3.5 py-2 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-800">
+                </div>
+                <div class="flex items-center space-x-2 pt-2">
+                    <input type="checkbox" name="es_predeterminado" id="create_pred" class="w-4 h-4 text-blue-600 border-slate-300 rounded">
+                    <label for="create_pred" class="text-xs font-medium text-slate-700">Marcar como Medio Predeterminado</label>
+                </div>
+                <div class="flex justify-end space-x-3 pt-4 border-t border-slate-100">
+                    <button type="button" onclick="closeModal('createModal')" class="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-semibold rounded-xl transition">Cancelar</button>
+                    <button type="submit" class="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-xl transition">Guardar y Verificar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Edit Modal -->
+    <div id="editModal" class="fixed inset-0 bg-slate-950/60 backdrop-blur-xs hidden items-center justify-center p-4 z-50">
+        <div class="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-bold text-slate-900">Editar Medio de Acreditación</h3>
+                <button onclick="closeModal('editModal')" class="text-slate-400 hover:text-slate-600 font-bold text-xl">&times;</button>
+            </div>
+            <form method="POST" class="space-y-4" id="editForm">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="update_method">
+                <input type="hidden" name="method_id" id="edit_method_id">
+                <div>
+                    <label class="block text-xs font-semibold text-slate-700 mb-1">Tipo de Medio</label>
+                    <select name="tipo_medio" id="edit_tipo_medio" required onchange="toggleFields('edit')" class="w-full px-3.5 py-2 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-800 bg-white">
+                        <option value="CUENTA_BANCARIA">Cuenta Bancaria</option>
+                        <option value="BILLETERA">Billetera Electrónica</option>
+                        <option value="ALIAS">Alias de Transferencia</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-700 mb-1">Banco / Entidad / Proveedor</label>
+                    <input type="text" name="entidad_financiera" id="edit_entidad" required class="w-full px-3.5 py-2 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-800">
+                </div>
+
+                <!-- Campos específicos Cuenta Bancaria -->
+                <div id="edit_cuenta_fields" class="space-y-4">
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">Número de Cuenta</label>
+                        <input type="text" name="numero_cuenta" id="edit_numero_cuenta" class="w-full px-3.5 py-2 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-800 font-mono">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">Tipo de Cuenta</label>
+                        <select name="tipo_cuenta" id="edit_tipo_cuenta" class="w-full px-3.5 py-2 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-800 bg-white">
+                            <option value="CORRIENTE">Cuenta Corriente</option>
+                            <option value="AHORRO">Caja de Ahorro</option>
+                            <option value="OTRO">Otro / General</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Campos específicos Billetera -->
+                <div id="edit_billetera_fields" class="space-y-4 hidden">
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">Número de Teléfono / Cuenta Billetera</label>
+                        <input type="text" name="numero_telefono" id="edit_numero_telefono" class="w-full px-3.5 py-2 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-800 font-mono">
+                    </div>
+                </div>
+
+                <!-- Campos específicos Alias -->
+                <div id="edit_alias_fields" class="space-y-4 hidden">
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">Alias de Transferencia</label>
+                        <input type="text" name="alias_transferencia" id="edit_alias_transferencia" class="w-full px-3.5 py-2 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-800 font-mono">
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-semibold text-slate-700 mb-1">Titularidad</label>
+                    <input type="text" name="titularidad" id="edit_titularidad" required class="w-full px-3.5 py-2 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-800">
+                </div>
+                <div class="flex items-center space-x-2 pt-2">
+                    <input type="checkbox" name="es_predeterminado" id="edit_pred" class="w-4 h-4 text-blue-600 border-slate-300 rounded">
+                    <label for="edit_pred" class="text-xs font-medium text-slate-700">Marcar como Medio Predeterminado</label>
+                </div>
+                <div class="flex justify-end space-x-3 pt-4 border-t border-slate-100">
+                    <button type="button" onclick="closeModal('editModal')" class="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-semibold rounded-xl transition">Cancelar</button>
+                    <button type="submit" class="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-xl transition">Actualizar Cambios</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <footer class="bg-white border-t border-slate-200 py-6 text-center text-xs text-slate-500">
+        &copy; 2026 Global Exchange S.A. - Ingeniería de Software 2 (FPUNA). Todos los derechos reservados.
+    </footer>
+
+    <script>
+        function openModal(modalId) {
+            document.getElementById(modalId).classList.remove('hidden');
+            document.getElementById(modalId).classList.add('flex');
+            if (modalId === 'createModal') {
+                toggleFields('create');
+            }
+        }
+        function closeModal(modalId) {
+            document.getElementById(modalId).classList.remove('flex');
+            document.getElementById(modalId).classList.add('hidden');
+        }
+        function toggleFields(prefix) {
+            const tipo = document.getElementById(prefix + '_tipo_medio').value;
+            const cuentaFields = document.getElementById(prefix + '_cuenta_fields');
+            const billeteraFields = document.getElementById(prefix + '_billetera_fields');
+            const aliasFields = document.getElementById(prefix + '_alias_fields');
+
+            cuentaFields.classList.add('hidden');
+            billeteraFields.classList.add('hidden');
+            aliasFields.classList.add('hidden');
+
+            if (tipo === 'CUENTA_BANCARIA') {
+                cuentaFields.classList.remove('hidden');
+            } else if (tipo === 'BILLETERA') {
+                billeteraFields.classList.remove('hidden');
+            } else if (tipo === 'ALIAS') {
+                aliasFields.classList.remove('hidden');
+            }
+        }
+        function openEditModal(id, tipo, entidad, numCuenta, tipoCuenta, numTel, aliasTr, titularidad, isPred) {
+            document.getElementById('edit_method_id').value = id;
+            document.getElementById('edit_tipo_medio').value = tipo;
+            document.getElementById('edit_entidad').value = entidad;
+            document.getElementById('edit_numero_cuenta').value = numCuenta;
+            document.getElementById('edit_tipo_cuenta').value = tipoCuenta;
+            document.getElementById('edit_numero_telefono').value = numTel;
+            document.getElementById('edit_alias_transferencia').value = aliasTr;
+            document.getElementById('edit_titularidad').value = titularidad;
+            document.getElementById('edit_pred').checked = (isPred === 'true');
+            toggleFields('edit');
+            openModal('editModal');
+        }
+    </script>
+</body>
+</html>

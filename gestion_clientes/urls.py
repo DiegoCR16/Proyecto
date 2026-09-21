@@ -15,4 +15,5 @@ urlpatterns = [
     path('admin/users/create/', views.admin_user_create_view, name='admin_user_create'),
     path('admin/users/<int:user_id>/edit/', views.admin_user_edit_view, name='admin_user_edit'),
     path('admin/users/<int:user_id>/delete/', views.admin_user_delete_view, name='admin_user_delete'),
+    path('acreditation-methods/', views.client_acreditation_management_view, name='client_acreditation_methods'),
 ]

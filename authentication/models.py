@@ -2,6 +2,7 @@ from django.db import models
 from django.contrib.auth.models import User
 from decimal import Decimal
 import uuid
+import re
 
 class Permission(models.Model):
     """
@@ -274,5 +275,107 @@ class UsuarioClienteRelacion(models.Model):
 
     def __str__(self):
         return f"User {self.keycloak_user_id} -> {self.cliente.nombre_o_razon_social} ({self.rol_en_cliente})"
+
+
+class ClientAccreditationMethod(models.Model):
+    """
+    Modelo que representa un medio de acreditación de fondos del cliente (cuentas bancarias, alias de transferencias y billeteras electrónicas)
+    con sus campos específicos (número de cuenta, tipo de cuenta, teléfono, alias, entidad y titularidad) (PSE-33).
+    
+    Attributes:
+        cliente (ForeignKey): Cliente al que pertenece el medio de acreditación.
+        user (ForeignKey): Usuario que registró el medio.
+        tipo_medio (CharField): Tipo de medio ('CUENTA_BANCARIA', 'BILLETERA', 'ALIAS').
+        entidad_financiera (CharField): Entidad financiera o proveedora (Banco, Cooperativa, Billetera).
+        numero_cuenta (CharField): Número de cuenta bancaria.
+        tipo_cuenta (CharField): Tipo de cuenta ('CORRIENTE', 'AHORRO', 'OTRO').
+        numero_telefono (CharField): Número de teléfono para billetera electrónica.
+        alias_transferencia (CharField): Alias de transferencia bancaria o billetera.
+        titularidad (CharField): Titular de la cuenta o medio.
+        estado (CharField): Estado de verificación ('VERIFICADO', 'PENDIENTE').
+        es_predeterminado (BooleanField): Indica si es el medio predeterminado para operaciones.
+        creado_en (DateTimeField): Fecha y hora de creación.
+        actualizado_en (DateTimeField): Fecha y hora de última actualización.
+    """
+    TIPO_MEDIO_CHOICES = [
+        ('CUENTA_BANCARIA', 'Cuenta Bancaria'),
+        ('BILLETERA', 'Billetera Electrónica'),
+        ('ALIAS', 'Alias de Transferencia'),
+    ]
+    TIPO_CUENTA_CHOICES = [
+        ('CORRIENTE', 'Cuenta Corriente'),
+        ('AHORRO', 'Caja de Ahorro'),
+        ('OTRO', 'Otro / General'),
+    ]
+    ESTADO_CHOICES = [
+        ('VERIFICADO', 'Verificado'),
+        ('PENDIENTE', 'Pendiente'),
+    ]
+
+    cliente = models.ForeignKey(Cliente, on_delete=models.CASCADE, related_name='acreditation_methods', verbose_name="Cliente")
+    user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Usuario Registrador")
+    tipo_medio = models.CharField(max_length=30, choices=TIPO_MEDIO_CHOICES, default='CUENTA_BANCARIA', verbose_name="Tipo de Medio")
+    entidad_financiera = models.CharField(max_length=150, verbose_name="Banco / Entidad Financiera / Proveedor")
+    
+    # Campos específicos según tipo
+    numero_cuenta = models.CharField(max_length=100, blank=True, null=True, verbose_name="Número de Cuenta")
+    tipo_cuenta = models.CharField(max_length=30, choices=TIPO_CUENTA_CHOICES, blank=True, null=True, verbose_name="Tipo de Cuenta")
+    numero_telefono = models.CharField(max_length=50, blank=True, null=True, verbose_name="Número de Teléfono / Cuenta Billetera")
+    alias_transferencia = models.CharField(max_length=150, blank=True, null=True, verbose_name="Alias de Transferencia")
+    
+    titularidad = models.CharField(max_length=200, verbose_name="Titularidad")
+    estado = models.CharField(max_length=20, choices=ESTADO_CHOICES, default='VERIFICADO', verbose_name="Estado")
+    es_predeterminado = models.BooleanField(default=False, verbose_name="Predeterminado")
+    creado_en = models.DateTimeField(auto_now_add=True, verbose_name="Fecha de Creación")
+    actualizado_en = models.DateTimeField(auto_now=True, verbose_name="Última Actualización")
+
+    class Meta:
+        verbose_name = "Medio de Acreditación"
+        verbose_name_plural = "Medios de Acreditación"
+        ordering = ['-es_predeterminado', '-creado_en']
+
+    def __str__(self):
+        """Devuelve la representación en cadena del medio de acreditación."""
+        if self.tipo_medio == 'CUENTA_BANCARIA':
+            detail = f"Cuenta N°: {self.numero_cuenta} ({self.get_tipo_cuenta_display()})"
+        elif self.tipo_medio == 'BILLETERA':
+            detail = f"Teléfono/Billetera: {self.numero_telefono}"
+        else:
+            detail = f"Alias: {self.alias_transferencia}"
+        return f"{self.get_tipo_medio_display()} - {self.entidad_financiera} | {detail} [{self.estado}]"
+
+    def clean(self):
+        """Valida formato específico por tipo de medio y titularidad."""
+        from django.core.exceptions import ValidationError
+        if not self.entidad_financiera or not self.titularidad:
+            raise ValidationError("La entidad financiera y la titularidad son obligatorias.")
+        
+        if self.tipo_medio == 'CUENTA_BANCARIA':
+            if not self.numero_cuenta or not any(char.isdigit() for char in self.numero_cuenta):
+                raise ValidationError("Debe especificar un número de cuenta bancaria válido con dígitos.")
+        elif self.tipo_medio == 'BILLETERA':
+            if not self.numero_telefono or not re.search(r'[\d\+\-\s]{7,}', self.numero_telefono):
+                raise ValidationError("Debe especificar un número de teléfono o cuenta de billetera válido.")
+        elif self.tipo_medio == 'ALIAS':
+            if not self.alias_transferencia or len(self.alias_transferencia.strip()) < 3:
+                raise ValidationError("Debe especificar un alias de transferencia válido de al menos 3 caracteres.")
+
+    def has_pending_transactions(self):
+        """
+        Verifica si el medio de acreditación está asociado a alguna transacción en proceso (PENDING).
+        
+        Returns:
+            bool: True si tiene transacciones pendientes, False en caso contrario.
+        """
+        from procesamiento_operaciones.models import CurrencySaleTransaction
+        return CurrencySaleTransaction.objects.filter(acreditation_method=self, status='PENDING').exists()
+
+    def save(self, *args, **kwargs):
+        """Asegura validación y exclusividad de predeterminado."""
+        self.full_clean()
+        if self.es_predeterminado:
+            ClientAccreditationMethod.objects.filter(cliente=self.cliente).exclude(pk=self.pk).update(es_predeterminado=False)
+        super().save(*args, **kwargs)
+
 
 
