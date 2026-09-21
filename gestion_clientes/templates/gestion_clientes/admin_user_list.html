@@ -58,9 +58,13 @@
                 <h1 class="text-3xl font-bold text-slate-900">CRUD de Usuarios del Sistema</h1>
                 <p class="text-slate-600 mt-1">Administre cuentas de usuario, asignación de roles principales y múltiples.</p>
             </div>
-            <a href="{% url 'admin_user_create' %}" class="bg-blue-800 hover:bg-blue-900 text-white font-semibold px-4 py-2.5 rounded-xl shadow transition duration-200 text-sm flex items-center space-x-2">
-                <span>+ Nuevo Usuario</span>
-            </a>
+            <div class="mt-4 md:mt-0 flex space-x-3">
+                <a href="{% url 'admin_user_create' %}" class="bg-blue-800 hover:bg-blue-900 text-white font-semibold px-4 py-2 rounded-xl shadow transition duration-200 text-sm flex items-center space-x-2">
+                    <span>+ Nuevo Usuario</span>
+                <a href="{% url 'dashboard_redirect' %}" class="bg-slate-800 hover:bg-slate-900 text-white px-4 py-2 rounded-lg text-sm font-medium transition">
+                    &larr; Volver al Panel
+                </a>
+            </div>  
         </div>
 
         {% if messages %}

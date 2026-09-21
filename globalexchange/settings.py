@@ -42,6 +42,8 @@ INSTALLED_APPS = [
     'authentication',
     'gestion_clientes',
     'tasas_cambio',
+    'procesamiento_operaciones',
+    'monitoreo_corporativo',
 ]
 
 # Keycloak & OIDC Settings for PSE-4

@@ -125,6 +125,7 @@ class PaymentMethod(models.Model):
     account_type = models.CharField(max_length=50, blank=True, null=True, verbose_name="Tipo de Cuenta")
     holder_name = models.CharField(max_length=150, blank=True, null=True, verbose_name="Titular")
     description = models.TextField(blank=True, null=True, verbose_name="Descripción")
+    balance = models.DecimalField(max_digits=18, decimal_places=2, default=Decimal('5000000000.00'), verbose_name="Saldo Disponible (Gs)")
     is_active = models.BooleanField(default=True, verbose_name="Habilitado / Activo")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="Última Actualización")
 
@@ -141,3 +142,4 @@ class PaymentMethod(models.Model):
         """
         acc_info = f" - N°: {self.account_number}" if self.account_number else ""
         return f"{self.name} ({self.get_method_type_display()}){acc_info} ({'Activo' if self.is_active else 'Inactivo'})"
+

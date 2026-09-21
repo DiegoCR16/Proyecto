@@ -91,15 +91,15 @@
         </div>
 
         <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-            <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200 hover:border-blue-500 transition cursor-pointer" onclick="window.location.href='{% url 'tasas_cambio:simulator' %}'">
+            <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200 hover:border-blue-500 transition cursor-pointer" onclick="window.location.href='{% url 'procesamiento_operaciones:currency_purchase' %}'">
                 <h3 class="text-lg font-semibold text-slate-800 mb-2">Operar Divisas Corporativas</h3>
                 <p class="text-sm text-slate-600 mb-4">Realice transacciones de gran volumen con tarifas preferenciales corporativas.</p>
-                <a href="{% url 'tasas_cambio:simulator' %}" class="text-blue-800 font-semibold text-sm hover:underline">Simular y Operar &rarr;</a>
+                <a href="{% url 'procesamiento_operaciones:currency_purchase' %}" class="text-blue-800 font-semibold text-sm hover:underline">Simular y Operar &rarr;</a>
             </div>
             <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
                 <h3 class="text-lg font-semibold text-slate-800 mb-2">Historial y Reportes</h3>
-                <p class="text-sm text-slate-600 mb-4">Volumen Transaccional Empresa: <strong class="font-mono text-slate-900">₲ {{ profile.transaction_volume|floatformat:0 }}</strong></p>
-                <a href="#" class="text-blue-800 font-semibold text-sm hover:underline">Ver Historial &rarr;</a>
+                <p class="text-sm text-slate-600 mb-4">Volumen Transaccional Empresa: <strong class="font-mono text-slate-900">₲ {{ active_client.transaction_volume|default:profile.transaction_volume|floatformat:0 }}</strong></p>
+                <a href="{% url 'procesamiento_operaciones:currency_purchase_history' %}" class="text-blue-800 font-semibold text-sm hover:underline">Ver Historial &rarr;</a>
             </div>
         </div>
 

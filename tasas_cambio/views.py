@@ -7,6 +7,7 @@ from django.contrib.auth.decorators import login_required
 from decimal import Decimal
 from datetime import timedelta
 import random
+import time
 from authentication.models import UserProfile, Cliente, UsuarioClienteRelacion
 from .models import ExchangeRate, ExchangeRateHistory, ClientBenefitRule, PaymentMethod
 
@@ -128,6 +129,62 @@ def public_rates_view(request):
     return render(request, 'tasas_cambio/rates_board.html', context)
 
 
+def get_active_client(user, request=None):
+    """
+    Retorna la instancia del Cliente activo en la sesión o relación del usuario (PSE-13 / Multi-cliente).
+    """
+    if not user or not user.is_authenticated:
+        return None
+    if request and request.session.get('user_mode', False):
+        return None
+    
+    active_client = None
+    active_client_id = request.session.get('active_client_id') if request else None
+
+    if active_client_id:
+        active_client = Cliente.objects.filter(id=active_client_id).first()
+        if not active_client and str(active_client_id).isdigit():
+            active_client = Cliente.objects.filter(id=int(active_client_id)).first()
+
+    if not active_client:
+        try:
+            profile = getattr(user, 'profile', None) or UserProfile.objects.filter(user=user).first()
+            if profile and profile.keycloak_id:
+                rel = UsuarioClienteRelacion.objects.filter(keycloak_user_id=profile.keycloak_id).select_related('cliente').first()
+                if rel:
+                    active_client = rel.cliente
+                    if request:
+                        request.session['active_client_id'] = str(active_client.id)
+        except Exception:
+            pass
+
+    return active_client
+
+
+def is_user_analyst(user, request=None):
+    """
+    Determina si el usuario actual o el rol activo en el cliente es Analista (prohibido realizar operaciones de compra).
+    """
+    if not user or not user.is_authenticated:
+        return False
+    try:
+        profile = getattr(user, 'profile', None) or UserProfile.objects.filter(user=user).first()
+        if profile and profile.role and 'analista' in profile.role.name.lower():
+            return True
+        
+        active_client = get_active_client(user, request)
+        if active_client and profile and profile.keycloak_id:
+            rel = UsuarioClienteRelacion.objects.filter(
+                models.Q(keycloak_user_id=profile.keycloak_id) | models.Q(keycloak_user_id=str(user.id)),
+                cliente=active_client
+            ).first()
+            if rel and rel.rol_en_cliente.upper() == 'ANALISTA':
+                return True
+    except Exception:
+        pass
+    return False
+
+
 def get_user_effective_category(user, request=None):
     """
     Determina la categoría efectiva del cliente con el que se está operando,
@@ -144,25 +201,13 @@ def get_user_effective_category(user, request=None):
         if request and request.session.get('user_mode', False):
             return 'MINORISTA'
 
-        active_client = None
-        active_client_id = request.session.get('active_client_id') if request else None
-
-        if active_client_id:
-            active_client = Cliente.objects.filter(id=active_client_id).first()
-            if not active_client and str(active_client_id).isdigit():
-                active_client = Cliente.objects.filter(id=int(active_client_id)).first()
-
-        if not active_client and hasattr(user, 'profile') and user.profile.keycloak_id:
-            rel = UsuarioClienteRelacion.objects.filter(keycloak_user_id=user.profile.keycloak_id).select_related('cliente').first()
-            if rel:
-                active_client = rel.cliente
-                if request:
-                    request.session['active_client_id'] = str(active_client.id)
-
+        active_client = get_active_client(user, request=request)
         if active_client:
-            cat_code = active_client.categoria
-        elif hasattr(user, 'profile') and user.profile.category:
-            cat_code = user.profile.category
+            return active_client.categoria
+
+        profile = getattr(user, 'profile', None) or UserProfile.objects.filter(user=user).first()
+        if profile and profile.category:
+            return profile.category
     except Exception:
         pass
 
@@ -844,7 +889,7 @@ def currency_payment_config_view(request):
         'error_message': error_message,
         'now': timezone.now(),
     }
-    return render(request, 'tasas_cambio/currency_payment_config.html', context)
+    return render(request, 'monitoreo_corporativo/currency_payment_config.html', context)
 
 
 @login_required
@@ -974,3 +1019,5 @@ def rates_manager_view(request):
         'now': timezone.now(),
     }
     return render(request, 'tasas_cambio/rates_manager.html', context)
+
+
