@@ -150,12 +150,17 @@
             </div>
         </div>
 
-        <div class="grid grid-cols-1 {% if client_role_display|lower != 'analista' and profile.role.name|lower != 'analista' %}md:grid-cols-3{% else %}md:grid-cols-2{% endif %} gap-6 mb-8">
+        <div class="grid grid-cols-1 {% if client_role_display|lower != 'analista' and profile.role.name|lower != 'analista' %}md:grid-cols-4{% else %}md:grid-cols-2{% endif %} gap-6 mb-8">
             {% if client_role_display|lower != 'analista' and profile.role.name|lower != 'analista' %}
             <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200 hover:border-blue-500 transition cursor-pointer" onclick="window.location.href='{% url 'procesamiento_operaciones:currency_purchase' %}'">
                 <h3 class="text-lg font-semibold text-slate-800 mb-2">Comprar Divisas</h3>
                 <p class="text-sm text-slate-600 mb-4">Realice la compra digital de divisas con selección de cuentas, método de pago y descuentos automáticos.</p>
                 <a href="{% url 'procesamiento_operaciones:currency_purchase' %}" class="text-blue-800 font-semibold text-sm hover:underline">Iniciar Compra &rarr;</a>
+            </div>
+            <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200 hover:border-blue-500 transition cursor-pointer" onclick="window.location.href='{% url 'procesamiento_operaciones:currency_sale' %}'">
+                <h3 class="text-lg font-semibold text-slate-800 mb-2">Vender Divisas</h3>
+                <p class="text-sm text-slate-600 mb-4">Venda sus divisas con aplicación de la tasa de compra vigente y acreditación en cuenta vinculada.</p>
+                <a href="{% url 'procesamiento_operaciones:currency_sale' %}" class="text-blue-800 font-semibold text-sm hover:underline">Iniciar Venta &rarr;</a>
             </div>
             {% endif %}
             <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200 hover:border-blue-500 transition cursor-pointer" onclick="window.location.href='{% url 'tasas_cambio:simulator' %}'">
@@ -166,7 +171,9 @@
             <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
                 <h3 class="text-lg font-semibold text-slate-800 mb-2">Mis Transacciones</h3>
                 <p class="text-sm text-slate-600 mb-4">Volumen Transaccional Acumulado: <strong class="font-mono text-slate-900">₲ {{ active_client.transaction_volume|default:profile.transaction_volume|floatformat:0 }}</strong></p>
-                <a href="{% url 'procesamiento_operaciones:currency_purchase_history' %}" class="text-blue-800 font-semibold text-sm hover:underline">Ver Historial &rarr;</a>
+                <div class="flex flex-col space-y-1 text-sm">
+                    <a href="{% url 'procesamiento_operaciones:currency_transactions_history' %}" class="text-blue-800 font-semibold hover:underline">Ver Historial Unificado (Compras y Ventas) &rarr;</a>
+                </div>
             </div>
         </div>
 
