@@ -3,8 +3,10 @@ from django.shortcuts import render, redirect
 from django.utils import timezone
 from django.core.exceptions import ValidationError
 from django.contrib.auth.decorators import login_required
+from django.http import HttpResponse
 from decimal import Decimal
 import time
+import csv
 from authentication.models import UserProfile, Cliente, UsuarioClienteRelacion
 from tasas_cambio.models import ExchangeRate, ClientBenefitRule, PaymentMethod
 from tasas_cambio.views import (
@@ -285,22 +287,57 @@ def currency_sale_history_view(request):
 @login_required
 def currency_transactions_history_view(request):
     """
-    Vista web para consultar el historial unificado de operaciones (compras y ventas de divisas)
-    del cliente activo actual (PROCESAMIENTO DE OPERACIONES / PSE-13 y PSE-14).
-    Combina y ordena cronológicamente todas las transacciones de compra y venta.
+    Vista web para consultar el historial unificado y detallado de operaciones (compras y ventas de divisas)
+    del cliente activo actual (PROCESAMIENTO DE OPERACIONES / PSE-13, PSE-14, PSE-15).
+    Permite filtrar por tipo de operación, estado operativo, rango de fechas, y exportar a Excel (CSV) o PDF.
     
     Args:
         request (HttpRequest): Solicitud HTTP del cliente.
         
     Returns:
-        HttpResponse: Página renderizada con el historial unificado de transacciones.
+        HttpResponse: Página renderizada con el historial filtrado, o archivo CSV/PDF descargable.
     """
     active_client = get_active_client(request.user, request=request)
     
-    purchases = []
-    sales = []
+    tx_type_filter = request.GET.get('tx_type', '')
+    status_filter = request.GET.get('status', '')
+    date_from_str = request.GET.get('date_from', '')
+    date_to_str = request.GET.get('date_to', '')
+    export_format = request.GET.get('export', '')
+
+    purchases_qs = CurrencyPurchaseTransaction.objects.all()
+    sales_qs = CurrencySaleTransaction.objects.all()
+
     if active_client:
-        purchases = list(CurrencyPurchaseTransaction.objects.filter(cliente=active_client))
+        purchases_qs = purchases_qs.filter(cliente=active_client)
+        sales_qs = sales_qs.filter(cliente=active_client)
+    else:
+        purchases_qs = purchases_qs.none()
+        sales_qs = sales_qs.none()
+
+    if date_from_str:
+        try:
+            d_from = timezone.datetime.strptime(date_from_str, '%Y-%m-%d').date()
+            purchases_qs = purchases_qs.filter(timestamp__date__gte=d_from)
+            sales_qs = sales_qs.filter(timestamp__date__gte=d_from)
+        except ValueError:
+            pass
+
+    if date_to_str:
+        try:
+            d_to = timezone.datetime.strptime(date_to_str, '%Y-%m-%d').date()
+            purchases_qs = purchases_qs.filter(timestamp__date__lte=d_to)
+            sales_qs = sales_qs.filter(timestamp__date__lte=d_to)
+        except ValueError:
+            pass
+
+    if status_filter:
+        purchases_qs = purchases_qs.filter(status__iexact=status_filter)
+        sales_qs = sales_qs.filter(status__iexact=status_filter)
+
+    purchases = []
+    if tx_type_filter in ['', 'COMPRA']:
+        purchases = list(purchases_qs)
         for p in purchases:
             p.tx_type = 'COMPRA'
             p.display_amount = p.amount
@@ -308,8 +345,21 @@ def currency_transactions_history_view(request):
             p.display_from = p.from_currency
             p.display_to = p.to_currency
             p.display_total = p.total_pyg
+            s_up = str(p.status).upper()
+            if s_up in ['SUCCESS', 'PAGADA']:
+                p.status_display = 'Pagada'
+            elif s_up in ['PENDING', 'PENDIENTE']:
+                p.status_display = 'Pendiente'
+            elif s_up in ['CANCELLED', 'CANCELADA']:
+                p.status_display = 'Cancelada'
+            elif s_up in ['ANNULLED', 'ANULADA']:
+                p.status_display = 'Anulada'
+            else:
+                p.status_display = p.status
 
-        sales = list(CurrencySaleTransaction.objects.filter(cliente=active_client))
+    sales = []
+    if tx_type_filter in ['', 'VENTA']:
+        sales = list(sales_qs)
         for s in sales:
             s.tx_type = 'VENTA'
             s.display_amount = s.amount
@@ -317,12 +367,57 @@ def currency_transactions_history_view(request):
             s.display_from = s.from_currency
             s.display_to = s.to_currency
             s.display_total = s.total_pyg
+            s_up = str(s.status).upper()
+            if s_up in ['SUCCESS', 'PAGADA']:
+                s.status_display = 'Pagada'
+            elif s_up in ['PENDING', 'PENDIENTE']:
+                s.status_display = 'Pendiente'
+            elif s_up in ['CANCELLED', 'CANCELADA']:
+                s.status_display = 'Cancelada'
+            elif s_up in ['ANNULLED', 'ANULADA']:
+                s.status_display = 'Anulada'
+            else:
+                s.status_display = s.status
 
     all_transactions = sorted(purchases + sales, key=lambda x: x.timestamp, reverse=True)
+
+    if export_format == 'excel':
+        response = HttpResponse(content_type='text/csv; charset=utf-8')
+        response['Content-Disposition'] = 'attachment; filename="historial_transacciones.csv"'
+        writer = csv.writer(response)
+        writer.writerow(['ID Operacion', 'Tipo', 'Fecha y Hora', 'Cliente', 'Moneda Origen', 'Moneda Destino', 'Monto Origen', 'Monto Convertido', 'Tasa Aplicada', 'Total (PYG)', 'Estado'])
+        for tx in all_transactions:
+            cliente_nombre = tx.cliente.nombre_o_razon_social if tx.cliente else 'N/A'
+            writer.writerow([
+                tx.id,
+                tx.tx_type,
+                tx.timestamp.strftime('%Y-%m-%d %H:%M:%S'),
+                cliente_nombre,
+                tx.display_from,
+                tx.display_to,
+                tx.display_amount,
+                tx.display_converted,
+                getattr(tx, 'applied_rate', ''),
+                tx.display_total,
+                getattr(tx, 'status_display', tx.status)
+            ])
+        return response
+
+    if export_format == 'pdf':
+        context = {
+            'transactions': all_transactions,
+            'active_client': active_client,
+            'now': timezone.now(),
+        }
+        return render(request, 'procesamiento_operaciones/currency_transactions_history_pdf.html', context)
 
     context = {
         'transactions': all_transactions,
         'active_client': active_client,
+        'tx_type': tx_type_filter,
+        'status': status_filter,
+        'date_from': date_from_str,
+        'date_to': date_to_str,
         'now': timezone.now(),
     }
     return render(request, 'procesamiento_operaciones/currency_transactions_history.html', context)

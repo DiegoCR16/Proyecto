@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 from django.db import models
+from django.core.exceptions import ValidationError
 from django.contrib.auth.models import User
 from authentication.models import Cliente
 from tasas_cambio.models import PaymentMethod
@@ -58,6 +59,15 @@ class CurrencyPurchaseTransaction(models.Model):
         """Devuelve la representación en cadena de la transacción de compra."""
         return f"Compra #{self.id or 0}: {self.amount} {self.from_currency} -> {self.converted_amount} {self.to_currency} ({self.status})"
 
+    def save(self, *args, **kwargs):
+        """
+        Garantiza la inmutabilidad del registro transaccional. Una vez guardado en la base de datos,
+        no se permiten modificaciones posteriores.
+        """
+        if self.pk and self.__class__.objects.filter(pk=self.pk).exists():
+            raise ValidationError("Las transacciones de compra son registros inmutables y no pueden ser modificadas.")
+        super().save(*args, **kwargs)
+
 
 class CurrencySaleTransaction(models.Model):
     """
@@ -110,4 +120,13 @@ class CurrencySaleTransaction(models.Model):
     def __str__(self):
         """Devuelve la representación en cadena de la transacción de venta."""
         return f"Venta #{self.id or 0}: {self.amount} {self.from_currency} -> {self.converted_amount} {self.to_currency} ({self.status})"
+
+    def save(self, *args, **kwargs):
+        """
+        Garantiza la inmutabilidad del registro transaccional de venta.
+        Una vez guardado, no se permiten modificaciones posteriores.
+        """
+        if self.pk and self.__class__.objects.filter(pk=self.pk).exists():
+            raise ValidationError("Las transacciones de venta son registros inmutables y no pueden ser modificadas.")
+        super().save(*args, **kwargs)
 
