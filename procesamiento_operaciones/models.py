@@ -62,10 +62,14 @@ class CurrencyPurchaseTransaction(models.Model):
     def save(self, *args, **kwargs):
         """
         Garantiza la inmutabilidad del registro transaccional. Una vez guardado en la base de datos,
-        no se permiten modificaciones posteriores.
+        no se permiten modificaciones posteriores, excepto transiciones permitidas desde PENDIENTE a SUCCESS o CANCELLED (PSE-31).
         """
         if self.pk and self.__class__.objects.filter(pk=self.pk).exists():
-            raise ValidationError("Las transacciones de compra son registros inmutables y no pueden ser modificadas.")
+            old_obj = self.__class__.objects.get(pk=self.pk)
+            if old_obj.status == 'PENDING' and self.status in ['SUCCESS', 'CANCELLED', 'FAILED']:
+                pass
+            else:
+                raise ValidationError("Las transacciones de compra son registros inmutables y no pueden ser modificadas.")
         super().save(*args, **kwargs)
 
 
@@ -124,9 +128,13 @@ class CurrencySaleTransaction(models.Model):
     def save(self, *args, **kwargs):
         """
         Garantiza la inmutabilidad del registro transaccional de venta.
-        Una vez guardado, no se permiten modificaciones posteriores.
+        Una vez guardado, no se permiten modificaciones posteriores, excepto transiciones desde PENDIENTE a SUCCESS o CANCELLED (PSE-31).
         """
         if self.pk and self.__class__.objects.filter(pk=self.pk).exists():
-            raise ValidationError("Las transacciones de venta son registros inmutables y no pueden ser modificadas.")
+            old_obj = self.__class__.objects.get(pk=self.pk)
+            if old_obj.status == 'PENDING' and self.status in ['SUCCESS', 'CANCELLED', 'FAILED']:
+                pass
+            else:
+                raise ValidationError("Las transacciones de venta son registros inmutables y no pueden ser modificadas.")
         super().save(*args, **kwargs)
 

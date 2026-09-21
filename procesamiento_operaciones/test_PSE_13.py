@@ -222,7 +222,7 @@ class CurrencyPurchasePSE13Tests(TestCase):
     def test_currency_purchase_web_view_integration(self):
         """
         Valida que la vista HTTP web de compra de divisas responda correctamente (status 200)
-        tanto en solicitudes GET como en POST exitosas y con errores de validación.
+        tanto en solicitudes GET como en el flujo de iniciación pendiente y confirmación de pago (PSE-31 / PSE-13).
         """
         self.client.force_login(self.user_vip)
         session = self.client.session
@@ -234,7 +234,7 @@ class CurrencyPurchasePSE13Tests(TestCase):
         self.assertEqual(res_get.status_code, 200)
         self.assertContains(res_get, "Operación Digital de Compra de Divisas")
 
-        # POST exitoso
+        # POST para iniciar orden pendiente
         res_post = self.client.post(self.purchase_url, {
             'from_currency': 'PYG',
             'to_currency': 'USD',
@@ -242,7 +242,18 @@ class CurrencyPurchasePSE13Tests(TestCase):
             'payment_method': self.pm_sufficient.code
         })
         self.assertEqual(res_post.status_code, 200)
-        self.assertContains(res_post, "¡Transacción de Compra Procesada con Éxito!")
+        self.assertContains(res_post, "Pantalla de Pago y Verificación")
+
+        pending_tx = CurrencyPurchaseTransaction.objects.filter(cliente=self.cliente_test, status='PENDING').first()
+        self.assertIsNotNone(pending_tx)
+
+        # POST para confirmar pago
+        res_confirm = self.client.post(self.purchase_url, {
+            'action': 'confirm_purchase',
+            'transaction_id': pending_tx.id
+        })
+        self.assertEqual(res_confirm.status_code, 200)
+        self.assertContains(res_confirm, "¡Transacción de Compra Procesada con Éxito!")
 
     def test_multi_client_volume_and_category(self):
         """
@@ -272,6 +283,15 @@ class CurrencyPurchasePSE13Tests(TestCase):
         })
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'Cliente Test SA')
+
+        pending_tx = CurrencyPurchaseTransaction.objects.filter(cliente=cliente_a, status='PENDING').first()
+        self.assertIsNotNone(pending_tx)
+        
+        # Confirmar pago para aplicar volumen transaccional
+        self.client.post(self.purchase_url, {
+            'action': 'confirm_purchase',
+            'transaction_id': pending_tx.id
+        })
 
         cliente_a.refresh_from_db()
         self.assertGreater(cliente_a.transaction_volume, Decimal('0.00'))

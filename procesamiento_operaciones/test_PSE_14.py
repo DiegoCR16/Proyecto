@@ -215,7 +215,7 @@ class CurrencySalePSE14Tests(TestCase):
     def test_currency_sale_web_view_integration(self):
         """
         Valida que la vista HTTP web de venta de divisas responda correctamente (status 200)
-        tanto en solicitudes GET como en POST exitosas.
+        tanto en solicitudes GET como en el flujo de iniciación pendiente y confirmación exitosa (PSE-31 / PSE-14).
         """
         self.client.force_login(self.user_vip)
         session = self.client.session
@@ -227,7 +227,7 @@ class CurrencySalePSE14Tests(TestCase):
         self.assertEqual(res_get.status_code, 200)
         self.assertContains(res_get, "Operación Digital de Venta de Divisas")
 
-        # POST exitoso
+        # POST para iniciar orden pendiente
         res_post = self.client.post(self.sale_url, {
             'from_currency': 'USD',
             'to_currency': 'PYG',
@@ -235,7 +235,18 @@ class CurrencySalePSE14Tests(TestCase):
             'payment_method': self.linked_account.code
         })
         self.assertEqual(res_post.status_code, 200)
-        self.assertContains(res_post, "¡Transacción de Venta Procesada con Éxito!")
+        self.assertContains(res_post, "Pantalla de Acreditación y Verificación")
+
+        pending_tx = CurrencySaleTransaction.objects.filter(cliente=self.cliente_test, status='PENDING').first()
+        self.assertIsNotNone(pending_tx)
+
+        # POST para confirmar la venta
+        res_confirm = self.client.post(self.sale_url, {
+            'action': 'confirm_sale',
+            'transaction_id': pending_tx.id
+        })
+        self.assertEqual(res_confirm.status_code, 200)
+        self.assertContains(res_confirm, "¡Transacción de Venta Procesada con Éxito!")
 
     def test_analista_cannot_sell_currencies(self):
         """

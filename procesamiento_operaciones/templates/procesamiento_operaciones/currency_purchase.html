@@ -85,12 +85,77 @@
         </div>
         {% endif %}
 
+        <!-- Pending Verification Card / Payment & Verification Screen (PSE-31) -->
+        {% if pending_transaction and pending_transaction.status == 'PENDING' %}
+        <div class="bg-amber-50 border-l-4 border-amber-600 p-6 rounded-2xl shadow-md space-y-4">
+            <div class="flex items-center space-x-3">
+                <div class="w-10 h-10 bg-amber-600 text-white rounded-full flex items-center justify-center font-bold text-lg shadow">⏳</div>
+                <div>
+                    <h3 class="text-lg font-bold text-amber-900">Pantalla de Pago y Verificación - Estado Pendiente (PSE-31)</h3>
+                    <p class="text-xs text-amber-700">Operación N° {{ pending_transaction.id }} en pausa previo a confirmación de pago. Verificando cotización en tiempo real.</p>
+                </div>
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 pt-3 border-t border-amber-200 text-xs">
+                <div>
+                    <span class="block text-amber-700 font-semibold">Monto Origen:</span>
+                    <strong class="text-amber-900 text-sm font-mono">{{ pending_transaction.amount }} {{ pending_transaction.from_currency }}</strong>
+                </div>
+                <div>
+                    <span class="block text-amber-700 font-semibold">Tasa Autorizada:</span>
+                    <strong class="text-amber-900 text-sm font-mono">{{ pending_transaction.applied_rate }}</strong>
+                </div>
+                <div>
+                    <span class="block text-amber-700 font-semibold">Total a Pagar (PYG):</span>
+                    <strong class="text-amber-900 text-sm font-mono">₲ {{ pending_transaction.total_pyg|floatformat:2 }}</strong>
+                </div>
+                <div>
+                    <span class="block text-amber-700 font-semibold">Método de Pago:</span>
+                    <strong class="text-amber-900 text-sm">{{ pending_transaction.payment_method.name }}</strong>
+                </div>
+            </div>
+            <div class="flex flex-col sm:flex-row gap-3 pt-2">
+                <form method="POST" action="{% url 'procesamiento_operaciones:currency_purchase' %}" class="flex-grow">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="confirm_purchase">
+                    <input type="hidden" name="transaction_id" value="{{ pending_transaction.id }}">
+                    <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 px-4 rounded-xl font-semibold text-sm transition shadow-sm flex items-center justify-center space-x-2">
+                        <span>Confirmar Pago y Ejecutar Operación</span>
+                    </button>
+                </form>
+                <form method="POST" action="{% url 'procesamiento_operaciones:currency_purchase' %}">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="cancel_purchase">
+                    <input type="hidden" name="transaction_id" value="{{ pending_transaction.id }}">
+                    <button type="submit" class="w-full bg-red-600 hover:bg-red-700 text-white py-3 px-6 rounded-xl font-semibold text-sm transition shadow-sm flex items-center justify-center space-x-2">
+                        <span>Cancelar Operación</span>
+                    </button>
+                </form>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Cancelled Transaction Alert Banner (PSE-31) -->
+        {% if cancelled_transaction %}
+        <div class="bg-red-50 border-l-4 border-red-600 p-6 rounded-2xl shadow-md space-y-3">
+            <div class="flex items-center space-x-3">
+                <div class="w-10 h-10 bg-red-600 text-white rounded-full flex items-center justify-center font-bold text-lg shadow">❌</div>
+                <div>
+                    <h3 class="text-lg font-bold text-red-900">Transacción Cancelada de Forma Segura (Sin Débito Financiero)</h3>
+                    <p class="text-xs text-red-700">Operación N° {{ cancelled_transaction.id }} interrumpida sin cargos ni comisiones.</p>
+                </div>
+            </div>
+            <div class="bg-white/80 p-3 rounded-xl border border-red-200 text-xs text-slate-700 font-mono">
+                <strong>Detalle de Interrupción:</strong> {{ cancelled_transaction.transparent_breakdown }}
+            </div>
+        </div>
+        {% endif %}
+
         <!-- Error Alert Banner -->
         {% if error_message %}
         <div class="bg-red-50 border-l-4 border-red-600 p-4 rounded-xl shadow-sm flex items-start space-x-3">
             <div class="flex-shrink-0 text-red-600 font-bold text-lg">⚠️</div>
             <div>
-                <h3 class="text-sm font-bold text-red-800">Error en la Operación de Compra</h3>
+                <h3 class="text-sm font-bold text-red-800">Alerta de Variación de Tasa / Error en Operación</h3>
                 <p class="text-xs text-red-700 mt-1">{{ error_message }}</p>
             </div>
         </div>
