@@ -37,7 +37,9 @@ services:
       - "8025:8025"
 
   web:
-    build: .
+    build:
+      context: .
+      target: development
     container_name: global-exchange-web
     command: ./entrypoint.sh
     volumes:

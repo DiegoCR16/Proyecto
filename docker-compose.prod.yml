@@ -1,0 +1,66 @@
+services:
+  db:
+    restart: always
+    ports: [] # Do not expose DB port publicly in production
+    environment:
+      POSTGRES_DB: ${DB_NAME:-globalexchange}
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  keycloak:
+    restart: always
+    environment:
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://db:5432/${DB_NAME:-globalexchange}
+      KC_DB_USERNAME: ${DB_USER:-postgres}
+      KC_DB_PASSWORD: ${DB_PASSWORD}
+    command: start --hostname-strict=false --optimized
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  mailpit:
+    restart: always
+    ports:
+      - "127.0.0.1:1025:1025"
+      - "127.0.0.1:8025:8025" # Bind to localhost in prod for security
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  web:
+    build:
+      context: .
+      target: production
+    restart: always
+    command: ./entrypoint-prod.sh
+    volumes:
+      - static_volume:/app/staticfiles
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env.production
+    depends_on:
+      db:
+        condition: service_healthy
+      keycloak:
+        condition: service_started
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  static_volume:
