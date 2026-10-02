@@ -71,8 +71,14 @@
                     <strong class="text-green-900 text-sm font-mono">{{ success_transaction.converted_amount }} {{ success_transaction.to_currency }}</strong>
                 </div>
                 <div>
-                    <span class="block text-green-700 font-semibold">Total Debitado (PYG):</span>
-                    <strong class="text-green-900 text-sm font-mono">₲ {{ success_transaction.total_pyg|floatformat:2 }}</strong>
+                    <span class="block text-green-700 font-semibold">Total Debitado:</span>
+                    <strong class="text-green-900 text-sm font-mono">
+                        {% if success_transaction.from_currency == 'PYG' %}
+                            ₲ {{ success_transaction.total_pyg|floatformat:2 }}
+                        {% else %}
+                            {{ success_transaction.total_origen|default:success_transaction.amount }} {{ success_transaction.from_currency }} 
+                        {% endif %}
+                    </strong>
                 </div>
                 <div>
                     <span class="block text-green-700 font-semibold">Descuento Aplicado:</span>
@@ -105,8 +111,14 @@
                     <strong class="text-amber-900 text-sm font-mono">{{ pending_transaction.applied_rate }}</strong>
                 </div>
                 <div>
-                    <span class="block text-amber-700 font-semibold">Total a Pagar (PYG):</span>
-                    <strong class="text-amber-900 text-sm font-mono">₲ {{ pending_transaction.total_pyg|floatformat:2 }}</strong>
+                    <span class="block text-amber-700 font-semibold">Total a Pagar:</span>
+                    <strong class="text-amber-900 text-sm font-mono">
+                        {% if pending_transaction.from_currency == 'PYG' %}
+                            ₲ {{ pending_transaction.total_pyg|floatformat:2 }}
+                        {% else %}
+                            {{ pending_transaction.total_origen|default:pending_transaction.amount }} {{ pending_transaction.from_currency }} 
+                        {% endif %}
+                    </strong>
                 </div>
                 <div>
                     <span class="block text-amber-700 font-semibold">Método de Pago:</span>
@@ -173,19 +185,35 @@
                     
                     <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
-                            <label class="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-2">Cuenta / Billetera Origen *</label>
+                            <div class="flex justify-between items-center mb-2">
+                                <label class="block text-xs font-semibold text-slate-700 uppercase tracking-wider">Cuenta Origen *</label>
+                                <a href="{% url 'client_acreditation_methods' %}" class="text-xs text-blue-600 hover:underline font-semibold">+ Agregar Cuenta</a>
+                            </div>
                             <select name="origin_account" required
                                 class="w-full px-4 py-3 border border-slate-300 rounded-xl text-sm font-medium focus:ring-2 focus:ring-blue-800 focus:outline-none transition bg-white">
-                                <option value="BILLETERA_PRINCIPAL">Billetera Principal PYG (Saldo Amplio)</option>
-                                <option value="CUENTA_BANCARIA">Cuenta Bancaria Vinculada</option>
+                                {% for am in acreditation_methods %}
+                                <option value="{{ am.id }}">
+                                    {{ am.get_tipo_medio_display }} - {{ am.entidad_financiera }} (N°: {{ am.numero_cuenta|default:am.numero_telefono|default:am.alias_transferencia }})
+                                </option>
+                                {% empty %}
+                                <option value="">No tiene cuentas registradas</option>
+                                {% endfor %}
                             </select>
                         </div>
                         <div>
-                            <label class="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-2">Cuenta / Billetera Destino *</label>
+                            <div class="flex justify-between items-center mb-2">
+                                <label class="block text-xs font-semibold text-slate-700 uppercase tracking-wider">Cuenta Destino *</label>
+                                <a href="{% url 'client_acreditation_methods' %}" class="text-xs text-blue-600 hover:underline font-semibold">+ Agregar Cuenta</a>
+                            </div>
                             <select name="destination_account" required
                                 class="w-full px-4 py-3 border border-slate-300 rounded-xl text-sm font-medium focus:ring-2 focus:ring-blue-800 focus:outline-none transition bg-white">
-                                <option value="BILLETERA_DIVISAS">Billetera Digital de Divisas</option>
-                                <option value="CUENTA_DESTINO_BANCO">Cuenta Bancaria Destino</option>
+                                {% for am in acreditation_methods %}
+                                <option value="{{ am.id }}">
+                                    {{ am.get_tipo_medio_display }} - {{ am.entidad_financiera }} (N°: {{ am.numero_cuenta|default:am.numero_telefono|default:am.alias_transferencia }})
+                                </option>
+                                {% empty %}
+                                <option value="">No tiene cuentas registradas</option>
+                                {% endfor %}
                             </select>
                         </div>
                     </div>

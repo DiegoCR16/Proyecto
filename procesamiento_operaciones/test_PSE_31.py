@@ -6,7 +6,7 @@ from django.core.exceptions import ValidationError
 from decimal import Decimal
 import time
 
-from authentication.models import UserProfile, Role, Cliente
+from authentication.models import UserProfile, Role, Cliente, ClientAccreditationMethod
 from tasas_cambio.models import ExchangeRate, PaymentMethod, ClientBenefitRule
 from tasas_cambio.views import ensure_default_benefit_rules
 from procesamiento_operaciones.models import CurrencyPurchaseTransaction
@@ -67,6 +67,16 @@ class CurrencyPurchasePSE31Tests(TestCase):
             documento_identidad='80031313-1',
             email='pse31@client.com',
             categoria='MINORISTA'
+        )
+        ClientAccreditationMethod.objects.create(
+            cliente=self.cliente_test,
+            tipo_medio='CUENTA_BANCARIA',
+            entidad_financiera='Banco Test PSE31',
+            numero_cuenta='31313131',
+            tipo_cuenta='AHORRO',
+            titularidad='Cliente PSE-31 S.A.',
+            estado='VERIFICADO',
+            es_predeterminado=True
         )
 
         self.role_test, _ = Role.objects.get_or_create(name="Role PSE31")
@@ -202,9 +212,9 @@ class CurrencyPurchasePSE31Tests(TestCase):
         )
         self.assertEqual(tx_success.status, 'SUCCESS')
 
-        # Verificar que se realizó el débito financiero
+        # Verificar que se acreditó en la caja del negocio (método de pago)
         self.pm.refresh_from_db()
-        self.assertLess(self.pm.balance, initial_balance)
+        self.assertGreater(self.pm.balance, initial_balance)
 
     def test_pse31_web_view_integration(self):
         """

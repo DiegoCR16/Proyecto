@@ -82,7 +82,7 @@
                             <th class="px-6 py-3.5 text-xs font-semibold text-slate-600 uppercase tracking-wider">Moneda Origen &rarr; Destino</th>
                             <th class="px-6 py-3.5 text-xs font-semibold text-slate-600 uppercase tracking-wider">Monto Origen</th>
                             <th class="px-6 py-3.5 text-xs font-semibold text-slate-600 uppercase tracking-wider">Monto Convertido</th>
-                            <th class="px-6 py-3.5 text-xs font-semibold text-slate-600 uppercase tracking-wider">Total Cobrado (PYG)</th>
+                            <th class="px-6 py-3.5 text-xs font-semibold text-slate-600 uppercase tracking-wider">Total a Pagar / Cobrado</th>
                             <th class="px-6 py-3.5 text-xs font-semibold text-slate-600 uppercase tracking-wider">Estado</th>
                         </tr>
                     </thead>
@@ -109,7 +109,11 @@
                                 {{ tx.converted_amount }} {{ tx.to_currency }}
                             </td>
                             <td class="px-6 py-4 whitespace-nowrap font-mono text-sm font-semibold text-slate-900">
-                                ₲ {{ tx.total_pyg|floatformat:2 }}
+                                {% if tx.from_currency == 'PYG' %}
+                                    ₲ {{ tx.total_pyg|floatformat:2 }}
+                                {% else %}
+                                    {{ tx.total_origen|default:tx.amount }} {{ tx.from_currency }} <span class="text-xs text-slate-500 block">(₲ {{ tx.total_pyg|floatformat:2 }})</span>
+                                {% endif %}
                             </td>
                             <td class="px-6 py-4 whitespace-nowrap">
                                 <span class="px-2.5 py-1 rounded-full text-xs font-bold bg-green-100 text-green-800">

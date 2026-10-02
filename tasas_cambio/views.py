@@ -30,7 +30,7 @@ def ensure_default_benefit_rules():
             'category_name': 'VIP',
             'min_operation_amount': Decimal('0.00'),
             'benefit_percentage': Decimal('2.00'),
-            'description': 'Clientes con operaciones superiores a 50.000.000 PYG (2% de beneficio en compra de divisas).'
+            'description': 'Clientes con operaciones superiores a 50.000.000 PYG (2% de beneficio en operaciones).'
         }
     )
     ClientBenefitRule.objects.get_or_create(
@@ -39,7 +39,7 @@ def ensure_default_benefit_rules():
             'category_name': 'Corporativo',
             'min_operation_amount': Decimal('0.00'),
             'benefit_percentage': Decimal('4.00'),
-            'description': 'Clientes con operaciones superiores a 100.000.000 PYG (4% de beneficio en compra de divisas).'
+            'description': 'Clientes con operaciones superiores a 100.000.000 PYG (4% de beneficio en operaciones).'
         }
     )
 
@@ -262,21 +262,25 @@ class SimuladorConversionService:
                     category_name = rule.category_name
                     min_operation_amount = rule.min_operation_amount
 
-                    # Evaluar equivalencia en PYG para umbral transaccional
-                    eval_amount = amount_dec
-                    if from_currency != 'PYG':
-                        try:
-                            r_from = ExchangeRate.objects.get(currency_code=from_currency)
-                            eval_amount = amount_dec * r_from.buy_rate
-                        except Exception:
-                            pass
-
-                    if eval_amount >= min_operation_amount:
+                    if cat_code != 'MINORISTA':
                         benefit_percentage = rule.benefit_percentage
                         threshold_met = True
                     else:
-                        benefit_percentage = Decimal('0.00')
-                        threshold_met = False
+                        # Evaluar equivalencia en PYG para umbral transaccional
+                        eval_amount = amount_dec
+                        if from_currency != 'PYG':
+                            try:
+                                r_from = ExchangeRate.objects.get(currency_code=from_currency)
+                                eval_amount = amount_dec * r_from.buy_rate
+                            except Exception:
+                                pass
+
+                        if eval_amount >= min_operation_amount:
+                            benefit_percentage = rule.benefit_percentage
+                            threshold_met = True
+                        else:
+                            benefit_percentage = Decimal('0.00')
+                            threshold_met = False
             except Exception:
                 pass
 
@@ -338,7 +342,7 @@ class SimuladorConversionService:
                 raise ValidationError(f"La tasa de compra para {from_currency} no se encuentra disponible.")
 
             if benefit_percentage > 0:
-                custom_rate = (standard_rate / factor).quantize(Decimal('0.0001'))
+                custom_rate = (standard_rate * (Decimal('1.00') + (benefit_percentage / Decimal('100.00')))).quantize(Decimal('0.0001'))
             else:
                 custom_rate = standard_rate
 
@@ -376,8 +380,8 @@ class SimuladorConversionService:
                 raise ValidationError("Tasas de cambio inválidas para la conversión cruzada.")
 
             if benefit_percentage > 0:
-                custom_buy = (std_buy / factor).quantize(Decimal('0.0001'))
-                custom_sell = (std_sell * factor).quantize(Decimal('0.0001'))
+                custom_buy = (std_buy * (Decimal('1.00') + (benefit_percentage / Decimal('100.00')))).quantize(Decimal('0.0001'))
+                custom_sell = (std_sell * (Decimal('1.00') - (benefit_percentage / Decimal('100.00')))).quantize(Decimal('0.0001'))
             else:
                 custom_buy = std_buy
                 custom_sell = std_sell

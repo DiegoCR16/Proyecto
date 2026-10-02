@@ -111,10 +111,10 @@ class ConfiguracionBeneficiosPSE29Tests(TestCase):
         self.assertTrue(res_vip_ok['threshold_met'])
         self.assertEqual(res_vip_ok['benefit_percentage'], Decimal('2.00'))
 
-        # 2. VIP con monto inferior al umbral (30.000.000 PYG < 50M) -> No aplica beneficio (0%)
+        # 2. VIP con monto inferior al umbral (30.000.000 PYG < 50M) -> Como ya tiene categoría VIP asignada, se aplica el beneficio (2%)
         res_vip_bajo = SimuladorConversionService.simular('PYG', 'USD', Decimal('30000000.00'), self.user_vip)
-        self.assertFalse(res_vip_bajo['threshold_met'])
-        self.assertEqual(res_vip_bajo['benefit_percentage'], Decimal('0.00'))
+        self.assertTrue(res_vip_bajo['threshold_met'])
+        self.assertEqual(res_vip_bajo['benefit_percentage'], Decimal('2.00'))
 
         # 3. Corporativo con monto superior al umbral configurado (120.000.000 PYG >= 100M)
         rule_corp = ClientBenefitRule.objects.get(category_code='CORPORATIVO')

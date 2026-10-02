@@ -41,6 +41,8 @@ class CurrencyPurchaseTransaction(models.Model):
     applied_rate = models.DecimalField(max_digits=12, decimal_places=4, verbose_name="Tasa Aplicada")
     standard_rate = models.DecimalField(max_digits=12, decimal_places=4, verbose_name="Tasa Estándar")
     payment_method = models.ForeignKey(PaymentMethod, on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Método de Pago")
+    origin_acreditation_method = models.ForeignKey(ClientAccreditationMethod, on_delete=models.SET_NULL, null=True, blank=True, related_name='purchase_origins', verbose_name="Medio de Acreditación Origen")
+    destination_acreditation_method = models.ForeignKey(ClientAccreditationMethod, on_delete=models.SET_NULL, null=True, blank=True, related_name='purchase_destinations', verbose_name="Medio de Acreditación Destino")
     benefit_percentage = models.DecimalField(max_digits=5, decimal_places=2, default=Decimal('0.00'), verbose_name="Descuento por Perfil (%)")
     commission_amount = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'), verbose_name="Comisión (Gs)")
     tax_amount = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'), verbose_name="Impuestos (Gs)")
@@ -49,6 +51,14 @@ class CurrencyPurchaseTransaction(models.Model):
     processing_time_ms = models.IntegerField(default=0, verbose_name="Tiempo de Procesamiento (ms)")
     transparent_breakdown = models.TextField(blank=True, null=True, verbose_name="Desglose Transparente")
     timestamp = models.DateTimeField(auto_now_add=True, verbose_name="Fecha de Operación")
+    moneda_origen_id = models.CharField(max_length=10, blank=True, null=True, verbose_name="Moneda Origen ID")
+    monto_origen = models.DecimalField(max_digits=15, decimal_places=2, blank=True, null=True, verbose_name="Monto Origen")
+    moneda_destino_id = models.CharField(max_length=10, blank=True, null=True, verbose_name="Moneda Destino ID")
+    monto_destino = models.DecimalField(max_digits=15, decimal_places=2, blank=True, null=True, verbose_name="Monto Destino")
+    tipo_cambio_cruzado = models.DecimalField(max_digits=12, decimal_places=4, blank=True, null=True, verbose_name="Tipo de Cambio Cruzado")
+    tipo_cambio_local_origen = models.DecimalField(max_digits=12, decimal_places=4, blank=True, null=True, verbose_name="Tipo de Cambio Local Origen")
+    monto_moneda_local = models.DecimalField(max_digits=18, decimal_places=2, blank=True, null=True, verbose_name="Monto Moneda Local (Audit)")
+    total_origen = models.DecimalField(max_digits=18, decimal_places=2, blank=True, null=True, verbose_name="Total en Moneda Origen")
 
     class Meta:
         verbose_name = "Transacción de Compra de Divisas"
@@ -108,6 +118,8 @@ class CurrencySaleTransaction(models.Model):
     standard_rate = models.DecimalField(max_digits=12, decimal_places=4, verbose_name="Tasa Estándar")
     linked_account = models.ForeignKey(PaymentMethod, on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Cuenta o Billetera Vinculada")
     acreditation_method = models.ForeignKey(ClientAccreditationMethod, on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Medio de Acreditación del Cliente")
+    origin_acreditation_method = models.ForeignKey(ClientAccreditationMethod, on_delete=models.SET_NULL, null=True, blank=True, related_name='sale_origins', verbose_name="Medio de Acreditación Origen")
+    destination_acreditation_method = models.ForeignKey(ClientAccreditationMethod, on_delete=models.SET_NULL, null=True, blank=True, related_name='sale_destinations', verbose_name="Medio de Acreditación Destino")
     benefit_percentage = models.DecimalField(max_digits=5, decimal_places=2, default=Decimal('0.00'), verbose_name="Descuento por Perfil (%)")
     commission_amount = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'), verbose_name="Comisión (Gs)")
     tax_amount = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'), verbose_name="Impuestos (Gs)")
@@ -116,6 +128,14 @@ class CurrencySaleTransaction(models.Model):
     processing_time_ms = models.IntegerField(default=0, verbose_name="Tiempo de Procesamiento (ms)")
     transparent_breakdown = models.TextField(blank=True, null=True, verbose_name="Desglose Transparente")
     timestamp = models.DateTimeField(auto_now_add=True, verbose_name="Fecha de Operación")
+    moneda_origen_id = models.CharField(max_length=10, blank=True, null=True, verbose_name="Moneda Origen ID")
+    monto_origen = models.DecimalField(max_digits=15, decimal_places=2, blank=True, null=True, verbose_name="Monto Origen")
+    moneda_destino_id = models.CharField(max_length=10, blank=True, null=True, verbose_name="Moneda Destino ID")
+    monto_destino = models.DecimalField(max_digits=15, decimal_places=2, blank=True, null=True, verbose_name="Monto Destino")
+    tipo_cambio_cruzado = models.DecimalField(max_digits=12, decimal_places=4, blank=True, null=True, verbose_name="Tipo de Cambio Cruzado")
+    tipo_cambio_local_origen = models.DecimalField(max_digits=12, decimal_places=4, blank=True, null=True, verbose_name="Tipo de Cambio Local Origen")
+    monto_moneda_local = models.DecimalField(max_digits=18, decimal_places=2, blank=True, null=True, verbose_name="Monto Moneda Local (Audit)")
+    total_origen = models.DecimalField(max_digits=18, decimal_places=2, blank=True, null=True, verbose_name="Total en Moneda Origen")
 
     class Meta:
         verbose_name = "Transacción de Venta de Divisas"

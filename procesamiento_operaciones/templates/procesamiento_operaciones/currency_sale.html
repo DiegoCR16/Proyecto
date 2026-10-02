@@ -75,8 +75,14 @@
                     <strong class="text-green-900 text-sm font-mono">₲ {{ success_transaction.applied_rate|floatformat:4 }}</strong>
                 </div>
                 <div>
-                    <span class="block text-green-700 font-semibold">Total Neto Acreditado (PYG):</span>
-                    <strong class="text-green-900 text-sm font-mono">₲ {{ success_transaction.total_pyg|floatformat:2 }}</strong>
+                    <span class="block text-green-700 font-semibold">Total Neto Acreditado:</span>
+                    <strong class="text-green-900 text-sm font-mono">
+                        {% if success_transaction.to_currency == 'PYG' %}
+                            ₲ {{ success_transaction.total_pyg|floatformat:2 }}
+                        {% else %}
+                            {{ success_transaction.converted_amount|floatformat:2 }} {{ success_transaction.to_currency }}
+                        {% endif %}
+                    </strong>
                 </div>
                 <div>
                     <span class="block text-green-700 font-semibold">Cuenta Vinculada Destino:</span>
@@ -106,11 +112,17 @@
                 </div>
                 <div>
                     <span class="block text-amber-700 font-semibold">Tasa Autorizada:</span>
-                    <strong class="text-amber-900 text-sm font-mono">₲ {{ pending_transaction.applied_rate|floatformat:4 }}</strong>
+                    <strong class="text-amber-900 text-sm font-mono"> {{ pending_transaction.applied_rate|floatformat:4 }}</strong>
                 </div>
                 <div>
-                    <span class="block text-amber-700 font-semibold">Neto a Acreditar (PYG):</span>
-                    <strong class="text-amber-900 text-sm font-mono">₲ {{ pending_transaction.total_pyg|floatformat:2 }}</strong>
+                    <span class="block text-amber-700 font-semibold">Neto a Acreditar:</span>
+                    <strong class="text-amber-900 text-sm font-mono">
+                        {% if pending_transaction.to_currency == 'PYG' %}
+                            ₲ {{ pending_transaction.total_pyg|floatformat:2 }}
+                        {% else %}
+                            {{ pending_transaction.converted_amount|floatformat:2 }} {{ pending_transaction.to_currency }}
+                        {% endif %}
+                    </strong>
                 </div>
                 <div>
                     <span class="block text-amber-700 font-semibold">Cuenta Vinculada:</span>
@@ -188,10 +200,14 @@
                             </select>
                         </div>
                         <div>
-                            <label class="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-2">Moneda Destino (Acreditación) *</label>
+                            <label class="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-2">Moneda Destino *</label>
                             <select name="to_currency" id="to_currency" required
                                 class="w-full px-4 py-3 border border-slate-300 rounded-xl text-sm font-medium focus:ring-2 focus:ring-blue-800 focus:outline-none transition bg-white">
-                                <option value="PYG" selected>PYG - Guaraní Paraguayo (Moneda Local)</option>
+                                {% for c in currencies %}
+                                <option value="{{ c.currency_code }}" {% if to_currency == c.currency_code %}selected{% endif %}>
+                                    {{ c.currency_code }} - {{ c.currency_name }}
+                                </option>
+                                {% endfor %}
                             </select>
                         </div>
                     </div>
@@ -205,18 +221,52 @@
                             class="w-full px-4 py-3 border border-slate-300 rounded-xl text-lg font-mono focus:ring-2 focus:ring-blue-800 focus:outline-none transition">
                     </div>
 
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                            <div class="flex justify-between items-center mb-2">
+                                <label class="block text-xs font-semibold text-slate-700 uppercase tracking-wider">Cuenta Origen (Divisa) *</label>
+                                <a href="{% url 'client_acreditation_methods' %}" class="text-xs text-blue-600 hover:underline font-semibold">+ Agregar Cuenta</a>
+                            </div>
+                            <select name="origin_account" required
+                                class="w-full px-4 py-3 border border-slate-300 rounded-xl text-sm font-medium focus:ring-2 focus:ring-blue-800 focus:outline-none transition bg-white">
+                                {% for am in acreditation_methods %}
+                                <option value="{{ am.id }}">
+                                    {{ am.get_tipo_medio_display }} - {{ am.entidad_financiera }} (N°: {{ am.numero_cuenta|default:am.numero_telefono|default:am.alias_transferencia }})
+                                </option>
+                                {% empty %}
+                                <option value="">No tiene cuentas registradas</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div>
+                            <div class="flex justify-between items-center mb-2">
+                                <label class="block text-xs font-semibold text-slate-700 uppercase tracking-wider">Cuenta Destino (Acreditación PYG) *</label>
+                                <a href="{% url 'client_acreditation_methods' %}" class="text-xs text-blue-600 hover:underline font-semibold">+ Agregar Cuenta</a>
+                            </div>
+                            <select name="destination_account" required
+                                class="w-full px-4 py-3 border border-slate-300 rounded-xl text-sm font-medium focus:ring-2 focus:ring-blue-800 focus:outline-none transition bg-white">
+                                {% for am in acreditation_methods %}
+                                <option value="{{ am.id }}">
+                                    {{ am.get_tipo_medio_display }} - {{ am.entidad_financiera }} (N°: {{ am.numero_cuenta|default:am.numero_telefono|default:am.alias_transferencia }})
+                                </option>
+                                {% empty %}
+                                <option value="">No tiene cuentas registradas</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </div>
+
                     <div>
-                        <label class="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-2">Cuenta Bancaria o Billetera Digital Vinculada * (Obligatoria)</label>
+                        <label class="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-2">Método de Pago (Banco / Canal Global Exchange) *</label>
                         <select name="payment_method" id="payment_method" required
                             class="w-full px-4 py-3 border border-slate-300 rounded-xl text-sm font-medium focus:ring-2 focus:ring-blue-800 focus:outline-none transition bg-white">
-                            <option value="">-- Seleccione su cuenta/billetera vinculada --</option>
                             {% for pm in payment_methods %}
                             <option value="{{ pm.code }}" {% if selected_payment_method == pm.code %}selected{% endif %}>
-                                {{ pm.name }} (N°: {{ pm.account_number|default:"Registrada" }}) - Banco: {{ pm.bank_name|default:"Global Exchange" }}
+                                {{ pm.name }} (Banco receptor / Pasarela)
                             </option>
                             {% endfor %}
                         </select>
-                        <p class="text-xs text-slate-500 mt-1">El cliente debe contar obligatoriamente con una cuenta bancaria o billetera digital vinculada para recibir la acreditación en moneda local.</p>
+                        <p class="text-xs text-slate-500 mt-1">Seleccione el método de pago / banco donde Global Exchange liquidará o recibirá la operación.</p>
                     </div>
 
                     <div class="pt-4">

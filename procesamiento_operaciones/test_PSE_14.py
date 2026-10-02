@@ -5,7 +5,7 @@ from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError
 from decimal import Decimal
 import time
-from authentication.models import UserProfile, Role, Cliente
+from authentication.models import UserProfile, Role, Cliente, ClientAccreditationMethod
 from tasas_cambio.models import ExchangeRate, PaymentMethod, ClientBenefitRule
 from tasas_cambio.views import ensure_default_benefit_rules
 from procesamiento_operaciones.models import CurrencySaleTransaction
@@ -79,6 +79,16 @@ class CurrencySalePSE14Tests(TestCase):
             documento_identidad='80011122-3',
             email='ventas@client.com',
             categoria='MINORISTA'
+        )
+        ClientAccreditationMethod.objects.create(
+            cliente=self.cliente_test,
+            tipo_medio='CUENTA_BANCARIA',
+            entidad_financiera='Banco Test Venta',
+            numero_cuenta='87654321',
+            tipo_cuenta='AHORRO',
+            titularidad='Cliente Venta SA',
+            estado='VERIFICADO',
+            es_predeterminado=True
         )
 
         # Crear perfiles de usuario
@@ -268,3 +278,26 @@ class CurrencySalePSE14Tests(TestCase):
                 request=req
             )
         self.assertIn("El rol Analista no tiene permisos", str(ctx.exception))
+
+    def test_cross_currency_sale_operation(self):
+        """
+        Valida que se pueda realizar una operación de venta de divisas seleccionando cualquier
+        moneda de destino (ej. de USD a EUR u otra moneda extranjera), de forma idéntica a las compras cruzadas.
+        """
+        ExchangeRate.objects.get_or_create(
+            currency_code='EUR',
+            defaults={'currency_name': 'Euro', 'symbol': '€', 'buy_rate': Decimal('7900.0000'), 'sell_rate': Decimal('8150.0000')}
+        )
+        req = self._get_request(self.user_vip)
+        tx = CurrencySaleService.process_sale(
+            user=self.user_vip,
+            from_currency='USD',
+            to_currency='EUR',
+            amount=100,
+            payment_method_id_or_code=self.linked_account.code,
+            request=req
+        )
+        self.assertEqual(tx.status, 'SUCCESS')
+        self.assertEqual(tx.from_currency, 'USD')
+        self.assertEqual(tx.to_currency, 'EUR')
+        self.assertGreater(tx.converted_amount, Decimal('0'))

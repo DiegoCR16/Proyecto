@@ -311,6 +311,13 @@ class ClientAccreditationMethod(models.Model):
         ('VERIFICADO', 'Verificado'),
         ('PENDIENTE', 'Pendiente'),
     ]
+    MONEDA_CHOICES = [
+        ('PYG', 'Guaraní (PYG)'),
+        ('USD', 'Dólar (USD)'),
+        ('EUR', 'Euro (EUR)'),
+        ('BRL', 'Real (BRL)'),
+        ('ARS', 'Peso Argentino (ARS)'),
+    ]
 
     cliente = models.ForeignKey(Cliente, on_delete=models.CASCADE, related_name='acreditation_methods', verbose_name="Cliente")
     user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Usuario Registrador")
@@ -322,6 +329,9 @@ class ClientAccreditationMethod(models.Model):
     tipo_cuenta = models.CharField(max_length=30, choices=TIPO_CUENTA_CHOICES, blank=True, null=True, verbose_name="Tipo de Cuenta")
     numero_telefono = models.CharField(max_length=50, blank=True, null=True, verbose_name="Número de Teléfono / Cuenta Billetera")
     alias_transferencia = models.CharField(max_length=150, blank=True, null=True, verbose_name="Alias de Transferencia")
+    
+    moneda = models.CharField(max_length=10, choices=MONEDA_CHOICES, default='PYG', verbose_name="Moneda de la Cuenta")
+    balance = models.DecimalField(max_digits=18, decimal_places=2, default=Decimal('0.00'), verbose_name="Fondo / Saldo de la Cuenta")
     
     titularidad = models.CharField(max_length=200, verbose_name="Titularidad")
     estado = models.CharField(max_length=20, choices=ESTADO_CHOICES, default='VERIFICADO', verbose_name="Estado")
@@ -371,7 +381,16 @@ class ClientAccreditationMethod(models.Model):
         return CurrencySaleTransaction.objects.filter(acreditation_method=self, status='PENDING').exists()
 
     def save(self, *args, **kwargs):
-        """Asegura validación y exclusividad de predeterminado."""
+        """Asegura validación, exclusividad de predeterminado y generación aleatoria de saldo inicial si no tiene."""
+        import random
+        if not self.pk and (self.balance is None or self.balance == Decimal('0.00')):
+            if self.moneda == 'PYG':
+                self.balance = Decimal(str(random.randint(500000, 150000000)))
+            elif self.moneda in ['USD', 'EUR']:
+                self.balance = Decimal(str(random.randint(100, 25000)))
+            else:
+                self.balance = Decimal(str(random.randint(1000, 80000)))
+
         self.full_clean()
         if self.es_predeterminado:
             ClientAccreditationMethod.objects.filter(cliente=self.cliente).exclude(pk=self.pk).update(es_predeterminado=False)

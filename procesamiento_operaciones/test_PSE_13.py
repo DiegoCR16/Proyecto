@@ -5,7 +5,7 @@ from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError
 from decimal import Decimal
 import time
-from authentication.models import UserProfile, Role, Cliente
+from authentication.models import UserProfile, Role, Cliente, ClientAccreditationMethod
 from tasas_cambio.models import ExchangeRate, PaymentMethod, ClientBenefitRule
 from tasas_cambio.views import ensure_default_benefit_rules
 from procesamiento_operaciones.models import CurrencyPurchaseTransaction
@@ -75,6 +75,16 @@ class CurrencyPurchasePSE13Tests(TestCase):
             documento_identidad='80099999-1',
             email='test@client.com',
             categoria='MINORISTA'
+        )
+        ClientAccreditationMethod.objects.create(
+            cliente=self.cliente_test,
+            tipo_medio='CUENTA_BANCARIA',
+            entidad_financiera='Banco Test',
+            numero_cuenta='12345678',
+            tipo_cuenta='AHORRO',
+            titularidad='Cliente Test SA',
+            estado='VERIFICADO',
+            es_predeterminado=True
         )
 
         # Crear perfiles de usuario
