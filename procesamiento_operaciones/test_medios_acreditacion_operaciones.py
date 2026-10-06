@@ -132,3 +132,61 @@ class MediosAcreditacionOperacionesTests(TestCase):
         self.assertEqual(tx_sale.status, 'SUCCESS')
         self.assertEqual(tx_sale.origin_acreditation_method, acc_dest)
         self.assertEqual(tx_sale.destination_acreditation_method, acc_origin)
+
+    def test_multi_currency_account_balances_and_debits(self):
+        """
+        Valida que el sistema debite y acredite saldo de acuerdo al tipo de moneda específico
+        de cada cuenta bancaria (ej. cuenta en USD con 100 USD, operando 50 USD sin errores de conversión a PYG).
+        """
+        acc_usd = ClientAccreditationMethod.objects.create(
+            cliente=self.cliente,
+            tipo_medio='CUENTA_BANCARIA',
+            entidad_financiera='Banco USD',
+            numero_cuenta='USD-999',
+            tipo_cuenta='AHORRO',
+            moneda='USD',
+            balance=Decimal('100.00'),
+            titularidad='Cliente Bancario SA',
+            estado='VERIFICADO',
+            es_predeterminado=True
+        )
+        acc_eur = ClientAccreditationMethod.objects.create(
+            cliente=self.cliente,
+            tipo_medio='CUENTA_BANCARIA',
+            entidad_financiera='Banco EUR',
+            numero_cuenta='EUR-888',
+            tipo_cuenta='AHORRO',
+            moneda='EUR',
+            balance=Decimal('0.00'),
+            titularidad='Cliente Bancario SA',
+            estado='VERIFICADO',
+            es_predeterminado=False
+        )
+        ExchangeRate.objects.get_or_create(
+            currency_code='EUR',
+            defaults={'currency_name': 'Euro', 'buy_rate': Decimal('7900.0000'), 'sell_rate': Decimal('8150.0000')}
+        )
+
+        req = self.client.get(self.purchase_url).wsgi_request
+        req.user = self.user
+        req.session = {'active_client_id': str(self.cliente.id)}
+
+        # Comprar por 50 USD usando la cuenta en USD (saldo 100 USD)
+        tx = CurrencyPurchaseService.process_purchase(
+            user=self.user,
+            from_currency='USD',
+            to_currency='EUR',
+            amount=Decimal('50.00'),
+            payment_method_id_or_code=self.pm.code,
+            origin_method_id=acc_usd.id,
+            destination_method_id=acc_eur.id,
+            request=req
+        )
+
+        self.assertEqual(tx.status, 'SUCCESS')
+        acc_usd.refresh_from_db()
+        acc_eur.refresh_from_db()
+        # Saldo USD debe ser 100 - 50 = 50 USD
+        self.assertEqual(acc_usd.balance, Decimal('50.00'))
+        # Cuenta EUR debe haber recibido saldo acreditado en EUR
+        self.assertGreater(acc_eur.balance, Decimal('0.00'))

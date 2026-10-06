@@ -87,6 +87,32 @@ class ClientAccreditationMethodPSE33Tests(TestCase):
         )
         self.assertEqual(alias.tipo_medio, 'ALIAS')
 
+        # Tarjeta de Crédito
+        t_credito = ClientAccreditationMethod.objects.create(
+            cliente=self.cliente,
+            user=self.user,
+            tipo_medio='TARJETA_CREDITO',
+            entidad_financiera='Visa Itaú',
+            numero_tarjeta='4532 8400 1234 5678',
+            fecha_expiracion='12/28',
+            titularidad='Cliente PSE-33 S.A.',
+            estado='VERIFICADO'
+        )
+        self.assertEqual(t_credito.tipo_medio, 'TARJETA_CREDITO')
+
+        # Tarjeta de Débito
+        t_debito = ClientAccreditationMethod.objects.create(
+            cliente=self.cliente,
+            user=self.user,
+            tipo_medio='TARJETA_DEBITO',
+            entidad_financiera='Mastercard GNB',
+            numero_tarjeta='5412 7500 9876 5432',
+            fecha_expiracion='08/27',
+            titularidad='Cliente PSE-33 S.A.',
+            estado='VERIFICADO'
+        )
+        self.assertEqual(t_debito.tipo_medio, 'TARJETA_DEBITO')
+
     def test_validation_rules_invalid_formats(self):
         """Valida que se lancen errores de validación ante formatos incorrectos."""
         # Cuenta sin dígitos

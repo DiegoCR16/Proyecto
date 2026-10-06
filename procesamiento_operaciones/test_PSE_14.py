@@ -200,7 +200,7 @@ class CurrencySalePSE14Tests(TestCase):
         self.assertEqual(tx.applied_rate, Decimal('7300.0000'))
         self.assertEqual(tx.amount, Decimal('100'))
         self.assertGreater(tx.converted_amount, Decimal('0'))
-        self.assertIn("Comisión", tx.transparent_breakdown)
+        self.assertGreater(tx.commission_amount, Decimal('0'))
 
     def test_processing_time_performance(self):
         """

@@ -301,6 +301,8 @@ class ClientAccreditationMethod(models.Model):
         ('CUENTA_BANCARIA', 'Cuenta Bancaria'),
         ('BILLETERA', 'Billetera Electrónica'),
         ('ALIAS', 'Alias de Transferencia'),
+        ('TARJETA_CREDITO', 'Tarjeta de Crédito'),
+        ('TARJETA_DEBITO', 'Tarjeta de Débito'),
     ]
     TIPO_CUENTA_CHOICES = [
         ('CORRIENTE', 'Cuenta Corriente'),
@@ -329,6 +331,8 @@ class ClientAccreditationMethod(models.Model):
     tipo_cuenta = models.CharField(max_length=30, choices=TIPO_CUENTA_CHOICES, blank=True, null=True, verbose_name="Tipo de Cuenta")
     numero_telefono = models.CharField(max_length=50, blank=True, null=True, verbose_name="Número de Teléfono / Cuenta Billetera")
     alias_transferencia = models.CharField(max_length=150, blank=True, null=True, verbose_name="Alias de Transferencia")
+    numero_tarjeta = models.CharField(max_length=50, blank=True, null=True, verbose_name="Número de Tarjeta")
+    fecha_expiracion = models.CharField(max_length=10, blank=True, null=True, verbose_name="Fecha de Expiración (MM/AA)")
     
     moneda = models.CharField(max_length=10, choices=MONEDA_CHOICES, default='PYG', verbose_name="Moneda de la Cuenta")
     balance = models.DecimalField(max_digits=18, decimal_places=2, default=Decimal('0.00'), verbose_name="Fondo / Saldo de la Cuenta")
@@ -350,8 +354,12 @@ class ClientAccreditationMethod(models.Model):
             detail = f"Cuenta N°: {self.numero_cuenta} ({self.get_tipo_cuenta_display()})"
         elif self.tipo_medio == 'BILLETERA':
             detail = f"Teléfono/Billetera: {self.numero_telefono}"
-        else:
+        elif self.tipo_medio == 'ALIAS':
             detail = f"Alias: {self.alias_transferencia}"
+        elif self.tipo_medio in ['TARJETA_CREDITO', 'TARJETA_DEBITO']:
+            detail = f"Tarjeta N°: {self.numero_tarjeta} (Exp: {self.fecha_expiracion})"
+        else:
+            detail = f"Detalle N/D"
         return f"{self.get_tipo_medio_display()} - {self.entidad_financiera} | {detail} [{self.estado}]"
 
     def clean(self):
@@ -369,6 +377,9 @@ class ClientAccreditationMethod(models.Model):
         elif self.tipo_medio == 'ALIAS':
             if not self.alias_transferencia or len(self.alias_transferencia.strip()) < 3:
                 raise ValidationError("Debe especificar un alias de transferencia válido de al menos 3 caracteres.")
+        elif self.tipo_medio in ['TARJETA_CREDITO', 'TARJETA_DEBITO']:
+            if not self.numero_tarjeta or not any(char.isdigit() for char in self.numero_tarjeta):
+                raise ValidationError("Debe especificar un número de tarjeta válido con dígitos.")
 
     def has_pending_transactions(self):
         """

@@ -58,6 +58,17 @@ def _resolve_client_and_methods(user, request, origin_method_id, destination_met
     return cliente, origin_method, destination_method
 
 
+def _convert_amount(amount, cur_from, cur_to):
+    """Convierte un monto entre dos divisas utilizando el servicio de simulación."""
+    if cur_from == cur_to or amount is None:
+        return amount
+    try:
+        res = SimuladorConversionService.simular(cur_from, cur_to, amount)
+        return res['converted_amount']
+    except Exception:
+        return amount
+
+
 class CurrencySaleService:
     """
     Servicio de dominio para el procesamiento de la operación de venta de divisas (PSE-14).
@@ -165,28 +176,28 @@ class CurrencySaleService:
         if to_currency == 'PYG':
             commission_amount = (gross_pyg * Decimal('0.005')).quantize(Decimal('0.01'))
             tax_amount = (commission_amount * Decimal('0.10')).quantize(Decimal('0.01'))
-            net_credit_pyg = gross_pyg - commission_amount - tax_amount
-            total_pyg = net_credit_pyg
+            total_pyg = gross_pyg
             total_origen = amount_dec
         else:
             commission_amount = (gross_pyg * Decimal('0.005')).quantize(Decimal('0.01'))
             tax_amount = (commission_amount * Decimal('0.10')).quantize(Decimal('0.01'))
-            net_credit_dest = gross_pyg - commission_amount - tax_amount
-            total_pyg = (net_credit_dest * tipo_cambio_local_destino).quantize(Decimal('0.01'))
+            total_pyg = (gross_pyg * tipo_cambio_local_destino).quantize(Decimal('0.01'))
             total_origen = amount_dec
 
         cliente, origin_method, destination_method = _resolve_client_and_methods(user, request, origin_method_id, destination_method_id)
 
         # Descontar de la cuenta origen
         if origin_method:
-            if origin_method.balance < amount_dec:
-                raise ValidationError(f"Fondos insuficientes en la cuenta origen '{origin_method.entidad_financiera}'. Saldo disponible: {origin_method.balance:,.2f}, requerido: {amount_dec:,.2f}.")
-            origin_method.balance -= amount_dec
+            required_debit = _convert_amount(amount_dec, from_currency, origin_method.moneda)
+            if origin_method.balance < required_debit:
+                raise ValidationError(f"Fondos insuficientes en la cuenta origen '{origin_method.entidad_financiera}'. Saldo disponible: {origin_method.balance:,.2f} {origin_method.moneda}, requerido: {required_debit:,.2f} {origin_method.moneda}.")
+            origin_method.balance -= required_debit
             origin_method.save()
 
         # Acreditar en la cuenta destino
         if destination_method:
-            destination_method.balance += total_pyg
+            required_credit = _convert_amount(total_pyg, 'PYG', destination_method.moneda)
+            destination_method.balance += required_credit
             destination_method.save()
 
         # Acreditar fondos en la cuenta bancaria / billetera digital vinculada del sistema
@@ -221,7 +232,7 @@ class CurrencySaleService:
             total_pyg=total_pyg,
             status='SUCCESS',
             processing_time_ms=processing_time_ms,
-            transparent_breakdown=f"{sim_result['transparent_breakdown']} | Comisión: {commission_amount:,.2f} {to_currency} | Impuestos: {tax_amount:,.2f} {to_currency} | Neto Acreditado: ₲ {total_pyg:,.2f} | Tiempo: {processing_time_ms}ms",
+            transparent_breakdown=f"{sim_result['transparent_breakdown']} | Neto Acreditado: ₲ {total_pyg:,.2f} | Tiempo: {processing_time_ms}ms",
             moneda_origen_id=from_currency,
             monto_origen=amount_dec,
             moneda_destino_id=to_currency,
@@ -313,14 +324,12 @@ class CurrencySaleService:
         if to_currency == 'PYG':
             commission_amount = (gross_pyg * Decimal('0.005')).quantize(Decimal('0.01'))
             tax_amount = (commission_amount * Decimal('0.10')).quantize(Decimal('0.01'))
-            net_credit_pyg = gross_pyg - commission_amount - tax_amount
-            total_pyg = net_credit_pyg
+            total_pyg = gross_pyg
             total_origen = amount_dec
         else:
             commission_amount = (gross_pyg * Decimal('0.005')).quantize(Decimal('0.01'))
             tax_amount = (commission_amount * Decimal('0.10')).quantize(Decimal('0.01'))
-            net_credit_dest = gross_pyg - commission_amount - tax_amount
-            total_pyg = (net_credit_dest * tipo_cambio_local_destino).quantize(Decimal('0.01'))
+            total_pyg = (gross_pyg * tipo_cambio_local_destino).quantize(Decimal('0.01'))
             total_origen = amount_dec
 
         cliente, origin_method, destination_method = _resolve_client_and_methods(user, request, origin_method_id, destination_method_id)
@@ -344,7 +353,7 @@ class CurrencySaleService:
             total_pyg=total_pyg,
             status='PENDING',
             processing_time_ms=0,
-            transparent_breakdown=f"Iniciado en PENDIENTE. Tasa aplicada: {sim_result['applied_rate']} | Comisión: {commission_amount:,.2f} {to_currency} | Impuestos: {tax_amount:,.2f} {to_currency}",
+            transparent_breakdown=f"Iniciado en PENDIENTE. Tasa aplicada: {sim_result['applied_rate']}",
             moneda_origen_id=from_currency,
             monto_origen=amount_dec,
             moneda_destino_id=to_currency,
@@ -397,16 +406,18 @@ class CurrencySaleService:
         destination_method = transaction.destination_acreditation_method
 
         if origin_method:
-            if origin_method.balance < transaction.amount:
+            required_debit = _convert_amount(transaction.amount, transaction.from_currency, origin_method.moneda)
+            if origin_method.balance < required_debit:
                 transaction.status = 'FAILED'
                 transaction.transparent_breakdown += " | Falló por fondos insuficientes en cuenta origen al confirmar."
                 transaction.save()
-                raise ValidationError(f"Fondos insuficientes en la cuenta origen '{origin_method.entidad_financiera}'.")
-            origin_method.balance -= transaction.amount
+                raise ValidationError(f"Fondos insuficientes en la cuenta origen '{origin_method.entidad_financiera}'. Saldo disponible: {origin_method.balance:,.2f} {origin_method.moneda}, requerido: {required_debit:,.2f} {origin_method.moneda}.")
+            origin_method.balance -= required_debit
             origin_method.save()
 
         if destination_method:
-            destination_method.balance += transaction.total_pyg
+            required_credit = _convert_amount(transaction.total_pyg, 'PYG', destination_method.moneda)
+            destination_method.balance += required_credit
             destination_method.save()
 
         linked_account.balance += transaction.total_pyg
@@ -692,7 +703,7 @@ def currency_transactions_history_view(request):
             p.display_converted = p.converted_amount
             p.display_from = p.from_currency
             p.display_to = p.to_currency
-            p.display_total = p.total_pyg
+            p.display_total = p.converted_amount
             s_up = str(p.status).upper()
             if s_up in ['SUCCESS', 'PAGADA']:
                 p.status_display = 'Pagada'
@@ -714,7 +725,7 @@ def currency_transactions_history_view(request):
             s.display_converted = s.converted_amount
             s.display_from = s.from_currency
             s.display_to = s.to_currency
-            s.display_total = s.total_pyg
+            s.display_total = s.converted_amount
             s_up = str(s.status).upper()
             if s_up in ['SUCCESS', 'PAGADA']:
                 s.status_display = 'Pagada'
@@ -733,7 +744,7 @@ def currency_transactions_history_view(request):
         response = HttpResponse(content_type='text/csv; charset=utf-8')
         response['Content-Disposition'] = 'attachment; filename="historial_transacciones.csv"'
         writer = csv.writer(response)
-        writer.writerow(['ID Operacion', 'Tipo', 'Fecha y Hora', 'Cliente', 'Moneda Origen', 'Moneda Destino', 'Monto Origen', 'Monto Convertido', 'Tasa Aplicada', 'Total (PYG)', 'Estado'])
+        writer.writerow(['ID Operacion', 'Tipo', 'Fecha y Hora', 'Cliente', 'Moneda Origen', 'Moneda Destino', 'Monto Origen', 'Monto Convertido', 'Total Recibido', 'Estado'])
         for tx in all_transactions:
             cliente_nombre = tx.cliente.nombre_o_razon_social if tx.cliente else 'N/A'
             writer.writerow([
@@ -745,8 +756,7 @@ def currency_transactions_history_view(request):
                 tx.display_to,
                 tx.display_amount,
                 tx.display_converted,
-                getattr(tx, 'applied_rate', ''),
-                tx.display_total,
+                f"{tx.display_total} {tx.display_to}",
                 getattr(tx, 'status_display', tx.status)
             ])
         return response
@@ -896,12 +906,12 @@ class CurrencyPurchaseService:
         if from_currency == 'PYG':
             commission_amount = (eval_amount_pyg * Decimal('0.005')).quantize(Decimal('0.01'))
             tax_amount = (commission_amount * Decimal('0.10')).quantize(Decimal('0.01'))
-            total_cost_pyg = eval_amount_pyg + commission_amount + tax_amount
-            total_origen = total_cost_pyg
+            total_cost_pyg = eval_amount_pyg
+            total_origen = amount_dec
         else:
             commission_amount = (amount_dec * Decimal('0.005')).quantize(Decimal('0.01'))
             tax_amount = (commission_amount * Decimal('0.10')).quantize(Decimal('0.01'))
-            total_origen = amount_dec + commission_amount + tax_amount
+            total_origen = amount_dec
             total_pyg = (total_origen * tipo_cambio_local_origen).quantize(Decimal('0.01'))
             total_cost_pyg = total_pyg
 
@@ -912,14 +922,16 @@ class CurrencyPurchaseService:
 
         # Descontar de la cuenta origen del cliente
         if origin_method:
-            if origin_method.balance < total_cost_pyg:
-                raise ValidationError(f"Fondos insuficientes en la cuenta origen '{origin_method.entidad_financiera}'. Saldo disponible: ₲ {origin_method.balance:,.2f}, requerido: ₲ {total_cost_pyg:,.2f}.")
-            origin_method.balance -= total_cost_pyg
+            required_debit = _convert_amount(total_origen, from_currency, origin_method.moneda)
+            if origin_method.balance < required_debit:
+                raise ValidationError(f"Fondos insuficientes en la cuenta origen '{origin_method.entidad_financiera}'. Saldo disponible: {origin_method.balance:,.2f} {origin_method.moneda}, requerido: {required_debit:,.2f} {origin_method.moneda}.")
+            origin_method.balance -= required_debit
             origin_method.save()
 
         # Acreditar en la cuenta destino del cliente
         if destination_method:
-            destination_method.balance += sim_result['converted_amount']
+            required_credit = _convert_amount(sim_result['converted_amount'], to_currency, destination_method.moneda)
+            destination_method.balance += required_credit
             destination_method.save()
 
         # Acreditar fondos en el método de pago del sistema (Caja del Negocio)
@@ -953,7 +965,7 @@ class CurrencyPurchaseService:
             total_pyg=total_cost_pyg,
             status='SUCCESS',
             processing_time_ms=processing_time_ms,
-            transparent_breakdown=f"{sim_result['transparent_breakdown']} | Comisión: {commission_amount:,.2f} {from_currency} | Impuestos: {tax_amount:,.2f} {from_currency} | Total a Pagar: {total_origen:,.2f} {from_currency} (Equiv. ₲ {total_cost_pyg:,.2f}) | Caja: Ingresa stock de {amount_dec} {from_currency} y egresa stock de {sim_result['converted_amount']} {to_currency} | Tiempo: {processing_time_ms}ms",
+            transparent_breakdown=f"{sim_result['transparent_breakdown']} | Total a Pagar: {total_origen:,.2f} {from_currency} (Equiv. ₲ {total_cost_pyg:,.2f}) | Caja: Ingresa stock de {amount_dec} {from_currency} y egresa stock de {sim_result['converted_amount']} {to_currency} | Tiempo: {processing_time_ms}ms",
             moneda_origen_id=from_currency,
             monto_origen=amount_dec,
             moneda_destino_id=to_currency,
@@ -1068,12 +1080,12 @@ class CurrencyPurchaseService:
         if from_currency == 'PYG':
             commission_amount = (eval_amount_pyg * Decimal('0.005')).quantize(Decimal('0.01'))
             tax_amount = (commission_amount * Decimal('0.10')).quantize(Decimal('0.01'))
-            total_cost_pyg = eval_amount_pyg + commission_amount + tax_amount
-            total_origen = total_cost_pyg
+            total_cost_pyg = eval_amount_pyg
+            total_origen = amount_dec
         else:
             commission_amount = (amount_dec * Decimal('0.005')).quantize(Decimal('0.01'))
             tax_amount = (commission_amount * Decimal('0.10')).quantize(Decimal('0.01'))
-            total_origen = amount_dec + commission_amount + tax_amount
+            total_origen = amount_dec
             total_pyg = (total_origen * tipo_cambio_local_origen).quantize(Decimal('0.01'))
             total_cost_pyg = total_pyg
 
@@ -1100,7 +1112,7 @@ class CurrencyPurchaseService:
             total_pyg=total_cost_pyg,
             status='PENDING',
             processing_time_ms=0,
-            transparent_breakdown=f"Iniciado en PENDIENTE. Tasa aplicada: {sim_result['applied_rate']} | Comisión: {commission_amount:,.2f} {from_currency} | Impuestos: {tax_amount:,.2f} {from_currency} | Total a Pagar: {total_origen:,.2f} {from_currency} | Caja: Ingresa stock de {amount_dec} {from_currency} y egresa stock de {sim_result['converted_amount']} {to_currency}",
+            transparent_breakdown=f"Iniciado en PENDIENTE. Tasa aplicada: {sim_result['applied_rate']} | Total a Pagar: {total_origen:,.2f} {from_currency} | Caja: Ingresa stock de {amount_dec} {from_currency} y egresa stock de {sim_result['converted_amount']} {to_currency}",
             moneda_origen_id=from_currency,
             monto_origen=amount_dec,
             moneda_destino_id=to_currency,
@@ -1165,16 +1177,18 @@ class CurrencyPurchaseService:
         destination_method = transaction.destination_acreditation_method
 
         if origin_method:
-            if origin_method.balance < transaction.total_pyg:
+            required_debit = _convert_amount(transaction.total_origen, transaction.from_currency, origin_method.moneda)
+            if origin_method.balance < required_debit:
                 transaction.status = 'FAILED'
                 transaction.transparent_breakdown += " | Falló por fondos insuficientes en cuenta origen al confirmar."
                 transaction.save()
-                raise ValidationError(f"Fondos insuficientes en la cuenta origen '{origin_method.entidad_financiera}'.")
-            origin_method.balance -= transaction.total_pyg
+                raise ValidationError(f"Fondos insuficientes en la cuenta origen '{origin_method.entidad_financiera}'. Saldo disponible: {origin_method.balance:,.2f} {origin_method.moneda}, requerido: {required_debit:,.2f} {origin_method.moneda}.")
+            origin_method.balance -= required_debit
             origin_method.save()
 
         if destination_method:
-            destination_method.balance += transaction.converted_amount
+            required_credit = _convert_amount(transaction.converted_amount, transaction.to_currency, destination_method.moneda)
+            destination_method.balance += required_credit
             destination_method.save()
 
         pm.balance += transaction.total_pyg
