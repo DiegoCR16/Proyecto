@@ -9,7 +9,7 @@ django.setup()
 import pdoc
 
 if __name__ == '__main__':
-    modules = ['authentication', 'gestion_clientes', 'tasas_cambio', 'globalexchange']
+    modules = ['authentication', 'gestion_clientes', 'tasas_cambio', 'procesamiento_operaciones', 'monitoreo_corporativo', 'globalexchange']
     output_dir = Path('docs/PDO')
     print(f"Generando documentación automática para: {modules}")
     pdoc.pdoc(*modules, output_directory=output_dir)

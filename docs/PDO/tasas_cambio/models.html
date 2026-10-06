@@ -217,6 +217,9 @@
                                 <a class="function" href="#PaymentMethod.description">description</a>
                         </li>
                         <li>
+                                <a class="function" href="#PaymentMethod.balance">balance</a>
+                        </li>
+                        <li>
                                 <a class="function" href="#PaymentMethod.is_active">is_active</a>
                         </li>
                         <li>
@@ -254,6 +257,12 @@
                         </li>
                         <li>
                                 <a class="function" href="#PaymentMethod.objects">objects</a>
+                        </li>
+                        <li>
+                                <a class="variable" href="#PaymentMethod.currencypurchasetransaction_set">currencypurchasetransaction_set</a>
+                        </li>
+                        <li>
+                                <a class="variable" href="#PaymentMethod.currencysaletransaction_set">currencysaletransaction_set</a>
                         </li>
                 </ul>
 
@@ -406,22 +415,23 @@
 </span><span id="L-125"><a href="#L-125"><span class="linenos">125</span></a>    <span class="n">account_type</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">CharField</span><span class="p">(</span><span class="n">max_length</span><span class="o">=</span><span class="mi">50</span><span class="p">,</span> <span class="n">blank</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">null</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">verbose_name</span><span class="o">=</span><span class="s2">&quot;Tipo de Cuenta&quot;</span><span class="p">)</span>
 </span><span id="L-126"><a href="#L-126"><span class="linenos">126</span></a>    <span class="n">holder_name</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">CharField</span><span class="p">(</span><span class="n">max_length</span><span class="o">=</span><span class="mi">150</span><span class="p">,</span> <span class="n">blank</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">null</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">verbose_name</span><span class="o">=</span><span class="s2">&quot;Titular&quot;</span><span class="p">)</span>
 </span><span id="L-127"><a href="#L-127"><span class="linenos">127</span></a>    <span class="n">description</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">TextField</span><span class="p">(</span><span class="n">blank</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">null</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">verbose_name</span><span class="o">=</span><span class="s2">&quot;Descripción&quot;</span><span class="p">)</span>
-</span><span id="L-128"><a href="#L-128"><span class="linenos">128</span></a>    <span class="n">is_active</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">BooleanField</span><span class="p">(</span><span class="n">default</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">verbose_name</span><span class="o">=</span><span class="s2">&quot;Habilitado / Activo&quot;</span><span class="p">)</span>
-</span><span id="L-129"><a href="#L-129"><span class="linenos">129</span></a>    <span class="n">updated_at</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">DateTimeField</span><span class="p">(</span><span class="n">auto_now</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">verbose_name</span><span class="o">=</span><span class="s2">&quot;Última Actualización&quot;</span><span class="p">)</span>
-</span><span id="L-130"><a href="#L-130"><span class="linenos">130</span></a>
-</span><span id="L-131"><a href="#L-131"><span class="linenos">131</span></a>    <span class="k">class</span><span class="w"> </span><span class="nc">Meta</span><span class="p">:</span>
-</span><span id="L-132"><a href="#L-132"><span class="linenos">132</span></a>        <span class="n">verbose_name</span> <span class="o">=</span> <span class="s2">&quot;Método de Pago&quot;</span>
-</span><span id="L-133"><a href="#L-133"><span class="linenos">133</span></a>        <span class="n">verbose_name_plural</span> <span class="o">=</span> <span class="s2">&quot;Métodos de Pago&quot;</span>
-</span><span id="L-134"><a href="#L-134"><span class="linenos">134</span></a>
-</span><span id="L-135"><a href="#L-135"><span class="linenos">135</span></a>    <span class="k">def</span><span class="w"> </span><span class="fm">__str__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-</span><span id="L-136"><a href="#L-136"><span class="linenos">136</span></a><span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
-</span><span id="L-137"><a href="#L-137"><span class="linenos">137</span></a><span class="sd">        Devuelve la representación en cadena del método de pago.</span>
-</span><span id="L-138"><a href="#L-138"><span class="linenos">138</span></a>
-</span><span id="L-139"><a href="#L-139"><span class="linenos">139</span></a><span class="sd">        Returns:</span>
-</span><span id="L-140"><a href="#L-140"><span class="linenos">140</span></a><span class="sd">            str: Representación descriptiva del método de pago.</span>
-</span><span id="L-141"><a href="#L-141"><span class="linenos">141</span></a><span class="sd">        &quot;&quot;&quot;</span>
-</span><span id="L-142"><a href="#L-142"><span class="linenos">142</span></a>        <span class="n">acc_info</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot; - N°: </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">account_number</span><span class="si">}</span><span class="s2">&quot;</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">account_number</span> <span class="k">else</span> <span class="s2">&quot;&quot;</span>
-</span><span id="L-143"><a href="#L-143"><span class="linenos">143</span></a>        <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2"> (</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">get_method_type_display</span><span class="p">()</span><span class="si">}</span><span class="s2">)</span><span class="si">{</span><span class="n">acc_info</span><span class="si">}</span><span class="s2"> (</span><span class="si">{</span><span class="s1">&#39;Activo&#39;</span><span class="w"> </span><span class="k">if</span><span class="w"> </span><span class="bp">self</span><span class="o">.</span><span class="n">is_active</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="s1">&#39;Inactivo&#39;</span><span class="si">}</span><span class="s2">)&quot;</span>
+</span><span id="L-128"><a href="#L-128"><span class="linenos">128</span></a>    <span class="n">balance</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">DecimalField</span><span class="p">(</span><span class="n">max_digits</span><span class="o">=</span><span class="mi">18</span><span class="p">,</span> <span class="n">decimal_places</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="n">Decimal</span><span class="p">(</span><span class="s1">&#39;5000000000.00&#39;</span><span class="p">),</span> <span class="n">verbose_name</span><span class="o">=</span><span class="s2">&quot;Saldo Disponible (Gs)&quot;</span><span class="p">)</span>
+</span><span id="L-129"><a href="#L-129"><span class="linenos">129</span></a>    <span class="n">is_active</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">BooleanField</span><span class="p">(</span><span class="n">default</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">verbose_name</span><span class="o">=</span><span class="s2">&quot;Habilitado / Activo&quot;</span><span class="p">)</span>
+</span><span id="L-130"><a href="#L-130"><span class="linenos">130</span></a>    <span class="n">updated_at</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">DateTimeField</span><span class="p">(</span><span class="n">auto_now</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">verbose_name</span><span class="o">=</span><span class="s2">&quot;Última Actualización&quot;</span><span class="p">)</span>
+</span><span id="L-131"><a href="#L-131"><span class="linenos">131</span></a>
+</span><span id="L-132"><a href="#L-132"><span class="linenos">132</span></a>    <span class="k">class</span><span class="w"> </span><span class="nc">Meta</span><span class="p">:</span>
+</span><span id="L-133"><a href="#L-133"><span class="linenos">133</span></a>        <span class="n">verbose_name</span> <span class="o">=</span> <span class="s2">&quot;Método de Pago&quot;</span>
+</span><span id="L-134"><a href="#L-134"><span class="linenos">134</span></a>        <span class="n">verbose_name_plural</span> <span class="o">=</span> <span class="s2">&quot;Métodos de Pago&quot;</span>
+</span><span id="L-135"><a href="#L-135"><span class="linenos">135</span></a>
+</span><span id="L-136"><a href="#L-136"><span class="linenos">136</span></a>    <span class="k">def</span><span class="w"> </span><span class="fm">__str__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+</span><span id="L-137"><a href="#L-137"><span class="linenos">137</span></a><span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+</span><span id="L-138"><a href="#L-138"><span class="linenos">138</span></a><span class="sd">        Devuelve la representación en cadena del método de pago.</span>
+</span><span id="L-139"><a href="#L-139"><span class="linenos">139</span></a>
+</span><span id="L-140"><a href="#L-140"><span class="linenos">140</span></a><span class="sd">        Returns:</span>
+</span><span id="L-141"><a href="#L-141"><span class="linenos">141</span></a><span class="sd">            str: Representación descriptiva del método de pago.</span>
+</span><span id="L-142"><a href="#L-142"><span class="linenos">142</span></a><span class="sd">        &quot;&quot;&quot;</span>
+</span><span id="L-143"><a href="#L-143"><span class="linenos">143</span></a>        <span class="n">acc_info</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot; - N°: </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">account_number</span><span class="si">}</span><span class="s2">&quot;</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">account_number</span> <span class="k">else</span> <span class="s2">&quot;&quot;</span>
+</span><span id="L-144"><a href="#L-144"><span class="linenos">144</span></a>        <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2"> (</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">get_method_type_display</span><span class="p">()</span><span class="si">}</span><span class="s2">)</span><span class="si">{</span><span class="n">acc_info</span><span class="si">}</span><span class="s2"> (</span><span class="si">{</span><span class="s1">&#39;Activo&#39;</span><span class="w"> </span><span class="k">if</span><span class="w"> </span><span class="bp">self</span><span class="o">.</span><span class="n">is_active</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="s1">&#39;Inactivo&#39;</span><span class="si">}</span><span class="s2">)&quot;</span>
 </span></pre></div>
 
 
@@ -1233,22 +1243,23 @@ object the first time, the query is executed.</p>
 </span><span id="PaymentMethod-126"><a href="#PaymentMethod-126"><span class="linenos">126</span></a>    <span class="n">account_type</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">CharField</span><span class="p">(</span><span class="n">max_length</span><span class="o">=</span><span class="mi">50</span><span class="p">,</span> <span class="n">blank</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">null</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">verbose_name</span><span class="o">=</span><span class="s2">&quot;Tipo de Cuenta&quot;</span><span class="p">)</span>
 </span><span id="PaymentMethod-127"><a href="#PaymentMethod-127"><span class="linenos">127</span></a>    <span class="n">holder_name</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">CharField</span><span class="p">(</span><span class="n">max_length</span><span class="o">=</span><span class="mi">150</span><span class="p">,</span> <span class="n">blank</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">null</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">verbose_name</span><span class="o">=</span><span class="s2">&quot;Titular&quot;</span><span class="p">)</span>
 </span><span id="PaymentMethod-128"><a href="#PaymentMethod-128"><span class="linenos">128</span></a>    <span class="n">description</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">TextField</span><span class="p">(</span><span class="n">blank</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">null</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">verbose_name</span><span class="o">=</span><span class="s2">&quot;Descripción&quot;</span><span class="p">)</span>
-</span><span id="PaymentMethod-129"><a href="#PaymentMethod-129"><span class="linenos">129</span></a>    <span class="n">is_active</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">BooleanField</span><span class="p">(</span><span class="n">default</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">verbose_name</span><span class="o">=</span><span class="s2">&quot;Habilitado / Activo&quot;</span><span class="p">)</span>
-</span><span id="PaymentMethod-130"><a href="#PaymentMethod-130"><span class="linenos">130</span></a>    <span class="n">updated_at</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">DateTimeField</span><span class="p">(</span><span class="n">auto_now</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">verbose_name</span><span class="o">=</span><span class="s2">&quot;Última Actualización&quot;</span><span class="p">)</span>
-</span><span id="PaymentMethod-131"><a href="#PaymentMethod-131"><span class="linenos">131</span></a>
-</span><span id="PaymentMethod-132"><a href="#PaymentMethod-132"><span class="linenos">132</span></a>    <span class="k">class</span><span class="w"> </span><span class="nc">Meta</span><span class="p">:</span>
-</span><span id="PaymentMethod-133"><a href="#PaymentMethod-133"><span class="linenos">133</span></a>        <span class="n">verbose_name</span> <span class="o">=</span> <span class="s2">&quot;Método de Pago&quot;</span>
-</span><span id="PaymentMethod-134"><a href="#PaymentMethod-134"><span class="linenos">134</span></a>        <span class="n">verbose_name_plural</span> <span class="o">=</span> <span class="s2">&quot;Métodos de Pago&quot;</span>
-</span><span id="PaymentMethod-135"><a href="#PaymentMethod-135"><span class="linenos">135</span></a>
-</span><span id="PaymentMethod-136"><a href="#PaymentMethod-136"><span class="linenos">136</span></a>    <span class="k">def</span><span class="w"> </span><span class="fm">__str__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-</span><span id="PaymentMethod-137"><a href="#PaymentMethod-137"><span class="linenos">137</span></a><span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
-</span><span id="PaymentMethod-138"><a href="#PaymentMethod-138"><span class="linenos">138</span></a><span class="sd">        Devuelve la representación en cadena del método de pago.</span>
-</span><span id="PaymentMethod-139"><a href="#PaymentMethod-139"><span class="linenos">139</span></a>
-</span><span id="PaymentMethod-140"><a href="#PaymentMethod-140"><span class="linenos">140</span></a><span class="sd">        Returns:</span>
-</span><span id="PaymentMethod-141"><a href="#PaymentMethod-141"><span class="linenos">141</span></a><span class="sd">            str: Representación descriptiva del método de pago.</span>
-</span><span id="PaymentMethod-142"><a href="#PaymentMethod-142"><span class="linenos">142</span></a><span class="sd">        &quot;&quot;&quot;</span>
-</span><span id="PaymentMethod-143"><a href="#PaymentMethod-143"><span class="linenos">143</span></a>        <span class="n">acc_info</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot; - N°: </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">account_number</span><span class="si">}</span><span class="s2">&quot;</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">account_number</span> <span class="k">else</span> <span class="s2">&quot;&quot;</span>
-</span><span id="PaymentMethod-144"><a href="#PaymentMethod-144"><span class="linenos">144</span></a>        <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2"> (</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">get_method_type_display</span><span class="p">()</span><span class="si">}</span><span class="s2">)</span><span class="si">{</span><span class="n">acc_info</span><span class="si">}</span><span class="s2"> (</span><span class="si">{</span><span class="s1">&#39;Activo&#39;</span><span class="w"> </span><span class="k">if</span><span class="w"> </span><span class="bp">self</span><span class="o">.</span><span class="n">is_active</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="s1">&#39;Inactivo&#39;</span><span class="si">}</span><span class="s2">)&quot;</span>
+</span><span id="PaymentMethod-129"><a href="#PaymentMethod-129"><span class="linenos">129</span></a>    <span class="n">balance</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">DecimalField</span><span class="p">(</span><span class="n">max_digits</span><span class="o">=</span><span class="mi">18</span><span class="p">,</span> <span class="n">decimal_places</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="n">Decimal</span><span class="p">(</span><span class="s1">&#39;5000000000.00&#39;</span><span class="p">),</span> <span class="n">verbose_name</span><span class="o">=</span><span class="s2">&quot;Saldo Disponible (Gs)&quot;</span><span class="p">)</span>
+</span><span id="PaymentMethod-130"><a href="#PaymentMethod-130"><span class="linenos">130</span></a>    <span class="n">is_active</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">BooleanField</span><span class="p">(</span><span class="n">default</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">verbose_name</span><span class="o">=</span><span class="s2">&quot;Habilitado / Activo&quot;</span><span class="p">)</span>
+</span><span id="PaymentMethod-131"><a href="#PaymentMethod-131"><span class="linenos">131</span></a>    <span class="n">updated_at</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">DateTimeField</span><span class="p">(</span><span class="n">auto_now</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">verbose_name</span><span class="o">=</span><span class="s2">&quot;Última Actualización&quot;</span><span class="p">)</span>
+</span><span id="PaymentMethod-132"><a href="#PaymentMethod-132"><span class="linenos">132</span></a>
+</span><span id="PaymentMethod-133"><a href="#PaymentMethod-133"><span class="linenos">133</span></a>    <span class="k">class</span><span class="w"> </span><span class="nc">Meta</span><span class="p">:</span>
+</span><span id="PaymentMethod-134"><a href="#PaymentMethod-134"><span class="linenos">134</span></a>        <span class="n">verbose_name</span> <span class="o">=</span> <span class="s2">&quot;Método de Pago&quot;</span>
+</span><span id="PaymentMethod-135"><a href="#PaymentMethod-135"><span class="linenos">135</span></a>        <span class="n">verbose_name_plural</span> <span class="o">=</span> <span class="s2">&quot;Métodos de Pago&quot;</span>
+</span><span id="PaymentMethod-136"><a href="#PaymentMethod-136"><span class="linenos">136</span></a>
+</span><span id="PaymentMethod-137"><a href="#PaymentMethod-137"><span class="linenos">137</span></a>    <span class="k">def</span><span class="w"> </span><span class="fm">__str__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+</span><span id="PaymentMethod-138"><a href="#PaymentMethod-138"><span class="linenos">138</span></a><span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+</span><span id="PaymentMethod-139"><a href="#PaymentMethod-139"><span class="linenos">139</span></a><span class="sd">        Devuelve la representación en cadena del método de pago.</span>
+</span><span id="PaymentMethod-140"><a href="#PaymentMethod-140"><span class="linenos">140</span></a>
+</span><span id="PaymentMethod-141"><a href="#PaymentMethod-141"><span class="linenos">141</span></a><span class="sd">        Returns:</span>
+</span><span id="PaymentMethod-142"><a href="#PaymentMethod-142"><span class="linenos">142</span></a><span class="sd">            str: Representación descriptiva del método de pago.</span>
+</span><span id="PaymentMethod-143"><a href="#PaymentMethod-143"><span class="linenos">143</span></a><span class="sd">        &quot;&quot;&quot;</span>
+</span><span id="PaymentMethod-144"><a href="#PaymentMethod-144"><span class="linenos">144</span></a>        <span class="n">acc_info</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot; - N°: </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">account_number</span><span class="si">}</span><span class="s2">&quot;</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">account_number</span> <span class="k">else</span> <span class="s2">&quot;&quot;</span>
+</span><span id="PaymentMethod-145"><a href="#PaymentMethod-145"><span class="linenos">145</span></a>        <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2"> (</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">get_method_type_display</span><span class="p">()</span><span class="si">}</span><span class="s2">)</span><span class="si">{</span><span class="n">acc_info</span><span class="si">}</span><span class="s2"> (</span><span class="si">{</span><span class="s1">&#39;Activo&#39;</span><span class="w"> </span><span class="k">if</span><span class="w"> </span><span class="bp">self</span><span class="o">.</span><span class="n">is_active</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="s1">&#39;Inactivo&#39;</span><span class="si">}</span><span class="s2">)&quot;</span>
 </span></pre></div>
 
 
@@ -1410,6 +1421,22 @@ object the first time, the query is executed.</p>
 
 
                             </div>
+                            <div id="PaymentMethod.balance" class="classattr">
+                                <div class="attr function">
+            
+        <span class="def">def</span>
+        <span class="name">balance</span><span class="signature pdoc-code condensed">(<span class="param"><span class="n">unknown</span></span><span class="return-annotation">):</span></span>
+
+        
+    </div>
+    <a class="headerlink" href="#PaymentMethod.balance"></a>
+    
+            <div class="docstring"><p>A wrapper for a deferred-loading field. When the value is read from this
+object the first time, the query is executed.</p>
+</div>
+
+
+                            </div>
                             <div id="PaymentMethod.is_active" class="classattr">
                                 <div class="attr function">
             
@@ -1526,6 +1553,56 @@ object the first time, the query is executed.</p>
     <a class="headerlink" href="#PaymentMethod.objects"></a>
     
             <div class="docstring"><p>The type of the None singleton.</p>
+</div>
+
+
+                            </div>
+                            <div id="PaymentMethod.currencypurchasetransaction_set" class="classattr">
+                                <div class="attr variable">
+            <span class="name">currencypurchasetransaction_set</span>
+
+        
+    </div>
+    <a class="headerlink" href="#PaymentMethod.currencypurchasetransaction_set"></a>
+    
+            <div class="docstring"><p>Accessor to the related objects manager on the reverse side of a
+many-to-one relation.</p>
+
+<p>In the example::</p>
+
+<pre><code>class Child(Model):
+    parent = ForeignKey(Parent, related_name='children')
+</code></pre>
+
+<p><code>Parent.children</code> is a <code>ReverseManyToOneDescriptor</code> instance.</p>
+
+<p>Most of the implementation is delegated to a dynamically defined manager
+class built by <code>create_reverse_many_to_one_manager()</code> defined below.</p>
+</div>
+
+
+                            </div>
+                            <div id="PaymentMethod.currencysaletransaction_set" class="classattr">
+                                <div class="attr variable">
+            <span class="name">currencysaletransaction_set</span>
+
+        
+    </div>
+    <a class="headerlink" href="#PaymentMethod.currencysaletransaction_set"></a>
+    
+            <div class="docstring"><p>Accessor to the related objects manager on the reverse side of a
+many-to-one relation.</p>
+
+<p>In the example::</p>
+
+<pre><code>class Child(Model):
+    parent = ForeignKey(Parent, related_name='children')
+</code></pre>
+
+<p><code>Parent.children</code> is a <code>ReverseManyToOneDescriptor</code> instance.</p>
+
+<p>Most of the implementation is delegated to a dynamically defined manager
+class built by <code>create_reverse_many_to_one_manager()</code> defined below.</p>
 </div>
 
 
