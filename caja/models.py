@@ -240,3 +240,154 @@ def puede_realizar_transaccion(caja):
     if not caja:
         return False
     return TurnoCaja.objects.filter(caja=caja, estado='ABIERTO').exists()
+
+
+class ArqueoCaja(models.Model):
+    """
+    Modelo que representa el resultado del arqueo automático de caja por divisa al cierre de turno (PSE-22).
+    Compara el saldo inicial y movimientos del sistema contra el inventario físico de cierre.
+
+    Attributes:
+        turno (TurnoCaja): Turno de caja asociado.
+        divisa (CharField): Código de la divisa (PYG, USD, EUR, BRL, ARS).
+        saldo_inicial (DecimalField): Saldo físico inicial al abrir el turno.
+        movimientos_sistema (DecimalField): Sumatoria neta de ingresos menos salidas físicas en el turno.
+        saldo_teorico (DecimalField): Saldo esperado (saldo_inicial + movimientos_sistema).
+        saldo_fisico_cierre (DecimalField): Conteo físico real declarado al cierre.
+        diferencia (DecimalField): Desviación (saldo_fisico_cierre - saldo_teorico).
+        estado_arqueo (CharField): Clasificación ('CUADRADO', 'FALTANTE', 'SOBRANTE').
+        fecha (DateTimeField): Fecha y hora en que se ejecutó el arqueo.
+    """
+    ESTADO_ARQUEO_CHOICES = [
+        ('CUADRADO', 'Cuadrado'),
+        ('FALTANTE', 'Faltante'),
+        ('SOBRANTE', 'Sobrante'),
+    ]
+
+    turno = models.ForeignKey(TurnoCaja, on_delete=models.CASCADE, related_name='arqueos', verbose_name="Turno de Caja")
+    divisa = models.CharField(max_length=10, verbose_name="Divisa")
+    saldo_inicial = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'), verbose_name="Saldo Inicial")
+    movimientos_sistema = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'), verbose_name="Movimientos del Sistema")
+    saldo_teorico = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'), verbose_name="Saldo Teórico Esperado")
+    saldo_fisico_cierre = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'), verbose_name="Saldo Físico de Cierre")
+    diferencia = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'), verbose_name="Diferencia")
+    estado_arqueo = models.CharField(max_length=20, choices=ESTADO_ARQUEO_CHOICES, default='CUADRADO', verbose_name="Estado de Arqueo")
+    fecha = models.DateTimeField(auto_now_add=True, verbose_name="Fecha de Arqueo")
+
+    class Meta:
+        verbose_name = "Arqueo de Caja"
+        verbose_name_plural = "Arqueos de Caja"
+        ordering = ['-fecha', 'divisa']
+
+    def __str__(self):
+        """Retorna la representación en cadena del arqueo."""
+        return f"Arqueo Turno #{self.turno.id} - {self.divisa}: {self.estado_arqueo} (Dif: {self.diferencia:,.2f})"
+
+
+class BitacoraArqueo(models.Model):
+    """
+    Bitácora histórica de auditoría y notificaciones automáticas al Administrador ante descuadres en arqueos de caja (PSE-22).
+
+    Attributes:
+        turno (TurnoCaja): Turno de caja asociado.
+        divisa (CharField): Divisa con discrepancia.
+        tipo_descuadre (CharField): 'FALTANTE' o 'SOBRANTE'.
+        monto_diferencia (DecimalField): Monto absoluto de la diferencia.
+        mensaje (TextField): Detalle descriptivo de la alerta generada.
+        administrador_notificado (BooleanField): Indica si se notificó al Administrador.
+        fecha (DateTimeField): Fecha y hora de registro de la bitácora.
+    """
+    TIPO_DESCUADRE_CHOICES = [
+        ('FALTANTE', 'Faltante'),
+        ('SOBRANTE', 'Sobrante'),
+    ]
+
+    turno = models.ForeignKey(TurnoCaja, on_delete=models.CASCADE, related_name='bitacoras_arqueo', verbose_name="Turno de Caja")
+    divisa = models.CharField(max_length=10, verbose_name="Divisa")
+    tipo_descuadre = models.CharField(max_length=20, choices=TIPO_DESCUADRE_CHOICES, verbose_name="Tipo de Descuadre")
+    monto_diferencia = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'), verbose_name="Monto de Diferencia")
+    mensaje = models.TextField(verbose_name="Mensaje de Alerta / Bitácora")
+    administrador_notificado = models.BooleanField(default=True, verbose_name="Administrador Notificado")
+    fecha = models.DateTimeField(auto_now_add=True, verbose_name="Fecha y Hora de Registro")
+
+    class Meta:
+        verbose_name = "Bitácora de Arqueo"
+        verbose_name_plural = "Bitácoras de Arqueos"
+        ordering = ['-fecha']
+
+    def __str__(self):
+        """Retorna la representación en cadena de la bitácora de arqueo."""
+        return f"Bitácora Turno #{self.turno.id} - {self.divisa} {self.tipo_descuadre} ({self.monto_diferencia:,.2f})"
+
+
+def procesar_arqueo_cierre(turno):
+    """
+    Ejecuta el arqueo automático de caja al cierre del turno para todas las divisas (PYG, USD, EUR, BRL, ARS),
+    calculando saldo teórico vs físico, clasificando como Cuadrado, Faltante o Sobrante,
+    registrando en la bitácora histórica y emitiendo notificación inmediata al Administrador ante descuadres (PSE-22).
+
+    Args:
+        turno (TurnoCaja): Objeto TurnoCaja que se está cerrando.
+    """
+    divisas_mapping = {
+        'PYG': (turno.saldo_inicial_pyg, turno.saldo_final_pyg),
+        'USD': (turno.saldo_inicial_usd, turno.saldo_final_usd),
+        'EUR': (turno.saldo_inicial_eur, turno.saldo_final_eur),
+        'BRL': (turno.saldo_inicial_brl, turno.saldo_final_brl),
+        'ARS': (turno.saldo_inicial_ars, turno.saldo_final_ars),
+    }
+
+    for divisa, (saldo_inicial, saldo_final_fisico) in divisas_mapping.items():
+        if saldo_inicial is None:
+            saldo_inicial = Decimal('0.00')
+        if saldo_final_fisico is None:
+            saldo_final_fisico = Decimal('0.00')
+
+        desgloses = DesgloseEfectivoCaja.objects.filter(turno=turno, divisa=divisa)
+        movimientos = Decimal('0.00')
+        for des in desgloses:
+            if des.tipo_operacion == 'INGRESO':
+                movimientos += des.monto_total
+            elif des.tipo_operacion == 'SALIDA':
+                movimientos -= des.monto_total
+
+        saldo_teorico = saldo_inicial + movimientos
+        diferencia = saldo_final_fisico - saldo_teorico
+
+        if abs(diferencia) < Decimal('0.01'):
+            estado = 'CUADRADO'
+            diferencia = Decimal('0.00')
+        elif diferencia < 0:
+            estado = 'FALTANTE'
+        else:
+            estado = 'SOBRANTE'
+
+        ArqueoCaja.objects.update_or_create(
+            turno=turno,
+            divisa=divisa,
+            defaults={
+                'saldo_inicial': saldo_inicial,
+                'movimientos_sistema': movimientos,
+                'saldo_teorico': saldo_teorico,
+                'saldo_fisico_cierre': saldo_final_fisico,
+                'diferencia': diferencia,
+                'estado_arqueo': estado
+            }
+        )
+
+        if estado != 'CUADRADO':
+            tipo_desc = 'FALTANTE' if estado == 'FALTANTE' else 'SOBRANTE'
+            monto_diff = abs(diferencia)
+            mensaje = (
+                f"ALERTA DE ARQUEO DE CAJA (#{turno.id}) - Caja: {turno.caja.nombre}, Cajero: {turno.cajero.username}. "
+                f"Divisa: {divisa}. Descuadre detectado: {tipo_desc} de {divisa} {monto_diff:,.2f}. "
+                f"Saldo Teórico Esperado: {saldo_teorico:,.2f} vs Conteo Físico Real: {saldo_final_fisico:,.2f}."
+            )
+            BitacoraArqueo.objects.create(
+                turno=turno,
+                divisa=divisa,
+                tipo_descuadre=tipo_desc,
+                monto_diferencia=monto_diff,
+                mensaje=mensaje,
+                administrador_notificado=True
+            )

@@ -7,14 +7,16 @@ from django.core.exceptions import ValidationError
 from decimal import Decimal
 from .models import (
     Caja, TurnoCaja, DenominacionDivisa, DesgloseEfectivoCaja, 
-    DetalleDesgloseBillete, verificar_turno_activo, inicializar_denominaciones_default
+    DetalleDesgloseBillete, ArqueoCaja, BitacoraArqueo, 
+    verificar_turno_activo, inicializar_denominaciones_default, procesar_arqueo_cierre
 )
 
 @login_required
 def gestion_caja_view(request):
     """
     Vista web para la gestión de apertura y cierre de turnos de caja física
-    y registro de ingresos/salidas con desglose detallado de billetes (PSE-21).
+    y registro de ingresos/salidas con desglose detallado de billetes (PSE-21),
+    incluyendo el reporte de arqueo automático y bitácora de auditoría (PSE-22).
     Estilizada con Tailwind CSS (Corporate Modern).
     """
     inicializar_denominaciones_default()
@@ -37,9 +39,14 @@ def gestion_caja_view(request):
             'desgloses_turno': desgloses_turno,
         })
 
+    turnos_cerrados = TurnoCaja.objects.filter(estado='CERRADO').prefetch_related('arqueos', 'bitacoras_arqueo').order_by('-fecha_cierre')[:10]
+    bitacoras_recientes = BitacoraArqueo.objects.all().order_by('-fecha')[:15]
+
     context = {
         'cajas_data': cajas_data,
         'denominaciones_por_divisa': denominaciones_por_divisa,
+        'turnos_cerrados': turnos_cerrados,
+        'bitacoras_recientes': bitacoras_recientes,
     }
     return render(request, 'caja/gestion_caja.html', context)
 
@@ -87,8 +94,9 @@ def abrir_turno_view(request, caja_id):
 @login_required
 def cerrar_turno_view(request, turno_id):
     """
-    Procesa el cierre de turno de caja ingresando los saldos finales físicos
-    y registrando la hora de cierre para congelar las operaciones de esa caja.
+    Procesa el cierre de turno de caja ingresando los saldos finales físicos,
+    ejecutando el arqueo automático por divisa, registrando bitácora de auditoría
+    y notificando al Administrador en caso de descuadres (PSE-22).
     """
     turno = get_object_or_404(TurnoCaja, id=turno_id, estado='ABIERTO')
 
@@ -102,9 +110,12 @@ def cerrar_turno_view(request, turno_id):
             turno.fecha_cierre = timezone.now()
             turno.estado = 'CERRADO'
             turno.save()
-            messages.success(request, f"Turno #{turno.id} cerrado correctamente. Las operaciones en la caja '{turno.caja.nombre}' han sido congeladas.")
+
+            procesar_arqueo_cierre(turno)
+
+            messages.success(request, f"Turno #{turno.id} cerrado y arqueo automático procesado exitosamente. Operaciones congeladas.")
         except Exception as e:
-            messages.error(request, f"Error al cerrar turno: {str(e)}")
+            messages.error(request, f"Error al cerrar turno y procesar arqueo: {str(e)}")
 
     return redirect('caja:gestion_caja')
 

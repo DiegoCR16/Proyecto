@@ -292,6 +292,112 @@
                 </div>
             {% endfor %}
         </div>
+
+        <!-- Sección de Reportes de Arqueo y Bitácora Histórica (PSE-22) -->
+        <div class="mt-12 space-y-8">
+            <div class="bg-white rounded-xl shadow-lg border border-slate-200 p-6">
+                <h2 class="text-xl font-extrabold text-slate-900 mb-2">Reporte Comparativo de Arqueo de Caja (PSE-22)</h2>
+                <p class="text-slate-600 text-sm mb-6">Comparación automática entre saldos teóricos esperados e inventario físico de billetes al cierre de turno con etiquetado de estado.</p>
+
+                {% if turnos_cerrados %}
+                    <div class="space-y-6">
+                        {% for turno in turnos_cerrados %}
+                            <div class="border border-slate-200 rounded-lg overflow-hidden">
+                                <div class="bg-slate-900 text-white p-3 flex justify-between items-center text-sm">
+                                    <div>
+                                        <strong>Turno Cerrado #{{ turno.id }}</strong> - Caja: {{ turno.caja.nombre }} (Cajero: {{ turno.cajero.username }})
+                                    </div>
+                                    <div class="text-xs text-slate-400">
+                                        Cierre: {{ turno.fecha_cierre|date:"d/m/Y H:i" }}
+                                    </div>
+                                </div>
+                                <div class="p-4 bg-white overflow-x-auto">
+                                    <table class="w-full text-xs font-mono">
+                                        <thead>
+                                            <tr class="border-b text-slate-600 bg-slate-100">
+                                                <th class="p-2 text-left">Divisa</th>
+                                                <th class="p-2 text-right">Saldo Inicial</th>
+                                                <th class="p-2 text-right">(+/-) Movimientos</th>
+                                                <th class="p-2 text-right">Saldo Teórico</th>
+                                                <th class="p-2 text-right">Físico Cierre</th>
+                                                <th class="p-2 text-right">Diferencia</th>
+                                                <th class="p-2 text-center">Estado (Clasificación)</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {% for arqueo in turno.arqueos.all %}
+                                                <tr class="border-b hover:bg-slate-50">
+                                                    <td class="p-2 font-sans font-bold text-slate-800">{{ arqueo.divisa }}</td>
+                                                    <td class="p-2 text-right">{{ arqueo.saldo_inicial|floatformat:2 }}</td>
+                                                    <td class="p-2 text-right">{{ arqueo.movimientos_sistema|floatformat:2 }}</td>
+                                                    <td class="p-2 text-right font-semibold">{{ arqueo.saldo_teorico|floatformat:2 }}</td>
+                                                    <td class="p-2 text-right font-semibold text-blue-900">{{ arqueo.saldo_fisico_cierre|floatformat:2 }}</td>
+                                                    <td class="p-2 text-right font-bold {% if arqueo.diferencia < 0 %}text-red-600{% elif arqueo.diferencia > 0 %}text-amber-600{% else %}text-green-600{% endif %}">
+                                                        {{ arqueo.diferencia|floatformat:2 }}
+                                                    </td>
+                                                    <td class="p-2 text-center">
+                                                        {% if arqueo.estado_arqueo == 'CUADRADO' %}
+                                                            <span class="inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-bold bg-green-100 text-green-800 border border-green-300">
+                                                                CUADRADO
+                                                            </span>
+                                                        {% elif arqueo.estado_arqueo == 'FALTANTE' %}
+                                                            <span class="inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-bold bg-red-100 text-red-800 border border-red-300">
+                                                                FALTANTE
+                                                            </span>
+                                                        {% else %}
+                                                            <span class="inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300">
+                                                                SOBRANTE
+                                                            </span>
+                                                        {% endif %}
+                                                    </td>
+                                                </tr>
+                                            {% endfor %}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <p class="text-slate-500 text-xs italic">No existen turnos cerrados ni arqueos registrados aún.</p>
+                {% endif %}
+            </div>
+
+            <!-- Panel de Bitácora / Registro de Auditoría y Notificaciones -->
+            <div class="bg-white rounded-xl shadow-lg border border-slate-200 p-6">
+                <h2 class="text-xl font-extrabold text-slate-900 mb-2">Bitácora Histórica y Alertas al Administrador (PSE-22)</h2>
+                <p class="text-slate-600 text-sm mb-6">Registro persistente de discrepancias y notificaciones enviadas automáticamente a la administración.</p>
+
+                {% if bitacoras_recientes %}
+                    <div class="space-y-3 max-h-80 overflow-y-auto">
+                        {% for bitacora in bitacoras_recientes %}
+                            <div class="bg-slate-50 border border-slate-200 p-3 rounded-lg text-xs flex justify-between items-start">
+                                <div>
+                                    <div class="flex items-center space-x-2 mb-1">
+                                        <span class="font-bold {% if bitacora.tipo_descuadre == 'FALTANTE' %}text-red-700 bg-red-100 px-2 py-0.5 rounded{% else %}text-amber-700 bg-amber-100 px-2 py-0.5 rounded{% endif %}">
+                                            [{{ bitacora.tipo_descuadre }} - {{ bitacora.divisa }}]
+                                        </span>
+                                        <span class="font-mono font-bold text-slate-900">Monto: {{ bitacora.monto_diferencia|floatformat:2 }}</span>
+                                        <span class="text-slate-500">| Turno #{{ bitacora.turno.id }} ({{ bitacora.turno.caja.nombre }})</span>
+                                    </div>
+                                    <p class="text-slate-700">{{ bitacora.mensaje }}</p>
+                                </div>
+                                <div class="text-right flex flex-col items-end space-y-1">
+                                    <span class="text-[10px] text-slate-500 font-mono">{{ bitacora.fecha|date:"d/m/Y H:i" }}</span>
+                                    {% if bitacora.administrador_notificado %}
+                                        <span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold bg-green-100 text-green-800">
+                                            ✓ Notificado Admin
+                                        </span>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <p class="text-slate-500 text-xs italic">No se registraron alertas ni descuadres en la bitácora histórica.</p>
+                {% endif %}
+            </div>
+        </div>
     </main>
 </body>
 </html>
