@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Global Exchange - Gestión de Turnos de Caja (PSE-20)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-50 min-h-screen text-slate-900">
+    <!-- Header Corporativo -->
+    <header class="bg-slate-900 text-white shadow-md">
+        <div class="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
+            <div class="flex items-center space-x-3">
+                <span class="text-2xl font-bold tracking-wide text-blue-400">Global Exchange</span>
+                <span class="text-xs bg-blue-800 px-2.5 py-1 rounded-full font-medium">Casa de Cambios - Módulo Caja</span>
+            </div>
+            <div class="flex items-center space-x-4 text-sm">
+                <span>Usuario: <strong>{{ request.user.username }}</strong></span>
+                <a href="{% url 'dashboard_redirect' %}" class="bg-slate-800 hover:bg-slate-700 px-3 py-1.5 rounded transition">Dashboard</a>
+                <a href="{% url 'logout' %}" class="bg-red-600 hover:bg-red-700 px-3 py-1.5 rounded transition">Cerrar Sesión</a>
+            </div>
+        </div>
+    </header>
+
+    <main class="max-w-7xl mx-auto px-4 py-8">
+        <!-- Mensajes de Alerta -->
+        {% if messages %}
+            <div class="mb-6 space-y-2">
+                {% for message in messages %}
+                    <div class="p-4 rounded-lg text-sm {% if message.tags == 'error' %}bg-red-100 text-red-800 border border-red-300{% else %}bg-green-100 text-green-800 border border-green-300{% endif %}">
+                        {{ message }}
+                    </div>
+                {% endfor %}
+            </div>
+        {% endif %}
+
+        <div class="mb-8">
+            <h1 class="text-3xl font-extrabold text-slate-900">Apertura y Cierre de Turnos de Caja (PSE-20)</h1>
+            <p class="text-slate-600 mt-1">Gestión del control monetario físico, saldos iniciales/finales por divisa y estado activo por caja.</p>
+        </div>
+
+        <!-- Listado de Cajas -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {% for item in cajas_data %}
+                <div class="bg-white rounded-xl shadow-lg border border-slate-200 overflow-hidden flex flex-col justify-between">
+                    <div>
+                        <!-- Cabecera de Tarjeta -->
+                        <div class="bg-slate-900 text-white p-4 flex justify-between items-center">
+                            <div>
+                                <h3 class="text-lg font-bold">{{ item.caja.nombre }}</h3>
+                                <span class="text-xs text-slate-400 font-mono">Código: {{ item.caja.codigo }}</span>
+                            </div>
+                            <div>
+                                {% if item.turno_activo %}
+                                    <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-green-600 text-white">
+                                        ● Turno Activo (#{{ item.turno_activo.id }})
+                                    </span>
+                                {% else %}
+                                    <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-red-600 text-white">
+                                        ○ Sin Turno Activo
+                                    </span>
+                                {% endif %}
+                            </div>
+                        </div>
+
+                        <!-- Contenido -->
+                        <div class="p-6">
+                            {% if item.turno_activo %}
+                                <!-- Información del Turno Activo -->
+                                <div class="bg-slate-50 p-4 rounded-lg border border-slate-200 mb-6 space-y-2 text-sm">
+                                    <div class="flex justify-between">
+                                        <span class="text-slate-600">Cajero Responsable:</span>
+                                        <strong class="text-slate-900">{{ item.turno_activo.cajero.username }}</strong>
+                                    </div>
+                                    <div class="flex justify-between">
+                                        <span class="text-slate-600">Apertura:</span>
+                                        <span class="text-slate-900">{{ item.turno_activo.fecha_apertura|date:"d/m/Y H:i" }}</span>
+                                    </div>
+                                    <div class="border-t border-slate-200 pt-2 mt-2">
+                                        <span class="font-semibold text-slate-700 block mb-1">Saldos Iniciales Registrados:</span>
+                                        <div class="grid grid-cols-3 gap-2 text-xs font-mono">
+                                            <div class="bg-white p-1.5 rounded border border-slate-200">PYG: <strong>{{ item.turno_activo.saldo_inicial_pyg }}</strong></div>
+                                            <div class="bg-white p-1.5 rounded border border-slate-200">USD: <strong>{{ item.turno_activo.saldo_inicial_usd }}</strong></div>
+                                            <div class="bg-white p-1.5 rounded border border-slate-200">EUR: <strong>{{ item.turno_activo.saldo_inicial_eur }}</strong></div>
+                                            <div class="bg-white p-1.5 rounded border border-slate-200">BRL: <strong>{{ item.turno_activo.saldo_inicial_brl }}</strong></div>
+                                            <div class="bg-white p-1.5 rounded border border-slate-200">ARS: <strong>{{ item.turno_activo.saldo_inicial_ars }}</strong></div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Formulario de Cierre de Turno -->
+                                <form method="POST" action="{% url 'caja:cerrar_turno' item.turno_activo.id %}" class="space-y-4">
+                                    {% csrf_token %}
+                                    <h4 class="font-bold text-slate-800 text-sm border-b pb-1">Registrar Cierre y Saldos Finales Físicos</h4>
+                                    <div class="grid grid-cols-2 gap-3 text-xs">
+                                        <div>
+                                            <label class="block font-medium text-slate-700 mb-1">Final PYG</label>
+                                            <input type="number" step="0.01" name="saldo_final_pyg" value="0" class="w-full border rounded p-1.5 font-mono" required>
+                                        </div>
+                                        <div>
+                                            <label class="block font-medium text-slate-700 mb-1">Final USD</label>
+                                            <input type="number" step="0.01" name="saldo_final_usd" value="0" class="w-full border rounded p-1.5 font-mono" required>
+                                        </div>
+                                        <div>
+                                            <label class="block font-medium text-slate-700 mb-1">Final EUR</label>
+                                            <input type="number" step="0.01" name="saldo_final_eur" value="0" class="w-full border rounded p-1.5 font-mono" required>
+                                        </div>
+                                        <div>
+                                            <label class="block font-medium text-slate-700 mb-1">Final BRL</label>
+                                            <input type="number" step="0.01" name="saldo_final_brl" value="0" class="w-full border rounded p-1.5 font-mono" required>
+                                        </div>
+                                        <div class="col-span-2">
+                                            <label class="block font-medium text-slate-700 mb-1">Final ARS</label>
+                                            <input type="number" step="0.01" name="saldo_final_ars" value="0" class="w-full border rounded p-1.5 font-mono" required>
+                                        </div>
+                                    </div>
+                                    <button type="submit" onclick="return confirm('¿Confirma el cierre del turno? Esto congelará las operaciones de la caja.')" class="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded transition shadow">
+                                        Cerrar Turno de Caja (Congelar Operaciones)
+                                    </button>
+                                </form>
+                            {% else %}
+                                <!-- Formulario de Apertura de Turno -->
+                                <form method="POST" action="{% url 'caja:abrir_turno' item.caja.id %}" class="space-y-4">
+                                    {% csrf_token %}
+                                    <div class="bg-amber-50 border border-amber-200 text-amber-800 p-3 rounded-lg text-xs mb-3">
+                                        <strong>Atención:</strong> Para operar esta caja debe abrir turno ingresando los saldos iniciales por divisa asociados a su usuario (<strong>{{ request.user.username }}</strong>).
+                                    </div>
+                                    <h4 class="font-bold text-slate-800 text-sm border-b pb-1">Saldos Iniciales Detallados por Divisa</h4>
+                                    <div class="grid grid-cols-2 gap-3 text-xs">
+                                        <div>
+                                            <label class="block font-medium text-slate-700 mb-1">Inicial PYG</label>
+                                            <input type="number" step="0.01" name="saldo_inicial_pyg" value="0" class="w-full border rounded p-1.5 font-mono" required>
+                                        </div>
+                                        <div>
+                                            <label class="block font-medium text-slate-700 mb-1">Inicial USD</label>
+                                            <input type="number" step="0.01" name="saldo_inicial_usd" value="0" class="w-full border rounded p-1.5 font-mono" required>
+                                        </div>
+                                        <div>
+                                            <label class="block font-medium text-slate-700 mb-1">Inicial EUR</label>
+                                            <input type="number" step="0.01" name="saldo_inicial_eur" value="0" class="w-full border rounded p-1.5 font-mono" required>
+                                        </div>
+                                        <div>
+                                            <label class="block font-medium text-slate-700 mb-1">Inicial BRL</label>
+                                            <input type="number" step="0.01" name="saldo_inicial_brl" value="0" class="w-full border rounded p-1.5 font-mono" required>
+                                        </div>
+                                        <div class="col-span-2">
+                                            <label class="block font-medium text-slate-700 mb-1">Inicial ARS</label>
+                                            <input type="number" step="0.01" name="saldo_inicial_ars" value="0" class="w-full border rounded p-1.5 font-mono" required>
+                                        </div>
+                                    </div>
+                                    <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded transition shadow">
+                                        Abrir Turno de Caja
+                                    </button>
+                                </form>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            {% endfor %}
+        </div>
+    </main>
+</body>
+</html>

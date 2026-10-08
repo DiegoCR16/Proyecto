@@ -9,5 +9,6 @@ urlpatterns = [
     path('tasas/', include('tasas_cambio.urls')),
     path('operaciones/', include('procesamiento_operaciones.urls')),
     path('integracion/', include('integracion.urls')),
+    path('caja/', include('caja.urls')),
     path('', lambda request: redirect('auth/login/')),
 ]
