@@ -298,11 +298,14 @@ class ClientAccreditationMethod(models.Model):
         actualizado_en (DateTimeField): Fecha y hora de última actualización.
     """
     TIPO_MEDIO_CHOICES = [
+        ('TARJETA_CREDITO', 'Tarjeta de Crédito (Crédito Local/Internacional - Stripe/Bancard)'),
+        ('TARJETA_DEBITO', 'Tarjeta de Débito (Débito Directo)'),
+        ('CUENTA_BANCARIA_LOCAL', 'Cuenta Bancaria Local (Caja de Ahorro / Cta. Cte. - SIPAP)'),
+        ('BILLETERA_ELECTRONICA', 'Billetera Electrónica (Móvil - Tigo Money/Personal)'),
+        ('CUENTA_BANCARIA_EXTRANJERA', 'Cuenta Bancaria Extranjera (Transferencia Internacional SWIFT/IBAN)'),
         ('CUENTA_BANCARIA', 'Cuenta Bancaria'),
         ('BILLETERA', 'Billetera Electrónica'),
         ('ALIAS', 'Alias de Transferencia'),
-        ('TARJETA_CREDITO', 'Tarjeta de Crédito'),
-        ('TARJETA_DEBITO', 'Tarjeta de Débito'),
     ]
     TIPO_CUENTA_CHOICES = [
         ('CORRIENTE', 'Cuenta Corriente'),
@@ -323,11 +326,12 @@ class ClientAccreditationMethod(models.Model):
 
     cliente = models.ForeignKey(Cliente, on_delete=models.CASCADE, related_name='acreditation_methods', verbose_name="Cliente")
     user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Usuario Registrador")
-    tipo_medio = models.CharField(max_length=30, choices=TIPO_MEDIO_CHOICES, default='CUENTA_BANCARIA', verbose_name="Tipo de Medio")
+    tipo_medio = models.CharField(max_length=40, choices=TIPO_MEDIO_CHOICES, default='CUENTA_BANCARIA_LOCAL', verbose_name="Tipo de Medio")
     entidad_financiera = models.CharField(max_length=150, verbose_name="Banco / Entidad Financiera / Proveedor")
     
     # Campos específicos según tipo
     numero_cuenta = models.CharField(max_length=100, blank=True, null=True, verbose_name="Número de Cuenta")
+    swift_iban = models.CharField(max_length=100, blank=True, null=True, verbose_name="Código SWIFT / IBAN")
     tipo_cuenta = models.CharField(max_length=30, choices=TIPO_CUENTA_CHOICES, blank=True, null=True, verbose_name="Tipo de Cuenta")
     numero_telefono = models.CharField(max_length=50, blank=True, null=True, verbose_name="Número de Teléfono / Cuenta Billetera")
     alias_transferencia = models.CharField(max_length=150, blank=True, null=True, verbose_name="Alias de Transferencia")
@@ -350,10 +354,12 @@ class ClientAccreditationMethod(models.Model):
 
     def __str__(self):
         """Devuelve la representación en cadena del medio de acreditación."""
-        if self.tipo_medio == 'CUENTA_BANCARIA':
-            detail = f"Cuenta N°: {self.numero_cuenta} ({self.get_tipo_cuenta_display()})"
-        elif self.tipo_medio == 'BILLETERA':
+        if self.tipo_medio in ['CUENTA_BANCARIA_LOCAL', 'CUENTA_BANCARIA']:
+            detail = f"Cuenta N°: {self.numero_cuenta} ({self.get_tipo_cuenta_display() or 'Cuenta'})"
+        elif self.tipo_medio in ['BILLETERA_ELECTRONICA', 'BILLETERA']:
             detail = f"Teléfono/Billetera: {self.numero_telefono}"
+        elif self.tipo_medio == 'CUENTA_BANCARIA_EXTRANJERA':
+            detail = f"SWIFT/IBAN: {self.swift_iban or self.numero_cuenta}"
         elif self.tipo_medio == 'ALIAS':
             detail = f"Alias: {self.alias_transferencia}"
         elif self.tipo_medio in ['TARJETA_CREDITO', 'TARJETA_DEBITO']:
@@ -368,18 +374,23 @@ class ClientAccreditationMethod(models.Model):
         if not self.entidad_financiera or not self.titularidad:
             raise ValidationError("La entidad financiera y la titularidad son obligatorias.")
         
-        if self.tipo_medio == 'CUENTA_BANCARIA':
+        if self.tipo_medio in ['CUENTA_BANCARIA_LOCAL', 'CUENTA_BANCARIA']:
             if not self.numero_cuenta or not any(char.isdigit() for char in self.numero_cuenta):
-                raise ValidationError("Debe especificar un número de cuenta bancaria válido con dígitos.")
-        elif self.tipo_medio == 'BILLETERA':
+                raise ValidationError("Debe especificar un número de cuenta bancaria local válido con dígitos.")
+        elif self.tipo_medio in ['BILLETERA_ELECTRONICA', 'BILLETERA']:
             if not self.numero_telefono or not re.search(r'[\d\+\-\s]{7,}', self.numero_telefono):
-                raise ValidationError("Debe especificar un número de teléfono o cuenta de billetera válido.")
+                raise ValidationError("Debe especificar un número de teléfono o cuenta de billetera electrónica válido.")
+        elif self.tipo_medio == 'CUENTA_BANCARIA_EXTRANJERA':
+            if not self.swift_iban and not self.numero_cuenta and not self.alias_transferencia:
+                raise ValidationError("Debe especificar el código SWIFT / IBAN o número de cuenta para cuenta bancaria extranjera.")
         elif self.tipo_medio == 'ALIAS':
             if not self.alias_transferencia or len(self.alias_transferencia.strip()) < 3:
                 raise ValidationError("Debe especificar un alias de transferencia válido de al menos 3 caracteres.")
         elif self.tipo_medio in ['TARJETA_CREDITO', 'TARJETA_DEBITO']:
             if not self.numero_tarjeta or not any(char.isdigit() for char in self.numero_tarjeta):
                 raise ValidationError("Debe especificar un número de tarjeta válido con dígitos.")
+            if not self.fecha_expiracion:
+                raise ValidationError("La fecha de expiración de la tarjeta es obligatoria (MM/AA).")
 
     def has_pending_transactions(self):
         """

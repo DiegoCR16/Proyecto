@@ -109,8 +109,11 @@ class PaymentMethod(models.Model):
         updated_at (DateTimeField): Fecha de última actualización.
     """
     METHOD_TYPES = [
-        ('TARJETA_CREDITO', 'Tarjeta de Crédito'),
-        ('TARJETA_DEBITO', 'Tarjeta de Débito'),
+        ('TARJETA_CREDITO', 'Tarjeta de Crédito (Stripe/Bancard)'),
+        ('TARJETA_DEBITO', 'Tarjeta de Débito (Débito Directo)'),
+        ('CUENTA_BANCARIA_LOCAL', 'Cuenta Bancaria Local (SIPAP)'),
+        ('BILLETERA_ELECTRONICA', 'Billetera Electrónica (Tigo Money/Personal)'),
+        ('CUENTA_BANCARIA_EXTRANJERA', 'Cuenta Bancaria Extranjera (SWIFT/IBAN)'),
         ('TRANSFERENCIA', 'Transferencia Bancaria'),
         ('BILLETERA', 'Billetera Electrónica'),
         ('EFECTIVO', 'Efectivo en Sucursal'),
@@ -119,8 +122,9 @@ class PaymentMethod(models.Model):
 
     code = models.CharField(max_length=50, unique=True, verbose_name="Código de Método de Pago")
     name = models.CharField(max_length=100, verbose_name="Nombre del Método de Pago")
-    method_type = models.CharField(max_length=30, choices=METHOD_TYPES, default='TRANSFERENCIA', verbose_name="Tipo de Método de Pago")
+    method_type = models.CharField(max_length=40, choices=METHOD_TYPES, default='TRANSFERENCIA', verbose_name="Tipo de Método de Pago")
     account_number = models.CharField(max_length=100, blank=True, null=True, verbose_name="Número de Cuenta / Tarjeta")
+    swift_iban = models.CharField(max_length=100, blank=True, null=True, verbose_name="Código SWIFT / IBAN")
     bank_name = models.CharField(max_length=100, blank=True, null=True, verbose_name="Banco / Emisor")
     account_type = models.CharField(max_length=50, blank=True, null=True, verbose_name="Tipo de Cuenta")
     holder_name = models.CharField(max_length=150, blank=True, null=True, verbose_name="Titular")
