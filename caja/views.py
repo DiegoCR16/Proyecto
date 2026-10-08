@@ -5,27 +5,41 @@ from django.contrib import messages
 from django.utils import timezone
 from django.core.exceptions import ValidationError
 from decimal import Decimal
-from .models import Caja, TurnoCaja, verificar_turno_activo
+from .models import (
+    Caja, TurnoCaja, DenominacionDivisa, DesgloseEfectivoCaja, 
+    DetalleDesgloseBillete, verificar_turno_activo, inicializar_denominaciones_default
+)
 
 @login_required
 def gestion_caja_view(request):
     """
-    Vista web para la gestión de apertura y cierre de turnos de caja física.
-    Muestra el estado activo de cada caja y formularios con saldos por divisa (USD, EUR, PYG, BRL, ARS).
+    Vista web para la gestión de apertura y cierre de turnos de caja física
+    y registro de ingresos/salidas con desglose detallado de billetes (PSE-21).
     Estilizada con Tailwind CSS (Corporate Modern).
     """
+    inicializar_denominaciones_default()
     cajas = Caja.objects.filter(activa=True)
     cajas_data = []
 
+    denominaciones = DenominacionDivisa.objects.filter(activa=True)
+    denominaciones_por_divisa = {}
+    for d in denominaciones:
+        if d.divisa not in denominaciones_por_divisa:
+            denominaciones_por_divisa[d.divisa] = []
+        denominaciones_por_divisa[d.divisa].append(d)
+
     for caja in cajas:
         turno_activo = verificar_turno_activo(caja)
+        desgloses_turno = DesgloseEfectivoCaja.objects.filter(turno=turno_activo).order_by('-fecha') if turno_activo else []
         cajas_data.append({
             'caja': caja,
             'turno_activo': turno_activo,
+            'desgloses_turno': desgloses_turno,
         })
 
     context = {
         'cajas_data': cajas_data,
+        'denominaciones_por_divisa': denominaciones_por_divisa,
     }
     return render(request, 'caja/gestion_caja.html', context)
 
@@ -93,3 +107,54 @@ def cerrar_turno_view(request, turno_id):
             messages.error(request, f"Error al cerrar turno: {str(e)}")
 
     return redirect('caja:gestion_caja')
+
+
+@login_required
+def registrar_movimiento_efectivo_view(request, turno_id):
+    """
+    Procesa un ingreso o salida física de efectivo en un turno activo,
+    respaldado por el desglose detallado de billetes por denominación (PSE-21).
+    """
+    turno = get_object_or_404(TurnoCaja, id=turno_id, estado='ABIERTO')
+
+    if request.method == 'POST':
+        try:
+            tipo_operacion = request.POST.get('tipo_operacion') # INGRESO o SALIDA
+            divisa = request.POST.get('divisa', 'PYG')
+            observacion = request.POST.get('observacion', '')
+
+            if tipo_operacion not in ['INGRESO', 'SALIDA']:
+                messages.error(request, "Tipo de operación no válido.")
+                return redirect('caja:gestion_caja')
+
+            desglose = DesgloseEfectivoCaja.objects.create(
+                turno=turno,
+                tipo_operacion=tipo_operacion,
+                divisa=divisa,
+                observacion=observacion,
+                monto_total=Decimal('0.00')
+            )
+
+            monto_total = Decimal('0.00')
+            denominaciones = DenominacionDivisa.objects.filter(divisa=divisa, activa=True)
+            
+            for denom in denominaciones:
+                qty_str = request.POST.get(f'denom_{denom.id}', '0')
+                qty = int(qty_str) if qty_str.isdigit() else 0
+                if qty > 0:
+                    detalle = DetalleDesgloseBillete.objects.create(
+                        desglose=desglose,
+                        denominacion=denom,
+                        cantidad=qty
+                    )
+                    monto_total += detalle.subtotal
+
+            desglose.monto_total = monto_total
+            desglose.save()
+
+            messages.success(request, f"{tipo_operacion.capitalize()} de efectivo registrado exitosamente ({divisa} {monto_total:,.2f}) con desglose detallado de billetes.")
+        except Exception as e:
+            messages.error(request, f"Error al registrar movimiento con desglose: {str(e)}")
+
+    return redirect('caja:gestion_caja')
+

@@ -2,8 +2,48 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>Global Exchange - Gestión de Turnos de Caja (PSE-20)</title>
+    <title>Global Exchange - Gestión de Turnos y Desglose de Papel Moneda (PSE-21)</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        function calcularSubtotal(inputId, valorFacial, subtotalId) {
+            const qty = parseFloat(document.getElementById(inputId).value) || 0;
+            const facial = parseFloat(valorFacial) || 0;
+            const subtotal = qty * facial;
+            document.getElementById(subtotalId).innerText = subtotal.toLocaleString('es-PY', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            calcularTotalGeneral();
+        }
+
+        function calcularTotalGeneral() {
+            let total = 0;
+            document.querySelectorAll('.subtotal-item').forEach(el => {
+                const val = parseFloat(el.innerText.replace(/\./g, '').replace(',', '.')) || 0;
+                total += val;
+            });
+            const totalEl = document.getElementById('total-general-calc');
+            if (totalEl) {
+                totalEl.innerText = total.toLocaleString('es-PY', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            }
+        }
+
+        function cambiarDivisaDesglose(divisa) {
+            document.querySelectorAll('.desglose-tabla').forEach(el => {
+                el.classList.add('hidden');
+            });
+            const target = document.getElementById('tabla-' + divisa);
+            if (target) {
+                target.classList.remove('hidden');
+            }
+            document.getElementById('input-divisa-hidden').value = divisa;
+            calcularTotalGeneral();
+        }
+
+        window.addEventListener('DOMContentLoaded', () => {
+            const firstTab = document.querySelector('.tab-divisa');
+            if (firstTab) {
+                firstTab.click();
+            }
+        });
+    </script>
 </head>
 <body class="bg-slate-50 min-h-screen text-slate-900">
     <!-- Header Corporativo -->
@@ -11,7 +51,7 @@
         <div class="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
             <div class="flex items-center space-x-3">
                 <span class="text-2xl font-bold tracking-wide text-blue-400">Global Exchange</span>
-                <span class="text-xs bg-blue-800 px-2.5 py-1 rounded-full font-medium">Casa de Cambios - Módulo Caja</span>
+                <span class="text-xs bg-blue-800 px-2.5 py-1 rounded-full font-medium">Casa de Cambios - Módulo Caja & Desglose</span>
             </div>
             <div class="flex items-center space-x-4 text-sm">
                 <span>Usuario: <strong>{{ request.user.username }}</strong></span>
@@ -34,12 +74,12 @@
         {% endif %}
 
         <div class="mb-8">
-            <h1 class="text-3xl font-extrabold text-slate-900">Apertura y Cierre de Turnos de Caja (PSE-20)</h1>
-            <p class="text-slate-600 mt-1">Gestión del control monetario físico, saldos iniciales/finales por divisa y estado activo por caja.</p>
+            <h1 class="text-3xl font-extrabold text-slate-900">Gestión de Turnos y Desglose de Papel Moneda (PSE-21)</h1>
+            <p class="text-slate-600 mt-1">Conteo físico mediante desglose individual de billetes por denominación y control de entradas/salidas de efectivo por caja.</p>
         </div>
 
         <!-- Listado de Cajas -->
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {% for item in cajas_data %}
                 <div class="bg-white rounded-xl shadow-lg border border-slate-200 overflow-hidden flex flex-col justify-between">
                     <div>
@@ -86,6 +126,101 @@
                                         </div>
                                     </div>
                                 </div>
+
+                                <!-- Registro de Ingreso / Salida con Desglose de Billetes (PSE-21) -->
+                                <div class="bg-blue-50 border border-blue-200 p-4 rounded-xl mb-6">
+                                    <h4 class="font-bold text-blue-900 text-sm mb-2">Registrar Movimiento Físico (Ingreso / Salida) con Desglose (PSE-21)</h4>
+                                    
+                                    <!-- Selector de Divisas (Tabs) -->
+                                    <div class="flex space-x-2 mb-3">
+                                        {% for divisa_code, denoms in denominaciones_por_divisa.items %}
+                                            <button type="button" onclick="cambiarDivisaDesglose('{{ divisa_code }}')" class="tab-divisa px-3 py-1 bg-white border border-blue-300 text-blue-800 rounded text-xs font-bold hover:bg-blue-600 hover:text-white transition">
+                                                {{ divisa_code }}
+                                            </button>
+                                        {% endfor %}
+                                    </div>
+
+                                    <form method="POST" action="{% url 'caja:movimiento_efectivo' item.turno_activo.id %}" class="space-y-3">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="divisa" id="input-divisa-hidden" value="PYG">
+                                        
+                                        <div class="grid grid-cols-2 gap-3 text-xs">
+                                            <div>
+                                                <label class="block font-medium text-slate-700 mb-1">Tipo de Operación</label>
+                                                <select name="tipo_operacion" class="w-full border rounded p-1.5 font-semibold bg-white" required>
+                                                    <option value="INGRESO">Ingreso Físico de Efectivo</option>
+                                                    <option value="SALIDA">Salida Física de Efectivo</option>
+                                                </select>
+                                            </div>
+                                            <div>
+                                                <label class="block font-medium text-slate-700 mb-1">Observación / Motivo</label>
+                                                <input type="text" name="observacion" placeholder="Ej. Depósito o retiro caja" class="w-full border rounded p-1.5 bg-white">
+                                            </div>
+                                        </div>
+
+                                        <!-- Tablas de Denominaciones por Divisa (Matriz Interactiva) -->
+                                        {% for divisa_code, denoms in denominaciones_por_divisa.items %}
+                                            <div id="tabla-{{ divisa_code }}" class="desglose-tabla hidden space-y-2 border-t pt-2">
+                                                <div class="text-xs font-bold text-slate-700 mb-1">Desglose de Billetes - Divisa: {{ divisa_code }}</div>
+                                                <div class="max-h-48 overflow-y-auto border rounded bg-white p-2">
+                                                    <table class="w-full text-xs font-mono">
+                                                        <thead>
+                                                            <tr class="border-b text-slate-600 bg-slate-100">
+                                                                <th class="p-1 text-left">Denominación</th>
+                                                                <th class="p-1 text-center">Valor Facial</th>
+                                                                <th class="p-1 text-center">Cantidad</th>
+                                                                <th class="p-1 text-right">Subtotal</th>
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody>
+                                                            {% for denom in denoms %}
+                                                                <tr class="border-b">
+                                                                    <td class="p-1 font-sans">{{ denom.nombre }}</td>
+                                                                    <td class="p-1 text-center">{{ denom.valor_facial }}</td>
+                                                                    <td class="p-1 text-center">
+                                                                        <input type="number" min="0" value="0" name="denom_{{ denom.id }}" id="denom_{{ denom.id }}" oninput="calcularSubtotal('denom_{{ denom.id }}', '{{ denom.valor_facial }}', 'sub_{{ denom.id }}')" class="w-20 border rounded p-1 text-center font-mono">
+                                                                    </td>
+                                                                    <td class="p-1 text-right font-bold">
+                                                                        <span id="sub_{{ denom.id }}" class="subtotal-item">0.00</span>
+                                                                    </td>
+                                                                </tr>
+                                                            {% endfor %}
+                                                        </tbody>
+                                                    </table>
+                                                </div>
+                                            </div>
+                                        {% endfor %}
+
+                                        <!-- Sumatoria Automática en Tiempo Real -->
+                                        <div class="bg-slate-900 text-white p-3 rounded flex justify-between items-center text-sm font-mono">
+                                            <span>Subtotal / Total Calculado:</span>
+                                            <span class="text-green-400 font-bold text-base">₲ <span id="total-general-calc">0.00</span></span>
+                                        </div>
+
+                                        <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded transition shadow text-xs">
+                                            Registrar Movimiento con Desglose de Papel Moneda
+                                        </button>
+                                    </form>
+                                </div>
+
+                                <!-- Historial de Desgloses del Turno -->
+                                {% if item.desgloses_turno %}
+                                    <div class="mb-6 space-y-2">
+                                        <h4 class="font-bold text-slate-800 text-xs uppercase tracking-wider">Desgloses Registrados en este Turno</h4>
+                                        <div class="space-y-2 max-h-40 overflow-y-auto">
+                                            {% for des in item.desgloses_turno %}
+                                                <div class="bg-slate-50 border rounded p-2 text-xs flex justify-between items-center">
+                                                    <div>
+                                                        <span class="font-bold {% if des.tipo_operacion == 'INGRESO' %}text-green-700{% else %}text-red-700{% endif %}">[{{ des.get_tipo_operacion_display }}]</span>
+                                                        <span class="font-mono font-semibold">{{ des.divisa }} {{ des.monto_total }}</span>
+                                                        <span class="text-slate-500 block text-[10px]">{{ des.fecha|date:"d/m/Y H:i" }} {% if des.observacion %}- {{ des.observacion }}{% endif %}</span>
+                                                    </div>
+                                                    <span class="text-xs text-slate-600 font-mono">Detalles: {{ des.detalles.count }} billetes</span>
+                                                </div>
+                                            {% endfor %}
+                                        </div>
+                                    </div>
+                                {% endif %}
 
                                 <!-- Formulario de Cierre de Turno -->
                                 <form method="POST" action="{% url 'caja:cerrar_turno' item.turno_activo.id %}" class="space-y-4">
@@ -160,3 +295,4 @@
     </main>
 </body>
 </html>
+
