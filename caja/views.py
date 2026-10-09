@@ -29,7 +29,18 @@ def gestion_caja_view(request):
         Caja.objects.get_or_create(codigo="C01", defaults={'nombre': "Caja Principal 01", 'activa': True})
         Caja.objects.get_or_create(codigo="C02", defaults={'nombre': "Caja Secundaria 02", 'activa': True})
 
-    cajas = Caja.objects.filter(activa=True)
+    profile, _ = UserProfile.objects.get_or_create(user=request.user)
+    interface_ctx = get_user_interface_context(request, profile)
+    is_admin = interface_ctx.get('is_admin', False)
+    badge_text = interface_ctx.get('badge_text', '')
+
+    if is_admin:
+        cajas = Caja.objects.filter(activa=True)
+    else:
+        # Independiente para cada cajero: excluye cajas con turno activo de otros cajeros
+        cajas_con_turno_otro = TurnoCaja.objects.filter(estado='ABIERTO').exclude(cajero=request.user).values_list('caja_id', flat=True)
+        cajas = Caja.objects.filter(activa=True).exclude(id__in=cajas_con_turno_otro)
+
     cajas_data = []
 
     denominaciones = DenominacionDivisa.objects.filter(activa=True)
@@ -48,13 +59,8 @@ def gestion_caja_view(request):
             'desgloses_turno': desgloses_turno,
         })
 
-    turnos_cerrados = TurnoCaja.objects.filter(estado='CERRADO').prefetch_related('arqueos', 'bitacoras_arqueo').order_by('-fecha_cierre')[:10]
-    bitacoras_recientes = BitacoraArqueo.objects.all().order_by('-fecha')[:15]
-
-    profile, _ = UserProfile.objects.get_or_create(user=request.user)
-    interface_ctx = get_user_interface_context(request, profile)
-    is_admin = interface_ctx.get('is_admin', False)
-    badge_text = interface_ctx.get('badge_text', '')
+    turnos_cerrados = TurnoCaja.objects.filter(estado='CERRADO').prefetch_related('arqueos', 'bitacoras_arqueo').order_by('-fecha_cierre')[:10] if is_admin else []
+    bitacoras_recientes = BitacoraArqueo.objects.all().order_by('-fecha')[:15] if is_admin else []
 
     if is_admin or (badge_text and 'admin' in badge_text.lower()):
         role_badge = "Administrador"
@@ -70,6 +76,7 @@ def gestion_caja_view(request):
         'bitacoras_recientes': bitacoras_recientes,
         'role_badge': role_badge,
         'badge_bg': badge_bg,
+        'is_admin': is_admin,
     }
     return render(request, 'caja/gestion_caja.html', context)
 

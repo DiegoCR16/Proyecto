@@ -4,7 +4,7 @@ from django.urls import reverse
 from django.utils import timezone
 from decimal import Decimal
 from django.contrib.auth.models import User
-from authentication.models import UserProfile, Role
+from authentication.models import UserProfile, Role, Cliente, UsuarioClienteRelacion
 from tasas_cambio.models import ExchangeRate, ExchangeRateHistory, CurrencyAlert, NotificationLog
 
 
@@ -23,8 +23,21 @@ class RateAlertsPSE35Tests(TestCase):
         self.manager_url = reverse('tasas_cambio:rates_manager')
 
         self.admin_user = User.objects.create_superuser(username='admin_pse35', password='password123')
-        self.client_user = User.objects.create_user(username='client_pse35', password='password123')
+        self.client_user = User.objects.create_user(username='client_pse35', email='client_pse35@test.com', password='password123')
         self.client_profile, _ = UserProfile.objects.get_or_create(user=self.client_user)
+
+        self.cliente = Cliente.objects.create(
+            nombre_o_razon_social="Cliente Test PSE35",
+            documento_identidad="12345678",
+            email="client_pse35@test.com",
+            tipo_cliente="FISICA",
+            categoria="MINORISTA"
+        )
+        UsuarioClienteRelacion.objects.create(
+            keycloak_user_id=self.client_profile.keycloak_id or "kc_client_pse35",
+            cliente=self.cliente,
+            rol_en_cliente="ADMIN"
+        )
 
         self.usd_rate, _ = ExchangeRate.objects.update_or_create(
             currency_code='USD',
@@ -56,7 +69,7 @@ class RateAlertsPSE35Tests(TestCase):
         })
         self.assertEqual(response_create.status_code, 200)
         
-        alert = CurrencyAlert.objects.filter(user=self.client_user, currency_code='USD').first()
+        alert = CurrencyAlert.objects.filter(cliente=self.cliente, currency_code='USD').first()
         self.assertIsNotNone(alert)
         self.assertEqual(alert.target_rate, Decimal('7400.0000'))
         self.assertTrue(alert.is_active)
@@ -97,6 +110,7 @@ class RateAlertsPSE35Tests(TestCase):
         """
         # Crear alerta activa con objetivo 7350 en compra para USD
         alert = CurrencyAlert.objects.create(
+            cliente=self.cliente,
             user=self.client_user,
             currency_code='USD',
             condition_type='COMPRA',
@@ -119,7 +133,7 @@ class RateAlertsPSE35Tests(TestCase):
         alert.refresh_from_db()
         self.assertTrue(alert.triggered)
 
-        notif = NotificationLog.objects.filter(user=self.client_user, notification_type='ALERTA_TASA').first()
+        notif = NotificationLog.objects.filter(cliente=self.cliente, notification_type='ALERTA_TASA').first()
         self.assertIsNotNone(notif)
         self.assertIn("alcanzó", notif.message)
 
@@ -173,6 +187,7 @@ class RateAlertsPSE35Tests(TestCase):
         self.client_user.save()
 
         CurrencyAlert.objects.create(
+            cliente=self.cliente,
             user=self.client_user,
             currency_code='USD',
             condition_type='COMPRA',

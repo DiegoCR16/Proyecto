@@ -1080,7 +1080,7 @@ def check_and_trigger_rate_alerts(currency_code, new_buy_rate, new_sell_rate):
                     )
 
     # Verificar alertas individuales (Criterio b: alcance o superación del valor objetivo)
-    active_alerts = CurrencyAlert.objects.filter(currency_code=code, is_active=True)
+    active_alerts = CurrencyAlert.objects.filter(currency_code=code, is_active=True).select_related('cliente', 'user')
     for alert in active_alerts:
         market_rate = new_buy_rate if alert.condition_type == 'COMPRA' else new_sell_rate
         if market_rate >= alert.target_rate:
@@ -1090,6 +1090,7 @@ def check_and_trigger_rate_alerts(currency_code, new_buy_rate, new_sell_rate):
             msg = f"La cotización de mercado para {code} ({alert.condition_type}) alcanzó {market_rate:,.4f} Gs (su objetivo era {alert.target_rate:,.4f} Gs)."
             
             NotificationLog.objects.create(
+                cliente=alert.cliente,
                 user=alert.user,
                 title=f"¡Alerta de Tasa Alcanzada: {code}!",
                 message=msg,
@@ -1099,27 +1100,19 @@ def check_and_trigger_rate_alerts(currency_code, new_buy_rate, new_sell_rate):
 
             if alert.notification_channel in ['EMAIL', 'AMBOS']:
                 recipients = set()
+                if alert.cliente and alert.cliente.email:
+                    recipients.add(alert.cliente.email)
                 if alert.user and alert.user.email:
                     recipients.add(alert.user.email)
                 
                 try:
-                    from authentication.models import UsuarioClienteRelacion, GroupMembership
-                    if hasattr(alert.user, 'profile') and alert.user.profile:
-                        if alert.user.profile.keycloak_id:
-                            relations = UsuarioClienteRelacion.objects.filter(keycloak_user_id=alert.user.profile.keycloak_id)
-                            for rel in relations:
-                                client_rels = UsuarioClienteRelacion.objects.filter(cliente=rel.cliente)
-                                for cr in client_rels:
-                                    u_obj = User.objects.filter(profile__keycloak_id=cr.keycloak_user_id).first()
-                                    if u_obj and u_obj.email:
-                                        recipients.add(u_obj.email)
-                        
-                        memberships = GroupMembership.objects.filter(fisica_profile=alert.user.profile)
-                        for m in memberships:
-                            group_members = GroupMembership.objects.filter(corporate_group=m.corporate_group).select_related('fisica_profile__user')
-                            for gm in group_members:
-                                if gm.fisica_profile and gm.fisica_profile.user and gm.fisica_profile.user.email:
-                                    recipients.add(gm.fisica_profile.user.email)
+                    from authentication.models import UsuarioClienteRelacion
+                    if alert.cliente:
+                        rels = UsuarioClienteRelacion.objects.filter(cliente=alert.cliente)
+                        for cr in rels:
+                            u_obj = User.objects.filter(profile__keycloak_id=cr.keycloak_user_id).first()
+                            if u_obj and u_obj.email:
+                                recipients.add(u_obj.email)
                 except Exception:
                     pass
 
@@ -1136,21 +1129,34 @@ def check_and_trigger_rate_alerts(currency_code, new_buy_rate, new_sell_rate):
 @login_required
 def currency_alerts_view(request):
     """
-    Vista de gestión de alertas de tasa de cambio para usuarios clientes (PSE-35).
+    Vista de gestión de alertas de tasa de cambio para clientes (PSE-35).
     
     Permite:
-    1. Configurar nuevas alertas indicando divisa, tipo de tasa (compra/venta), tasa objetivo y canal.
-    2. Consultar la lista de alertas vigentes y su estado (Activa/Inactiva, Disparada).
-    3. Editar o desactivar/reactivar/eliminar alertas en cualquier momento.
-    4. Visualizar notificaciones en vivo y marcar como leídas.
+    1. Configurar nuevas alertas indicando divisa, tipo de tasa (compra/venta), tasa objetivo y canal para el cliente activo.
+    2. Consultar la lista de alertas vigentes del cliente.
+    3. Editar, activar/desactivar y eliminar alertas del cliente.
+    4. Visualizar notificaciones en vivo del cliente y marcarlas como leídas.
     
     Args:
         request (HttpRequest): Solicitud HTTP del usuario autenticado.
         
     Returns:
-        HttpResponse: Página renderizada con el panel de alertas y notificaciones.
+        HttpResponse: Página renderizada con el panel de alertas y notificaciones del cliente.
     """
     from .models import CurrencyAlert, NotificationLog, ExchangeRate
+    from authentication.models import Cliente
+
+    active_client = get_active_client(request.user, request=request)
+    if not active_client:
+        active_client, _ = Cliente.objects.get_or_create(
+            email=request.user.email or f"{request.user.username}@globalexchange.com",
+            defaults={
+                'nombre_o_razon_social': request.user.get_full_name() or request.user.username,
+                'documento_identidad': getattr(request.user.profile, 'ci_ruc', None) or '000000',
+                'tipo_cliente': 'FISICA',
+                'categoria': 'MINORISTA'
+            }
+        )
 
     success_message = None
     error_message = None
@@ -1172,6 +1178,7 @@ def currency_alerts_view(request):
                     raise ValidationError("La tasa objetivo debe ser mayor a cero.")
 
                 CurrencyAlert.objects.create(
+                    cliente=active_client,
                     user=request.user,
                     currency_code=currency_code,
                     condition_type=condition_type,
@@ -1179,11 +1186,11 @@ def currency_alerts_view(request):
                     notification_channel=notification_channel,
                     is_active=True
                 )
-                success_message = f"Alerta para {currency_code} ({condition_type} >= {target_rate:,.4f} Gs) creada exitosamente."
+                success_message = f"Alerta para {currency_code} ({condition_type} >= {target_rate:,.4f} Gs) creada exitosamente para {active_client.nombre_o_razon_social}."
 
             elif action == 'toggle_alert':
                 alert_id = request.POST.get('alert_id')
-                alert = CurrencyAlert.objects.filter(id=alert_id, user=request.user).first()
+                alert = CurrencyAlert.objects.filter(id=alert_id, cliente=active_client).first()
                 if alert:
                     alert.is_active = not alert.is_active
                     alert.save()
@@ -1194,7 +1201,7 @@ def currency_alerts_view(request):
                 target_rate_str = request.POST.get('target_rate', '').strip()
                 notification_channel = request.POST.get('notification_channel', '').strip().upper()
 
-                alert = CurrencyAlert.objects.filter(id=alert_id, user=request.user).first()
+                alert = CurrencyAlert.objects.filter(id=alert_id, cliente=active_client).first()
                 if alert and target_rate_str:
                     target_rate = Decimal(target_rate_str)
                     if target_rate <= 0:
@@ -1207,15 +1214,15 @@ def currency_alerts_view(request):
 
             elif action == 'delete_alert':
                 alert_id = request.POST.get('alert_id')
-                CurrencyAlert.objects.filter(id=alert_id, user=request.user).delete()
+                CurrencyAlert.objects.filter(id=alert_id, cliente=active_client).delete()
                 success_message = f"Alerta eliminada exitosamente."
 
             elif action == 'mark_read':
                 notif_id = request.POST.get('notification_id')
                 if notif_id:
-                    NotificationLog.objects.filter(id=notif_id, user=request.user).update(is_read=True)
+                    NotificationLog.objects.filter(models.Q(id=notif_id) & (models.Q(cliente=active_client) | models.Q(user=request.user) | models.Q(cliente__isnull=True, user__isnull=True))).update(is_read=True)
                 else:
-                    NotificationLog.objects.filter(user=request.user, is_read=False).update(is_read=True)
+                    NotificationLog.objects.filter(models.Q(cliente=active_client) | models.Q(user=request.user) | models.Q(cliente__isnull=True, user__isnull=True), is_read=False).update(is_read=True)
                 success_message = "Notificaciones marcadas como leídas."
 
         except ValidationError as e:
@@ -1223,14 +1230,15 @@ def currency_alerts_view(request):
         except Exception as e:
             error_message = f"Error en la operación: {str(e)}"
 
-    alerts = CurrencyAlert.objects.filter(user=request.user).order_by('-created_at')
-    notifications = NotificationLog.objects.filter(models.Q(user=request.user) | models.Q(user__isnull=True)).order_by('-created_at')[:30]
+    alerts = CurrencyAlert.objects.filter(cliente=active_client).order_by('-created_at')
+    notifications = NotificationLog.objects.filter(models.Q(cliente=active_client) | models.Q(user=request.user) | models.Q(cliente__isnull=True, user__isnull=True)).order_by('-created_at')[:30]
     currencies = ExchangeRate.objects.all().order_by('currency_code')
 
     context = {
         'alerts': alerts,
         'notifications': notifications,
         'currencies': currencies,
+        'active_client': active_client,
         'success_message': success_message,
         'error_message': error_message,
         'now': timezone.now(),

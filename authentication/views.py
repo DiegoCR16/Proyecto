@@ -349,10 +349,12 @@ def dashboard_redirect_view(request):
             notif_id = request.POST.get('notification_id')
             try:
                 from tasas_cambio.models import NotificationLog
+                from tasas_cambio.views import get_active_client
+                active_client = get_active_client(request.user, request=request)
                 if notif_id:
-                    NotificationLog.objects.filter(id=notif_id, user=request.user).update(is_read=True)
+                    NotificationLog.objects.filter(models.Q(id=notif_id) & (models.Q(cliente=active_client) | models.Q(user=request.user) | models.Q(cliente__isnull=True, user__isnull=True))).update(is_read=True)
                 else:
-                    NotificationLog.objects.filter(models.Q(user=request.user) | models.Q(user__isnull=True), is_read=False).update(is_read=True)
+                    NotificationLog.objects.filter(models.Q(cliente=active_client) | models.Q(user=request.user) | models.Q(cliente__isnull=True, user__isnull=True), is_read=False).update(is_read=True)
             except Exception:
                 pass
             return redirect('dashboard_redirect')
@@ -435,13 +437,17 @@ def dashboard_redirect_view(request):
 
     try:
         from tasas_cambio.models import CurrencyAlert, NotificationLog
-        active_alerts_count = CurrencyAlert.objects.filter(user=request.user, is_active=True).count()
-        unread_notifications = NotificationLog.objects.filter(models.Q(user=request.user) | models.Q(user__isnull=True), is_read=False).order_by('-created_at')[:5]
-        unread_notifications_count = NotificationLog.objects.filter(models.Q(user=request.user) | models.Q(user__isnull=True), is_read=False).count()
+        from integracion.models import PaymentGatewayLog
+        active_client = interface_ctx.get('active_client')
+        active_alerts_count = CurrencyAlert.objects.filter(cliente=active_client, is_active=True).count() if active_client else 0
+        unread_notifications = NotificationLog.objects.filter(models.Q(cliente=active_client) | models.Q(user=request.user) | models.Q(cliente__isnull=True, user__isnull=True), is_read=False).order_by('-created_at')[:5]
+        unread_notifications_count = NotificationLog.objects.filter(models.Q(cliente=active_client) | models.Q(user=request.user) | models.Q(cliente__isnull=True, user__isnull=True), is_read=False).count()
+        recent_gateway_logs = PaymentGatewayLog.objects.all().order_by('-timestamp')[:10]
     except Exception:
         active_alerts_count = 0
         unread_notifications = []
         unread_notifications_count = 0
+        recent_gateway_logs = []
 
     context = {
         'profile': profile,
@@ -452,6 +458,7 @@ def dashboard_redirect_view(request):
         'active_alerts_count': active_alerts_count,
         'unread_notifications': unread_notifications,
         'unread_notifications_count': unread_notifications_count,
+        'recent_gateway_logs': recent_gateway_logs,
         'now': timezone.now(),
         **interface_ctx,
     }

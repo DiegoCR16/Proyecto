@@ -173,7 +173,8 @@ class CurrencyAlert(models.Model):
         ('VENTA', 'Tasa de Venta'),
     ]
 
-    user = models.ForeignKey('auth.User', on_delete=models.CASCADE, verbose_name="Usuario Propietario")
+    cliente = models.ForeignKey('authentication.Cliente', on_delete=models.CASCADE, null=True, blank=True, related_name='currency_alerts', verbose_name="Cliente")
+    user = models.ForeignKey('auth.User', on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Usuario Creador")
     currency_code = models.CharField(max_length=10, verbose_name="Código de Divisa")
     condition_type = models.CharField(max_length=20, choices=CONDITIONS, default='COMPRA', verbose_name="Tipo de Tasa")
     target_rate = models.DecimalField(max_digits=12, decimal_places=4, verbose_name="Tasa Objetivo (Gs)")
@@ -196,7 +197,8 @@ class CurrencyAlert(models.Model):
             str: Representación descriptiva de la alerta.
         """
         status = "Activa" if self.is_active else "Inactiva"
-        return f"Alerta {self.currency_code} ({self.condition_type} >= {self.target_rate}) - {self.user.username} [{status}]"
+        client_name = self.cliente.nombre_o_razon_social if self.cliente else "Sin Cliente"
+        return f"Alerta {self.currency_code} ({self.condition_type} >= {self.target_rate}) - Cliente: {client_name} [{status}]"
 
 
 class NotificationLog(models.Model):
@@ -205,12 +207,13 @@ class NotificationLog(models.Model):
     o por variaciones abruptas en las tasas de cambio (PSE-35).
     
     Attributes:
-        user (ForeignKey): Usuario destinatario (Null si es notificación general/broadcast).
+        cliente (ForeignKey): Cliente destinatario.
+        user (ForeignKey): Usuario destinatario (Null si es general/broadcast).
         title (CharField): Título descriptivo de la notificación.
         message (TextField): Cuerpo del mensaje de la notificación.
         notification_type (CharField): Tipo de evento ('ALERTA_TASA', 'VARIACION_ABRUPTA').
         channel (CharField): Canal utilizado ('EMAIL', 'PUSH', 'AMBOS').
-        is_read (BooleanField): Estado de lectura por el usuario.
+        is_read (BooleanField): Estado de lectura.
         created_at (DateTimeField): Fecha y hora de emisión.
     """
     TYPES = [
@@ -223,7 +226,8 @@ class NotificationLog(models.Model):
         ('AMBOS', 'Email y Push'),
     ]
 
-    user = models.ForeignKey('auth.User', on_delete=models.CASCADE, null=True, blank=True, verbose_name="Usuario Destinatario")
+    cliente = models.ForeignKey('authentication.Cliente', on_delete=models.CASCADE, null=True, blank=True, related_name='notification_logs', verbose_name="Cliente Destinatario")
+    user = models.ForeignKey('auth.User', on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Usuario Destinatario")
     title = models.CharField(max_length=200, verbose_name="Título de Notificación")
     message = models.TextField(verbose_name="Mensaje")
     notification_type = models.CharField(max_length=50, choices=TYPES, default='ALERTA_TASA', verbose_name="Tipo de Notification")
@@ -243,6 +247,6 @@ class NotificationLog(models.Model):
         Returns:
             str: Representación descriptiva de la notificación.
         """
-        target = self.user.username if self.user else "Broadcast General"
-        return f"[{self.channel}] {self.title} -> {target}"
+        client_name = self.cliente.nombre_o_razon_social if self.cliente else "Broadcast General"
+        return f"[{self.channel}] {self.title} -> {client_name}"
 

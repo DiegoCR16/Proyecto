@@ -8,6 +8,7 @@ from decimal import Decimal
 import time
 import csv
 import uuid
+import json
 from authentication.models import UserProfile, Cliente, UsuarioClienteRelacion, ClientAccreditationMethod
 from tasas_cambio.models import ExchangeRate, ClientBenefitRule, PaymentMethod
 from tasas_cambio.views import (
@@ -17,57 +18,89 @@ from tasas_cambio.views import (
 from .models import CurrencyPurchaseTransaction, CurrencySaleTransaction
 from integracion.services import PaymentGatewaySimulator
 from integracion.gateways import PaymentGatewayFactory, StripeGateway, BancardGateway, TigoMoneyGateway, SIPAPGateway
+from integracion.models import PaymentGatewayLog
 
 
 def _process_financial_instrument(payment_method, total_amount, currency='PYG', origin_method=None):
     """
-    Valida campos requeridos y enruta el procesamiento al servicio de pasarela correspondiente según el tipo.
-    Tipos soportados: TARJETA_CREDITO, TARJETA_DEBITO, CUENTA_BANCARIA_LOCAL, BILLETERA_ELECTRONICA, CUENTA_BANCARIA_EXTRANJERA.
+    Valida campos requeridos y enruta el procesamiento al servicio de pasarela correspondiente según el tipo
+    (SIPAP, Bancard, Tigo Money, Stripe), registrando el log inmutable en la base de datos (PaymentGatewayLog).
     """
     if not payment_method:
-        return 'CUENTA_BANCARIA_LOCAL', f"GX-{uuid.uuid4().hex[:10].upper()}", 'SUCCESS', 'SUCCESS'
+        res = SIPAPGateway().process_payment(amount=total_amount, currency=currency, source_account=getattr(origin_method, 'numero_cuenta', 'GX-MAIN'), destination_account='GX-DEFAULT')
+        ref = res.get('reference_code', f"SIPAP-{uuid.uuid4().hex[:10].upper()}")
+        PaymentGatewayLog.objects.create(
+            gateway_name='SIPAP',
+            transaction_type='PAYMENT',
+            reference_code=ref,
+            amount=total_amount,
+            currency=currency,
+            status='SUCCESS',
+            request_payload=json.dumps({'amount': str(total_amount)}),
+            response_payload=json.dumps(res),
+            error_message=''
+        )
+        return 'CUENTA_BANCARIA_LOCAL', ref, 'SUCCESS', 'SUCCESS'
 
     pm_type = getattr(payment_method, 'method_type', '') or getattr(payment_method, 'tipo_medio', '') or 'CUENTA_BANCARIA_LOCAL'
+    gateway_name = 'SIPAP'
+    if pm_type in ['TARJETA_CREDITO']:
+        gateway_name = 'STRIPE'
+    elif pm_type in ['TARJETA_DEBITO']:
+        gateway_name = 'BANCARD'
+    elif pm_type in ['BILLETERA_ELECTRONICA', 'BILLETERA']:
+        gateway_name = 'TIGO_MONEY'
+    else:
+        code_str = getattr(payment_method, 'code', '') or getattr(payment_method, 'entidad_financiera', '') or 'SIPAP'
+        if 'BANCARD' in code_str.upper():
+            gateway_name = 'BANCARD'
+        elif 'TIGO' in code_str.upper():
+            gateway_name = 'TIGO_MONEY'
+        elif 'STRIPE' in code_str.upper():
+            gateway_name = 'STRIPE'
+        else:
+            gateway_name = 'SIPAP'
+
     gateway_ref = f"GX-{uuid.uuid4().hex[:10].upper()}"
     gateway_status = 'SUCCESS'
     tx_status = 'SUCCESS'
 
-    if pm_type in ['TARJETA_CREDITO', 'TARJETA_DEBITO']:
-        card_num = getattr(payment_method, 'account_number', '') or getattr(payment_method, 'numero_tarjeta', '') or '1234'
-        if not card_num or not any(c.isdigit() for c in card_num):
-            raise ValidationError("La tarjeta seleccionada requiere un número de tarjeta válido.")
-        gw = PaymentGatewayFactory.get_gateway('STRIPE' if 'CREDITO' in pm_type else 'BANCARD')
-        res = gw.process_payment(amount=total_amount, currency=currency, card_number=card_num)
-        gateway_ref = res.get('reference_code', gateway_ref)
-        gateway_status = res.get('status', 'SUCCESS')
-    elif pm_type in ['BILLETERA_ELECTRONICA', 'BILLETERA']:
-        phone = getattr(payment_method, 'account_number', '') or getattr(payment_method, 'numero_telefono', '') or '0981000000'
-        if not phone:
-            raise ValidationError("La billetera electrónica requiere un número de teléfono / cuenta válido.")
-        gw = TigoMoneyGateway()
-        res = gw.process_payment(amount=total_amount, currency=currency, phone_number=phone)
-        gateway_ref = res.get('reference_code', gateway_ref)
-        gateway_status = res.get('status', 'SUCCESS')
-    elif pm_type in ['CUENTA_BANCARIA_LOCAL', 'CUENTA_BANCARIA', 'TRANSFERENCIA']:
-        acc_num = getattr(payment_method, 'account_number', '') or 'ACC-001'
-        if not acc_num:
-            raise ValidationError("La cuenta bancaria local requiere un número de cuenta.")
-        gw = SIPAPGateway()
-        res = gw.process_payment(amount=total_amount, currency=currency, source_account=getattr(origin_method, 'numero_cuenta', 'GX-MAIN'), destination_account=acc_num)
-        gateway_ref = res.get('reference_code', gateway_ref)
-        gateway_status = res.get('status', 'APPROVED')
-    elif pm_type == 'CUENTA_BANCARIA_EXTRANJERA':
+    if pm_type == 'CUENTA_BANCARIA_EXTRANJERA':
         swift = getattr(payment_method, 'swift_iban', '') or getattr(payment_method, 'account_number', '') or getattr(payment_method, 'alias_transferencia', '')
         if not swift:
             raise ValidationError("La cuenta bancaria extranjera requiere código SWIFT / IBAN.")
         gateway_ref = f"SWIFT-{uuid.uuid4().hex[:10].upper()}"
         gateway_status = 'PENDING'
         tx_status = 'PENDING'
+        PaymentGatewayLog.objects.create(
+            gateway_name='SIPAP',
+            transaction_type='TRANSFER',
+            reference_code=gateway_ref,
+            amount=total_amount,
+            currency=currency,
+            status='PENDING',
+            request_payload=json.dumps({'swift': swift}),
+            response_payload=json.dumps({'status': 'PENDING'}),
+            error_message=''
+        )
     else:
-        gw = SIPAPGateway()
-        res = gw.process_payment(amount=total_amount, currency=currency)
+        card_num = getattr(payment_method, 'account_number', '') or getattr(payment_method, 'numero_tarjeta', '') or '1234'
+        phone = getattr(payment_method, 'account_number', '') or getattr(payment_method, 'numero_telefono', '') or '0981000000'
+        acc_num = getattr(payment_method, 'account_number', '') or getattr(payment_method, 'swift_iban', '') or 'ACC-001'
+
+        res = PaymentGatewaySimulator.process_gateway_payment(
+            gateway_name=gateway_name,
+            amount=total_amount,
+            currency=currency,
+            card_number=card_num,
+            phone_number=phone,
+            source_account=getattr(origin_method, 'numero_cuenta', 'GX-MAIN'),
+            destination_account=acc_num
+        )
         gateway_ref = res.get('reference_code', gateway_ref)
-        gateway_status = res.get('status', 'APPROVED')
+        gateway_status = res.get('status', 'SUCCESS')
+        if gateway_status not in ['SUCCESS', 'APPROVED']:
+            tx_status = 'FAILED'
 
     return pm_type, gateway_ref, gateway_status, tx_status
 

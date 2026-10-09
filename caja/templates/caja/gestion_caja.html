@@ -308,6 +308,7 @@
         </div>
 
         <!-- Sección de Reportes de Arqueo y Bitácora Histórica (PSE-22) -->
+        {% if is_admin %}
         <div class="mt-12 space-y-8">
             <div class="bg-white rounded-xl shadow-lg border border-slate-200 p-6">
                 <h2 class="text-xl font-extrabold text-slate-900 mb-2">Reporte Comparativo de Arqueo de Caja (PSE-22)</h2>
@@ -412,6 +413,7 @@
                 {% endif %}
             </div>
         </div>
+        {% endif %}
     </main>
 
     <footer class="bg-white border-t border-slate-200 py-6 text-center text-xs text-slate-500 mt-10">

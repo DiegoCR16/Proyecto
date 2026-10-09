@@ -230,6 +230,64 @@
             </a>
         </div>
 
+        <!-- Estado de Pasarelas de Pago y Red Interbancaria SIPAP (PSE-18) -->
+        <div class="mb-8 bg-white shadow-sm rounded-2xl border border-slate-200 overflow-hidden">
+            <div class="px-6 py-4 bg-slate-900 text-white flex justify-between items-center">
+                <h3 class="font-semibold text-base">Estado de Integración de Pasarelas y SIPAP 24/7</h3>
+                <span class="text-xs text-slate-400">Últimas transacciones externas registradas en BD</span>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="min-w-full divide-y divide-slate-200 text-left">
+                    <thead class="bg-slate-50">
+                        <tr>
+                            <th class="px-6 py-3.5 text-xs font-semibold text-slate-600 uppercase tracking-wider">Pasarela / Red</th>
+                            <th class="px-6 py-3.5 text-xs font-semibold text-slate-600 uppercase tracking-wider">Código de Referencia</th>
+                            <th class="px-6 py-3.5 text-xs font-semibold text-slate-600 uppercase tracking-wider">Monto y Divisa</th>
+                            <th class="px-6 py-3.5 text-xs font-semibold text-slate-600 uppercase tracking-wider">Fecha / Hora</th>
+                            <th class="px-6 py-3.5 text-xs font-semibold text-slate-600 uppercase tracking-wider">Estado Pasarela</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-200 bg-white">
+                        {% for log in recent_gateway_logs %}
+                        <tr class="hover:bg-slate-50 transition duration-150">
+                            <td class="px-6 py-4 whitespace-nowrap">
+                                <span class="px-2.5 py-1 rounded-lg text-xs font-bold bg-blue-100 text-blue-800">
+                                    {{ log.gateway_name }}
+                                </span>
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap font-mono text-xs text-slate-900 font-bold">
+                                {{ log.reference_code }}
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap font-mono text-sm text-slate-700">
+                                {{ log.amount|floatformat:2 }} {{ log.currency }}
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap text-xs text-slate-500 font-mono">
+                                {{ log.timestamp|date:"d/m/Y H:i:s" }}
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap">
+                                {% if log.status == 'SUCCESS' or log.status == 'APPROVED' %}
+                                <span class="px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800">
+                                    Aprobado / Exitoso
+                                </span>
+                                {% else %}
+                                <span class="px-2.5 py-1 rounded-full text-xs font-bold bg-red-100 text-red-800">
+                                    {{ log.status }}
+                                </span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="5" class="px-6 py-8 text-center text-slate-500 text-xs">
+                                No hay registros recientes de pasarelas de pago o SIPAP en la base de datos. Realice una compra o venta de divisas para activar la integración.
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
         <!-- Pizarra de Cotizaciones en Tiempo Real (PSE-9) -->
         <div class="bg-white shadow-sm rounded-2xl border border-slate-200 overflow-hidden">
             <div class="px-6 py-4 bg-slate-900 text-white flex justify-between items-center">

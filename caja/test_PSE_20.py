@@ -4,7 +4,7 @@ from django.urls import reverse
 from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError
 from decimal import Decimal
-from caja.models import Caja, TurnoCaja, verificar_turno_activo, puede_realizar_transaccion
+from caja.models import Caja, TurnoCaja, BitacoraArqueo, verificar_turno_activo, puede_realizar_transaccion
 
 class CajaShiftPSE20Tests(TestCase):
     """
@@ -117,3 +117,45 @@ class CajaShiftPSE20Tests(TestCase):
                 estado='ABIERTO'
             )
             turno_duplicado.save()
+
+    def test_cashier_independent_and_no_discrepancy_notifications_visibility(self):
+        """
+        Valida que:
+        1. La apertura y cierre de caja sea independiente para cada cajero.
+        2. Los cajeros no visualicen notificaciones de descuadres ni arqueos cerrados (solo admin).
+        3. El administrador pueda visualizar todas las cajas y notificaciones de descuadre.
+        """
+        admin_user = User.objects.create_superuser(username='admin_test_caja', password='password123')
+        
+        cajero2 = User.objects.create_user(username='cajero2_test', password='password123')
+        caja2 = Caja.objects.create(nombre='Caja Secundaria 02', codigo='C02', activa=True)
+
+        turno_cerrado = TurnoCaja.objects.create(
+            caja=self.caja,
+            cajero=self.cajero,
+            estado='CERRADO',
+            saldo_inicial_pyg=Decimal('1000000.00'),
+            saldo_final_pyg=Decimal('900000.00')
+        )
+        BitacoraArqueo.objects.create(
+            turno=turno_cerrado,
+            divisa='PYG',
+            tipo_descuadre='FALTANTE',
+            monto_diferencia=Decimal('100000.00'),
+            mensaje='Prueba de descuadre'
+        )
+
+        # 1. Test Cashier view
+        self.client.force_login(self.cajero)
+        response = self.client.get(self.gestion_url)
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.context['is_admin'])
+        self.assertEqual(len(response.context['turnos_cerrados']), 0)
+        self.assertEqual(len(response.context['bitacoras_recientes']), 0)
+
+        # 2. Test Admin view
+        self.client.force_login(admin_user)
+        response = self.client.get(self.gestion_url)
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.context['is_admin'])
+        self.assertGreaterEqual(len(response.context['bitacoras_recientes']), 1)
