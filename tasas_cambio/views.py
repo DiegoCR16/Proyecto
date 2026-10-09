@@ -1029,9 +1029,8 @@ def rates_manager_view(request):
 
 def check_and_trigger_rate_alerts(currency_code, new_buy_rate, new_sell_rate):
     """
-    Verifica y dispara alertas de tasa configuradas por usuarios (PSE-35).
-    1. Compara la tasa actual de mercado con las alertas activas (criterio de alcanzar o superar el valor objetivo).
-    2. Detecta variaciones abruptas comparando con la última cotización previa en el historial y notifica a todos los usuarios.
+    Verifica y dispara alertas de tasa configuradas por usuarios (PSE-35),
+    enviando notificaciones en tiempo real y correos electrónicos (individuales o a grupos/clientes).
     
     Args:
         currency_code (str): Código de la divisa (USD, EUR, etc.).
@@ -1040,6 +1039,8 @@ def check_and_trigger_rate_alerts(currency_code, new_buy_rate, new_sell_rate):
     """
     from .models import CurrencyAlert, NotificationLog, ExchangeRateHistory
     from django.contrib.auth.models import User
+    from django.core.mail import send_mail
+    from django.conf import settings
 
     code = currency_code.upper()
     
@@ -1057,6 +1058,17 @@ def check_and_trigger_rate_alerts(currency_code, new_buy_rate, new_sell_rate):
             if buy_change_pct >= Decimal('1.5') or sell_change_pct >= Decimal('1.5'):
                 max_pct = max(buy_change_pct, sell_change_pct)
                 broadcast_msg = f"Variación abrupta detectada en {code}: {max_pct:.2f}% de cambio en la cotización de mercado."
+                
+                recipient_emails = list(User.objects.filter(email__isnull=False).exclude(email='').values_list('email', flat=True))
+                if recipient_emails:
+                    send_mail(
+                        f"¡Variación Abrupta en {code} ({max_pct:.2f}%)!",
+                        broadcast_msg,
+                        getattr(settings, 'DEFAULT_FROM_EMAIL', 'noreply@globalexchange.com'),
+                        recipient_emails,
+                        fail_silently=True,
+                    )
+
                 all_users = User.objects.all()
                 for u in all_users:
                     NotificationLog.objects.create(
@@ -1084,6 +1096,41 @@ def check_and_trigger_rate_alerts(currency_code, new_buy_rate, new_sell_rate):
                 notification_type='ALERTA_TASA',
                 channel=alert.notification_channel
             )
+
+            if alert.notification_channel in ['EMAIL', 'AMBOS']:
+                recipients = set()
+                if alert.user and alert.user.email:
+                    recipients.add(alert.user.email)
+                
+                try:
+                    from authentication.models import UsuarioClienteRelacion, GroupMembership
+                    if hasattr(alert.user, 'profile') and alert.user.profile:
+                        if alert.user.profile.keycloak_id:
+                            relations = UsuarioClienteRelacion.objects.filter(keycloak_user_id=alert.user.profile.keycloak_id)
+                            for rel in relations:
+                                client_rels = UsuarioClienteRelacion.objects.filter(cliente=rel.cliente)
+                                for cr in client_rels:
+                                    u_obj = User.objects.filter(profile__keycloak_id=cr.keycloak_user_id).first()
+                                    if u_obj and u_obj.email:
+                                        recipients.add(u_obj.email)
+                        
+                        memberships = GroupMembership.objects.filter(fisica_profile=alert.user.profile)
+                        for m in memberships:
+                            group_members = GroupMembership.objects.filter(corporate_group=m.corporate_group).select_related('fisica_profile__user')
+                            for gm in group_members:
+                                if gm.fisica_profile and gm.fisica_profile.user and gm.fisica_profile.user.email:
+                                    recipients.add(gm.fisica_profile.user.email)
+                except Exception:
+                    pass
+
+                if recipients:
+                    send_mail(
+                        f"¡Alerta de Tasa Alcanzada: {code}!",
+                        msg,
+                        getattr(settings, 'DEFAULT_FROM_EMAIL', 'noreply@globalexchange.com'),
+                        list(recipients),
+                        fail_silently=True,
+                    )
 
 
 @login_required

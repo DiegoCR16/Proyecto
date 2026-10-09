@@ -40,6 +40,28 @@
 
     <!-- Main Content -->
     <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 flex-grow w-full">
+        <!-- Live Notification Banner / Toast Component for Rate Alerts -->
+        {% for notif in unread_notifications %}
+        <div class="mb-6 bg-amber-50 border-l-4 border-amber-500 p-4 rounded-xl shadow-md flex items-start justify-between space-x-3">
+            <div class="flex items-start space-x-3">
+                <div class="flex-shrink-0 text-amber-500 font-bold text-xl">⚡</div>
+                <div>
+                    <h3 class="text-sm font-bold text-amber-900">{{ notif.title }} <span class="text-xs font-normal text-amber-700">({{ notif.get_channel_display }})</span></h3>
+                    <p class="text-xs text-amber-800 mt-1">{{ notif.message }}</p>
+                    <span class="text-[10px] text-amber-600 mt-1 block">{{ notif.created_at|date:"d/m/Y H:i:s" }}</span>
+                </div>
+            </div>
+            <form method="POST" action="{% url 'dashboard_redirect' %}" class="flex-shrink-0">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="mark_read">
+                <input type="hidden" name="notification_id" value="{{ notif.id }}">
+                <button type="submit" class="text-xs bg-amber-600 hover:bg-amber-700 text-white px-3 py-1.5 rounded-lg shadow-sm font-medium transition">
+                    Marcar Leída
+                </button>
+            </form>
+        </div>
+        {% endfor %}
+
         <!-- Client Registration Request Banner -->
         <div class="mb-8 bg-gradient-to-r from-blue-900 to-indigo-900 text-white p-6 rounded-2xl shadow-md flex flex-col md:flex-row items-center justify-between gap-4">
             <div>
@@ -51,11 +73,21 @@
             </a>
         </div>
 
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
             <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200 hover:border-blue-500 transition cursor-pointer" onclick="window.location.href='{% url 'tasas_cambio:simulator' %}'">
                 <h3 class="text-lg font-semibold text-slate-800 mb-2">Simular Operación</h3>
                 <p class="text-sm text-slate-600 mb-4">Calcule montos en Guaraníes, Dólares, Euros y otras divisas con tarifas estándar.</p>
                 <a href="{% url 'tasas_cambio:simulator' %}" class="text-blue-800 font-semibold text-sm hover:underline">Nueva Simulación &rarr;</a>
+            </div>
+            <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200 hover:border-blue-500 transition cursor-pointer" onclick="window.location.href='{% url 'tasas_cambio:currency_alerts' %}'">
+                <div class="flex items-center justify-between mb-2">
+                    <h3 class="text-lg font-semibold text-slate-800">Alertas de Tasas</h3>
+                    {% if unread_notifications_count > 0 %}
+                    <span class="bg-amber-100 text-amber-800 text-xs px-2 py-0.5 rounded-full font-semibold">{{ unread_notifications_count }}</span>
+                    {% endif %}
+                </div>
+                <p class="text-sm text-slate-600 mb-4">Configure alertas de tasa objetivo y reciba notificaciones push o por correo.</p>
+                <a href="{% url 'tasas_cambio:currency_alerts' %}" class="text-blue-800 font-semibold text-sm hover:underline">Gestionar Alertas &rarr;</a>
             </div>
             <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
                 <h3 class="text-lg font-semibold text-slate-800 mb-2">Estado de Cuenta</h3>

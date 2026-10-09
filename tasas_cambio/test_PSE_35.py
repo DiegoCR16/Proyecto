@@ -150,3 +150,44 @@ class RateAlertsPSE35Tests(TestCase):
         abrupt_notif = NotificationLog.objects.filter(user=self.client_user, notification_type='VARIACION_ABRUPTA').first()
         self.assertIsNotNone(abrupt_notif)
         self.assertIn("Variación abrupta", abrupt_notif.message)
+
+    def test_client_dashboard_rate_alerts_integration(self):
+        """
+        Valida la integración de las alertas de tasas en el dashboard del cliente,
+        verificando que renderice correctamente la vista y contenga enlaces/contadores de alertas.
+        """
+        self.client.force_login(self.client_user)
+        dashboard_url = reverse('dashboard_redirect')
+        response = self.client.get(dashboard_url)
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Alertas de Tasas")
+        self.assertContains(response, reverse('tasas_cambio:currency_alerts'))
+
+    def test_email_sending_on_rate_alert(self):
+        """
+        Valida que al dispararse una alerta con canal EMAIL o AMBOS,
+        el sistema envíe un correo electrónico utilizando Django mail.outbox.
+        """
+        from django.core import mail
+        self.client_user.email = 'client_pse35@test.com'
+        self.client_user.save()
+
+        CurrencyAlert.objects.create(
+            user=self.client_user,
+            currency_code='USD',
+            condition_type='COMPRA',
+            target_rate=Decimal('7350.0000'),
+            notification_channel='EMAIL',
+            is_active=True
+        )
+
+        self.client.force_login(self.admin_user)
+        self.client.post(self.manager_url, {
+            'action': 'update_live_rate',
+            'currency_code': 'USD',
+            'buy_rate': '7360.0000',
+            'sell_rate': '7500.0000'
+        })
+
+        self.assertGreaterEqual(len(mail.outbox), 1)
+        self.assertIn('client_pse35@test.com', mail.outbox[0].to)

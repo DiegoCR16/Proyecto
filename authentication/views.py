@@ -343,6 +343,20 @@ def dashboard_redirect_view(request):
     Returns:
         HttpResponse: Renderiza la plantilla del panel correspondiente al rol con tasas y beneficios.
     """
+    if request.method == 'POST':
+        action = request.POST.get('action')
+        if action == 'mark_read':
+            notif_id = request.POST.get('notification_id')
+            try:
+                from tasas_cambio.models import NotificationLog
+                if notif_id:
+                    NotificationLog.objects.filter(id=notif_id, user=request.user).update(is_read=True)
+                else:
+                    NotificationLog.objects.filter(models.Q(user=request.user) | models.Q(user__isnull=True), is_read=False).update(is_read=True)
+            except Exception:
+                pass
+            return redirect('dashboard_redirect')
+
     profile, _ = UserProfile.objects.get_or_create(user=request.user)
     role_name = profile.role.name.lower() if profile.role else 'individual'
 
@@ -419,12 +433,25 @@ def dashboard_redirect_view(request):
 
     user_mode = request.session.get('user_mode', False)
 
+    try:
+        from tasas_cambio.models import CurrencyAlert, NotificationLog
+        active_alerts_count = CurrencyAlert.objects.filter(user=request.user, is_active=True).count()
+        unread_notifications = NotificationLog.objects.filter(models.Q(user=request.user) | models.Q(user__isnull=True), is_read=False).order_by('-created_at')[:5]
+        unread_notifications_count = NotificationLog.objects.filter(models.Q(user=request.user) | models.Q(user__isnull=True), is_read=False).count()
+    except Exception:
+        active_alerts_count = 0
+        unread_notifications = []
+        unread_notifications_count = 0
+
     context = {
         'profile': profile,
         'rates': personalized_rates,
         'benefit_percentage': benefit_percentage,
         'benefit_label': benefit_label,
         'category_display': category_display,
+        'active_alerts_count': active_alerts_count,
+        'unread_notifications': unread_notifications,
+        'unread_notifications_count': unread_notifications_count,
         'now': timezone.now(),
         **interface_ctx,
     }
