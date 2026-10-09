@@ -5,11 +5,15 @@ from django.contrib import messages
 from django.utils import timezone
 from django.core.exceptions import ValidationError
 from decimal import Decimal
+
 from .models import (
     Caja, TurnoCaja, DenominacionDivisa, DesgloseEfectivoCaja, 
     DetalleDesgloseBillete, ArqueoCaja, BitacoraArqueo, 
     verificar_turno_activo, inicializar_denominaciones_default, procesar_arqueo_cierre
 )
+from authentication.models import UserProfile
+from gestion_clientes.views import get_user_interface_context
+
 
 @login_required
 def gestion_caja_view(request):
@@ -20,6 +24,11 @@ def gestion_caja_view(request):
     Estilizada con Tailwind CSS (Corporate Modern).
     """
     inicializar_denominaciones_default()
+
+    if not Caja.objects.exists():
+        Caja.objects.get_or_create(codigo="C01", defaults={'nombre': "Caja Principal 01", 'activa': True})
+        Caja.objects.get_or_create(codigo="C02", defaults={'nombre': "Caja Secundaria 02", 'activa': True})
+
     cajas = Caja.objects.filter(activa=True)
     cajas_data = []
 
@@ -42,11 +51,25 @@ def gestion_caja_view(request):
     turnos_cerrados = TurnoCaja.objects.filter(estado='CERRADO').prefetch_related('arqueos', 'bitacoras_arqueo').order_by('-fecha_cierre')[:10]
     bitacoras_recientes = BitacoraArqueo.objects.all().order_by('-fecha')[:15]
 
+    profile, _ = UserProfile.objects.get_or_create(user=request.user)
+    interface_ctx = get_user_interface_context(request, profile)
+    is_admin = interface_ctx.get('is_admin', False)
+    badge_text = interface_ctx.get('badge_text', '')
+
+    if is_admin or (badge_text and 'admin' in badge_text.lower()):
+        role_badge = "Administrador"
+        badge_bg = "bg-blue-800"
+    else:
+        role_badge = badge_text if badge_text else "Cajero de Sucursal"
+        badge_bg = "bg-amber-700"
+
     context = {
         'cajas_data': cajas_data,
         'denominaciones_por_divisa': denominaciones_por_divisa,
         'turnos_cerrados': turnos_cerrados,
         'bitacoras_recientes': bitacoras_recientes,
+        'role_badge': role_badge,
+        'badge_bg': badge_bg,
     }
     return render(request, 'caja/gestion_caja.html', context)
 
@@ -168,4 +191,3 @@ def registrar_movimiento_efectivo_view(request, turno_id):
             messages.error(request, f"Error al registrar movimiento con desglose: {str(e)}")
 
     return redirect('caja:gestion_caja')
-

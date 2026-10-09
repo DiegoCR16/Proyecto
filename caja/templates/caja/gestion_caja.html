@@ -2,8 +2,10 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>Global Exchange - Gestión de Turnos y Desglose de Papel Moneda (PSE-21)</title>
+    <title>Global Exchange - Gestión de Turnos y Desglose de Papel Moneda (PSE-21/22)</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>body { font-family: 'Inter', sans-serif; }</style>
     <script>
         function calcularSubtotal(inputId, valorFacial, subtotalId) {
             const qty = parseFloat(document.getElementById(inputId).value) || 0;
@@ -45,23 +47,28 @@
         });
     </script>
 </head>
-<body class="bg-slate-50 min-h-screen text-slate-900">
+<body class="bg-slate-50 min-h-screen text-slate-900 flex flex-col justify-between">
     <!-- Header Corporativo -->
     <header class="bg-slate-900 text-white shadow-md">
-        <div class="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
-            <div class="flex items-center space-x-3">
-                <span class="text-2xl font-bold tracking-wide text-blue-400">Global Exchange</span>
-                <span class="text-xs bg-blue-800 px-2.5 py-1 rounded-full font-medium">Casa de Cambios - Módulo Caja & Desglose</span>
-            </div>
-            <div class="flex items-center space-x-4 text-sm">
-                <span>Usuario: <strong>{{ request.user.username }}</strong></span>
-                <a href="{% url 'dashboard_redirect' %}" class="bg-slate-800 hover:bg-slate-700 px-3 py-1.5 rounded transition">Dashboard</a>
-                <a href="{% url 'logout' %}" class="bg-red-600 hover:bg-red-700 px-3 py-1.5 rounded transition">Cerrar Sesión</a>
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between h-16 items-center">
+                <div class="flex items-center space-x-3">
+                    <div class="w-9 h-9 {{ badge_bg }} rounded-lg flex items-center justify-center font-bold text-lg shadow">GX</div>
+                    <span class="font-bold text-lg tracking-wide">Global Exchange</span>
+                    <span class="text-xs {{ badge_bg }} px-3 py-1 rounded-full font-medium ml-2 text-white">{{ role_badge }}</span>
+                </div>
+                <div class="flex items-center space-x-4 text-sm">
+                    <span class="text-slate-300">Usuario: <strong class="text-white">{{ request.user.username }}</strong></span>
+                    <a href="{% url 'dashboard_redirect' %}" class="bg-slate-800 hover:bg-slate-700 text-white px-3.5 py-1.5 rounded-lg text-sm font-medium transition duration-200">Dashboard</a>
+                    <a href="{% url 'logout' %}" class="bg-red-600 hover:bg-red-700 text-white px-3.5 py-1.5 rounded-lg text-sm font-medium transition duration-200">
+                        Cerrar Sesión
+                    </a>
+                </div>
             </div>
         </div>
     </header>
 
-    <main class="max-w-7xl mx-auto px-4 py-8">
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 flex-grow w-full">
         <!-- Mensajes de Alerta -->
         {% if messages %}
             <div class="mb-6 space-y-2">
@@ -73,9 +80,16 @@
             </div>
         {% endif %}
 
-        <div class="mb-8">
-            <h1 class="text-3xl font-extrabold text-slate-900">Gestión de Turnos y Desglose de Papel Moneda (PSE-21)</h1>
-            <p class="text-slate-600 mt-1">Conteo físico mediante desglose individual de billetes por denominación y control de entradas/salidas de efectivo por caja.</p>
+        <div class="mb-8 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+            <div>
+                <h1 class="text-3xl font-extrabold text-slate-900">Gestión de Turnos y Desglose de Papel Moneda (PSE-21/22)</h1>
+                <p class="text-slate-600 mt-1">Control monetario físico, saldos iniciales/finales por divisa, desglose individual de billetes y arqueo automático de caja.</p>
+            </div>
+            <div>
+                <a href="{% url 'dashboard_redirect' %}" class="inline-flex items-center bg-slate-900 hover:bg-slate-800 text-white px-4 py-2.5 rounded-xl text-sm font-medium shadow-sm transition">
+                    &larr; Volver al Panel
+                </a>
+            </div>
         </div>
 
         <!-- Listado de Cajas -->
@@ -399,6 +413,9 @@
             </div>
         </div>
     </main>
+
+    <footer class="bg-white border-t border-slate-200 py-6 text-center text-xs text-slate-500 mt-10">
+        <p>&copy; 2026 Global Exchange - Ingeniería de Software 2 (FPUNA). Todos los derechos reservados.</p>
+    </footer>
 </body>
 </html>
-
