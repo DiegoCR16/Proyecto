@@ -222,7 +222,7 @@ class SimuladorConversionService:
     """
 
     @staticmethod
-    def simular(from_currency, to_currency, amount, user=None, request=None):
+    def simular(from_currency, to_currency, amount, user=None, request=None, client=None, category_override=None):
         """
         Simula una conversión monetaria entre dos divisas aplicando reglas de beneficio parametrizables.
 
@@ -231,6 +231,8 @@ class SimuladorConversionService:
             to_currency (str): Código ISO de la moneda de destino (ej. 'PYG', 'EUR').
             amount (Decimal or float or int): Monto a convertir.
             user (User, optional): Usuario solicitante para determinar categoría y beneficios (VIP, Corporativo).
+            client (Cliente, optional): Instancia del cliente activo.
+            category_override (str, optional): Código de categoría explícito (ej. 'VIP', 'CORPORATIVO').
 
         Returns:
             dict: Diccionario con el resultado detallado de la simulación y desglose transparente.
@@ -255,15 +257,25 @@ class SimuladorConversionService:
         threshold_met = False
         min_operation_amount = Decimal('0.00')
 
-        if user and user.is_authenticated:
+        cat_code = 'MINORISTA'
+        if category_override:
+            cat_code = category_override
+        elif client and hasattr(client, 'categoria') and client.categoria:
+            cat_code = client.categoria
+        elif user and user.is_authenticated:
             try:
                 cat_code = get_user_effective_category(user, request=request)
-                rule = ClientBenefitRule.objects.filter(category_code=cat_code).first()
+            except Exception:
+                pass
+
+        if cat_code:
+            try:
+                rule = ClientBenefitRule.objects.filter(category_code__iexact=cat_code).first()
                 if rule:
                     category_name = rule.category_name
                     min_operation_amount = rule.min_operation_amount
 
-                    if cat_code != 'MINORISTA':
+                    if str(cat_code).upper() != 'MINORISTA':
                         benefit_percentage = rule.benefit_percentage
                         threshold_met = True
                     else:

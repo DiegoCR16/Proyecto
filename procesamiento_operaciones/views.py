@@ -213,13 +213,17 @@ class CurrencySaleService:
         if not linked_account or not linked_account.is_active:
             raise ValidationError("El cliente debe contar obligatoriamente con una cuenta bancaria o billetera digital vinculada y activa en el sistema para proceder con la venta de divisas.")
 
-        # Simular / Calcular conversión aplicando tasa de compra vigente
+        cliente, origin_method, destination_method = _resolve_client_and_methods(user, request, origin_method_id, destination_method_id)
+
+        # Simular / Calcular conversión aplicando tasa de compra vigente y categoría de cliente
         sim_result = SimuladorConversionService.simular(
             from_currency=from_currency,
             to_currency=to_currency,
             amount=amount_dec,
             user=user,
-            request=request
+            request=request,
+            client=cliente,
+            category_override=cliente.categoria if cliente else None
         )
 
         # Determinar el monto total expresado en Guaraníes (PYG) para validación de límites
@@ -381,12 +385,16 @@ class CurrencySaleService:
         if not linked_account or not linked_account.is_active:
             raise ValidationError("El cliente debe contar obligatoriamente con una cuenta bancaria o billetera digital vinculada y activa en el sistema para proceder con la venta de divisas.")
 
+        cliente, origin_method, destination_method = _resolve_client_and_methods(user, request, origin_method_id, destination_method_id)
+
         sim_result = SimuladorConversionService.simular(
             from_currency=from_currency,
             to_currency=to_currency,
             amount=amount_dec,
             user=user,
-            request=request
+            request=request,
+            client=cliente,
+            category_override=cliente.categoria if cliente else None
         )
 
         eval_amount_pyg = amount_dec
@@ -438,6 +446,7 @@ class CurrencySaleService:
             total_origen = amount_dec
 
         cliente, origin_method, destination_method = _resolve_client_and_methods(user, request, origin_method_id, destination_method_id)
+        pm_type, gateway_ref, gateway_status, tx_status = _process_financial_instrument(linked_account, total_pyg, 'PYG', origin_method)
 
         transaction = CurrencySaleTransaction.objects.create(
             user=user if user and user.is_authenticated else None,
@@ -449,6 +458,9 @@ class CurrencySaleService:
             applied_rate=sim_result['applied_rate'],
             standard_rate=sim_result['standard_rate'],
             linked_account=linked_account,
+            payment_method_type=pm_type,
+            gateway_reference=gateway_ref,
+            gateway_status=gateway_status,
             origin_acreditation_method=origin_method,
             destination_acreditation_method=destination_method,
             acreditation_method=destination_method,
@@ -458,7 +470,7 @@ class CurrencySaleService:
             total_pyg=total_pyg,
             status='PENDING',
             processing_time_ms=0,
-            transparent_breakdown=f"Iniciado en PENDIENTE. Tasa aplicada: {sim_result['applied_rate']}",
+            transparent_breakdown=f"Iniciado en PENDIENTE. Pasarela: {pm_type} ({gateway_ref}) - Estado: {gateway_status}. Tasa aplicada: {sim_result['applied_rate']}",
             moneda_origen_id=from_currency,
             monto_origen=amount_dec,
             moneda_destino_id=to_currency,
@@ -957,13 +969,17 @@ class CurrencyPurchaseService:
         if amount_dec <= Decimal('0.00'):
             raise ValidationError("El monto de la transacción debe ser mayor a cero.")
 
-        # Simular / Calcular conversión para obtener equivalencia en PYG y valores
+        cliente, origin_method, destination_method = _resolve_client_and_methods(user, request, origin_method_id, destination_method_id)
+
+        # Simular / Calcular conversión para obtener equivalencia en PYG y valores aplicando categoría de cliente
         sim_result = SimuladorConversionService.simular(
             from_currency=from_currency,
             to_currency=to_currency,
             amount=amount_dec,
             user=user,
-            request=request
+            request=request,
+            client=cliente,
+            category_override=cliente.categoria if cliente else None
         )
 
         # Determinar el monto total expresado en Guaraníes (PYG) para validación de límites y fondos
@@ -1133,12 +1149,16 @@ class CurrencyPurchaseService:
         if amount_dec <= Decimal('0.00'):
             raise ValidationError("El monto de la transacción debe ser mayor a cero.")
 
+        cliente, origin_method, destination_method = _resolve_client_and_methods(user, request, origin_method_id, destination_method_id)
+
         sim_result = SimuladorConversionService.simular(
             from_currency=from_currency,
             to_currency=to_currency,
             amount=amount_dec,
             user=user,
-            request=request
+            request=request,
+            client=cliente,
+            category_override=cliente.categoria if cliente else None
         )
 
         eval_amount_pyg = amount_dec
@@ -1214,6 +1234,7 @@ class CurrencyPurchaseService:
             raise ValidationError(f"Fondos insuficientes en el método de pago '{payment_method.name}'. Saldo disponible: ₲ {payment_method.balance:,.2f}, requerido: ₲ {total_cost_pyg:,.2f}.")
 
         cliente, origin_method, destination_method = _resolve_client_and_methods(user, request, origin_method_id, destination_method_id)
+        pm_type, gateway_ref, gateway_status, tx_status = _process_financial_instrument(payment_method, total_cost_pyg, 'PYG', origin_method)
 
         transaction = CurrencyPurchaseTransaction.objects.create(
             user=user if user and user.is_authenticated else None,
@@ -1225,6 +1246,9 @@ class CurrencyPurchaseService:
             applied_rate=sim_result['applied_rate'],
             standard_rate=sim_result['standard_rate'],
             payment_method=payment_method,
+            payment_method_type=pm_type,
+            gateway_reference=gateway_ref,
+            gateway_status=gateway_status,
             origin_acreditation_method=origin_method,
             destination_acreditation_method=destination_method,
             benefit_percentage=sim_result['benefit_percentage'],
@@ -1233,7 +1257,7 @@ class CurrencyPurchaseService:
             total_pyg=total_cost_pyg,
             status='PENDING',
             processing_time_ms=0,
-            transparent_breakdown=f"Iniciado en PENDIENTE. Tasa aplicada: {sim_result['applied_rate']} | Total a Pagar: {total_origen:,.2f} {from_currency} | Caja: Ingresa stock de {amount_dec} {from_currency} y egresa stock de {sim_result['converted_amount']} {to_currency}",
+            transparent_breakdown=f"Iniciado en PENDIENTE. Pasarela: {pm_type} ({gateway_ref}) - Estado: {gateway_status}. Tasa aplicada: {sim_result['applied_rate']} | Total a Pagar: {total_origen:,.2f} {from_currency}",
             moneda_origen_id=from_currency,
             monto_origen=amount_dec,
             moneda_destino_id=to_currency,
