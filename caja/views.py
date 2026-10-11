@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
+from django.contrib.auth.models import User
+from django.db.models import Q
 from django.contrib import messages
 from django.utils import timezone
 from django.core.exceptions import ValidationError
@@ -37,9 +39,20 @@ def gestion_caja_view(request):
     if is_admin:
         cajas = Caja.objects.filter(activa=True)
     else:
-        # Independiente para cada cajero: excluye cajas con turno activo de otros cajeros
-        cajas_con_turno_otro = TurnoCaja.objects.filter(estado='ABIERTO').exclude(cajero=request.user).values_list('caja_id', flat=True)
-        cajas = Caja.objects.filter(activa=True).exclude(id__in=cajas_con_turno_otro)
+        # El cajero solo ve cajas específicamente asignadas a él
+        turno_actual_cajero = TurnoCaja.objects.filter(cajero=request.user, estado='ABIERTO').first()
+        if turno_actual_cajero:
+            cajas = [turno_actual_cajero.caja]
+        else:
+            cajas_asignadas = Caja.objects.filter(activa=True, cajeros_asignados=request.user)
+            if cajas_asignadas.exists():
+                caja_asignada_libre = cajas_asignadas.exclude(turnocaja__estado='ABIERTO').first()
+                if not caja_asignada_libre:
+                    caja_asignada_libre = cajas_asignadas.first()
+                cajas = [caja_asignada_libre] if caja_asignada_libre else []
+            else:
+                # Si no tiene ninguna caja asignada, no ve ninguna caja
+                cajas = []
 
     cajas_data = []
 
@@ -57,6 +70,7 @@ def gestion_caja_view(request):
             'caja': caja,
             'turno_activo': turno_activo,
             'desgloses_turno': desgloses_turno,
+            'cajeros_asignados': caja.cajeros_asignados.all(),
         })
 
     turnos_cerrados = TurnoCaja.objects.filter(estado='CERRADO').prefetch_related('arqueos', 'bitacoras_arqueo').order_by('-fecha_cierre')[:10] if is_admin else []
@@ -100,6 +114,10 @@ def abrir_turno_view(request, caja_id):
             saldo_eur = Decimal(request.POST.get('saldo_inicial_eur') or '0')
             saldo_brl = Decimal(request.POST.get('saldo_inicial_brl') or '0')
             saldo_ars = Decimal(request.POST.get('saldo_inicial_ars') or '0')
+
+            if saldo_pyg == 0 and saldo_usd == 0 and saldo_eur == 0 and saldo_brl == 0 and saldo_ars == 0:
+                messages.error(request, "Debe ingresar al menos un saldo inicial mayor a 0 en alguna de las divisas para abrir el turno.")
+                return redirect('caja:gestion_caja')
 
             turno = TurnoCaja(
                 caja=caja,
@@ -198,3 +216,67 @@ def registrar_movimiento_efectivo_view(request, turno_id):
             messages.error(request, f"Error al registrar movimiento con desglose: {str(e)}")
 
     return redirect('caja:gestion_caja')
+
+
+@login_required
+def gestion_cajas_admin_view(request):
+    """
+    Vista de administración para el CRUD de Cajas Físicas y asignación de cajeros.
+    Permite agregar, editar, eliminar cajas y asignar usuarios con rol cajero.
+    """
+    profile, _ = UserProfile.objects.get_or_create(user=request.user)
+    interface_ctx = get_user_interface_context(request, profile)
+    if not interface_ctx.get('is_admin', False) and not request.user.is_superuser:
+        messages.error(request, "Acceso no autorizado.")
+        return redirect('dashboard_redirect')
+
+    cajeros_list = User.objects.filter(
+        Q(profile__role__name__icontains='cajero') |
+        Q(profile__roles__name__icontains='cajero')
+    ).distinct()
+    if not cajeros_list.exists():
+        cajeros_list = User.objects.filter(is_superuser=False)
+
+    if request.method == 'POST':
+        action = request.POST.get('action')
+        if action == 'crear':
+            nombre = request.POST.get('nombre')
+            codigo = request.POST.get('codigo')
+            cajeros_ids = request.POST.getlist('cajeros_asignados')
+            try:
+                caja = Caja.objects.create(nombre=nombre, codigo=codigo, activa=True)
+                if cajeros_ids:
+                    caja.cajeros_asignados.set(cajeros_ids)
+                messages.success(request, f"Caja '{nombre}' creada exitosamente.")
+            except Exception as e:
+                messages.error(request, f"Error al crear caja: {str(e)}")
+        elif action == 'editar':
+            caja_id = request.POST.get('caja_id')
+            caja = get_object_or_404(Caja, id=caja_id)
+            caja.nombre = request.POST.get('nombre', caja.nombre)
+            caja.codigo = request.POST.get('codigo', caja.codigo)
+            caja.activa = True if request.POST.get('activa') == 'on' else False
+            cajeros_ids = request.POST.getlist('cajeros_asignados')
+            try:
+                caja.save()
+                caja.cajeros_asignados.set(cajeros_ids)
+                messages.success(request, f"Caja '{caja.nombre}' actualizada exitosamente.")
+            except Exception as e:
+                messages.error(request, f"Error al actualizar caja: {str(e)}")
+        elif action == 'eliminar':
+            caja_id = request.POST.get('caja_id')
+            caja = get_object_or_404(Caja, id=caja_id)
+            try:
+                nombre_caja = caja.nombre
+                caja.delete()
+                messages.success(request, f"Caja '{nombre_caja}' eliminada exitosamente.")
+            except Exception as e:
+                messages.error(request, f"Error al eliminar caja: {str(e)}")
+        return redirect('caja:gestion_cajas_admin')
+
+    cajas = Caja.objects.all().prefetch_related('cajeros_asignados')
+    context = {
+        'cajas': cajas,
+        'cajeros_list': cajeros_list,
+    }
+    return render(request, 'caja/gestion_cajas_admin.html', context)

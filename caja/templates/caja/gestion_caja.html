@@ -93,219 +93,231 @@
         </div>
 
         <!-- Listado de Cajas -->
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {% for item in cajas_data %}
-                <div class="bg-white rounded-xl shadow-lg border border-slate-200 overflow-hidden flex flex-col justify-between">
-                    <div>
-                        <!-- Cabecera de Tarjeta -->
-                        <div class="bg-slate-900 text-white p-4 flex justify-between items-center">
-                            <div>
-                                <h3 class="text-lg font-bold">{{ item.caja.nombre }}</h3>
-                                <span class="text-xs text-slate-400 font-mono">Código: {{ item.caja.codigo }}</span>
+        {% if cajas_data %}
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {% for item in cajas_data %}
+                    <div class="bg-white rounded-xl shadow-lg border border-slate-200 overflow-hidden flex flex-col justify-between">
+                        <div>
+                            <!-- Cabecera de Tarjeta -->
+                            <div class="bg-slate-900 text-white p-4 flex justify-between items-center">
+                                <div>
+                                    <h3 class="text-lg font-bold">{{ item.caja.nombre }}</h3>
+                                    <span class="text-xs text-slate-400 font-mono">Código: {{ item.caja.codigo }}</span>
+                                </div>
+                                <div>
+                                    {% if item.turno_activo %}
+                                        <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-green-600 text-white">
+                                            ● Turno Activo (#{{ item.turno_activo.id }})
+                                        </span>
+                                    {% else %}
+                                        <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-red-600 text-white">
+                                            ○ Sin Turno Activo
+                                        </span>
+                                    {% endif %}
+                                </div>
                             </div>
-                            <div>
+
+                            <!-- Contenido -->
+                            <div class="p-6">
                                 {% if item.turno_activo %}
-                                    <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-green-600 text-white">
-                                        ● Turno Activo (#{{ item.turno_activo.id }})
-                                    </span>
-                                {% else %}
-                                    <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-red-600 text-white">
-                                        ○ Sin Turno Activo
-                                    </span>
-                                {% endif %}
-                            </div>
-                        </div>
-
-                        <!-- Contenido -->
-                        <div class="p-6">
-                            {% if item.turno_activo %}
-                                <!-- Información del Turno Activo -->
-                                <div class="bg-slate-50 p-4 rounded-lg border border-slate-200 mb-6 space-y-2 text-sm">
-                                    <div class="flex justify-between">
-                                        <span class="text-slate-600">Cajero Responsable:</span>
-                                        <strong class="text-slate-900">{{ item.turno_activo.cajero.username }}</strong>
-                                    </div>
-                                    <div class="flex justify-between">
-                                        <span class="text-slate-600">Apertura:</span>
-                                        <span class="text-slate-900">{{ item.turno_activo.fecha_apertura|date:"d/m/Y H:i" }}</span>
-                                    </div>
-                                    <div class="border-t border-slate-200 pt-2 mt-2">
-                                        <span class="font-semibold text-slate-700 block mb-1">Saldos Iniciales Registrados:</span>
-                                        <div class="grid grid-cols-3 gap-2 text-xs font-mono">
-                                            <div class="bg-white p-1.5 rounded border border-slate-200">PYG: <strong>{{ item.turno_activo.saldo_inicial_pyg }}</strong></div>
-                                            <div class="bg-white p-1.5 rounded border border-slate-200">USD: <strong>{{ item.turno_activo.saldo_inicial_usd }}</strong></div>
-                                            <div class="bg-white p-1.5 rounded border border-slate-200">EUR: <strong>{{ item.turno_activo.saldo_inicial_eur }}</strong></div>
-                                            <div class="bg-white p-1.5 rounded border border-slate-200">BRL: <strong>{{ item.turno_activo.saldo_inicial_brl }}</strong></div>
-                                            <div class="bg-white p-1.5 rounded border border-slate-200">ARS: <strong>{{ item.turno_activo.saldo_inicial_ars }}</strong></div>
+                                    <!-- Información del Turno Activo -->
+                                    <div class="bg-slate-50 p-4 rounded-lg border border-slate-200 mb-6 space-y-2 text-sm">
+                                        <div class="flex justify-between">
+                                            <span class="text-slate-600">Cajero Responsable:</span>
+                                            <strong class="text-slate-900">{{ item.turno_activo.cajero.username }}</strong>
+                                        </div>
+                                        <div class="flex justify-between">
+                                            <span class="text-slate-600">Apertura:</span>
+                                            <span class="text-slate-900">{{ item.turno_activo.fecha_apertura|date:"d/m/Y H:i" }}</span>
+                                        </div>
+                                        <div class="border-t border-slate-200 pt-2 mt-2">
+                                            <span class="font-semibold text-slate-700 block mb-1">Saldos Iniciales Registrados:</span>
+                                            <div class="grid grid-cols-3 gap-2 text-xs font-mono">
+                                                <div class="bg-white p-1.5 rounded border border-slate-200">PYG: <strong>{{ item.turno_activo.saldo_inicial_pyg }}</strong></div>
+                                                <div class="bg-white p-1.5 rounded border border-slate-200">USD: <strong>{{ item.turno_activo.saldo_inicial_usd }}</strong></div>
+                                                <div class="bg-white p-1.5 rounded border border-slate-200">EUR: <strong>{{ item.turno_activo.saldo_inicial_eur }}</strong></div>
+                                                <div class="bg-white p-1.5 rounded border border-slate-200">BRL: <strong>{{ item.turno_activo.saldo_inicial_brl }}</strong></div>
+                                                <div class="bg-white p-1.5 rounded border border-slate-200">ARS: <strong>{{ item.turno_activo.saldo_inicial_ars }}</strong></div>
+                                            </div>
                                         </div>
                                     </div>
-                                </div>
 
-                                <!-- Registro de Ingreso / Salida con Desglose de Billetes (PSE-21) -->
-                                <div class="bg-blue-50 border border-blue-200 p-4 rounded-xl mb-6">
-                                    <h4 class="font-bold text-blue-900 text-sm mb-2">Registrar Movimiento Físico (Ingreso / Salida) con Desglose (PSE-21)</h4>
-                                    
-                                    <!-- Selector de Divisas (Tabs) -->
-                                    <div class="flex space-x-2 mb-3">
-                                        {% for divisa_code, denoms in denominaciones_por_divisa.items %}
-                                            <button type="button" onclick="cambiarDivisaDesglose('{{ divisa_code }}')" class="tab-divisa px-3 py-1 bg-white border border-blue-300 text-blue-800 rounded text-xs font-bold hover:bg-blue-600 hover:text-white transition">
-                                                {{ divisa_code }}
-                                            </button>
-                                        {% endfor %}
-                                    </div>
-
-                                    <form method="POST" action="{% url 'caja:movimiento_efectivo' item.turno_activo.id %}" class="space-y-3">
-                                        {% csrf_token %}
-                                        <input type="hidden" name="divisa" id="input-divisa-hidden" value="PYG">
+                                    <!-- Registro de Ingreso / Salida con Desglose de Billetes (PSE-21) -->
+                                    <div class="bg-blue-50 border border-blue-200 p-4 rounded-xl mb-6">
+                                        <h4 class="font-bold text-blue-900 text-sm mb-2">Registrar Movimiento Físico (Ingreso / Salida) con Desglose (PSE-21)</h4>
                                         
-                                        <div class="grid grid-cols-2 gap-3 text-xs">
-                                            <div>
-                                                <label class="block font-medium text-slate-700 mb-1">Tipo de Operación</label>
-                                                <select name="tipo_operacion" class="w-full border rounded p-1.5 font-semibold bg-white" required>
-                                                    <option value="INGRESO">Ingreso Físico de Efectivo</option>
-                                                    <option value="SALIDA">Salida Física de Efectivo</option>
-                                                </select>
-                                            </div>
-                                            <div>
-                                                <label class="block font-medium text-slate-700 mb-1">Observación / Motivo</label>
-                                                <input type="text" name="observacion" placeholder="Ej. Depósito o retiro caja" class="w-full border rounded p-1.5 bg-white">
-                                            </div>
-                                        </div>
-
-                                        <!-- Tablas de Denominaciones por Divisa (Matriz Interactiva) -->
-                                        {% for divisa_code, denoms in denominaciones_por_divisa.items %}
-                                            <div id="tabla-{{ divisa_code }}" class="desglose-tabla hidden space-y-2 border-t pt-2">
-                                                <div class="text-xs font-bold text-slate-700 mb-1">Desglose de Billetes - Divisa: {{ divisa_code }}</div>
-                                                <div class="max-h-48 overflow-y-auto border rounded bg-white p-2">
-                                                    <table class="w-full text-xs font-mono">
-                                                        <thead>
-                                                            <tr class="border-b text-slate-600 bg-slate-100">
-                                                                <th class="p-1 text-left">Denominación</th>
-                                                                <th class="p-1 text-center">Valor Facial</th>
-                                                                <th class="p-1 text-center">Cantidad</th>
-                                                                <th class="p-1 text-right">Subtotal</th>
-                                                            </tr>
-                                                        </thead>
-                                                        <tbody>
-                                                            {% for denom in denoms %}
-                                                                <tr class="border-b">
-                                                                    <td class="p-1 font-sans">{{ denom.nombre }}</td>
-                                                                    <td class="p-1 text-center">{{ denom.valor_facial }}</td>
-                                                                    <td class="p-1 text-center">
-                                                                        <input type="number" min="0" value="0" name="denom_{{ denom.id }}" id="denom_{{ denom.id }}" oninput="calcularSubtotal('denom_{{ denom.id }}', '{{ denom.valor_facial }}', 'sub_{{ denom.id }}')" class="w-20 border rounded p-1 text-center font-mono">
-                                                                    </td>
-                                                                    <td class="p-1 text-right font-bold">
-                                                                        <span id="sub_{{ denom.id }}" class="subtotal-item">0.00</span>
-                                                                    </td>
-                                                                </tr>
-                                                            {% endfor %}
-                                                        </tbody>
-                                                    </table>
-                                                </div>
-                                            </div>
-                                        {% endfor %}
-
-                                        <!-- Sumatoria Automática en Tiempo Real -->
-                                        <div class="bg-slate-900 text-white p-3 rounded flex justify-between items-center text-sm font-mono">
-                                            <span>Subtotal / Total Calculado:</span>
-                                            <span class="text-green-400 font-bold text-base">₲ <span id="total-general-calc">0.00</span></span>
-                                        </div>
-
-                                        <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded transition shadow text-xs">
-                                            Registrar Movimiento con Desglose de Papel Moneda
-                                        </button>
-                                    </form>
-                                </div>
-
-                                <!-- Historial de Desgloses del Turno -->
-                                {% if item.desgloses_turno %}
-                                    <div class="mb-6 space-y-2">
-                                        <h4 class="font-bold text-slate-800 text-xs uppercase tracking-wider">Desgloses Registrados en este Turno</h4>
-                                        <div class="space-y-2 max-h-40 overflow-y-auto">
-                                            {% for des in item.desgloses_turno %}
-                                                <div class="bg-slate-50 border rounded p-2 text-xs flex justify-between items-center">
-                                                    <div>
-                                                        <span class="font-bold {% if des.tipo_operacion == 'INGRESO' %}text-green-700{% else %}text-red-700{% endif %}">[{{ des.get_tipo_operacion_display }}]</span>
-                                                        <span class="font-mono font-semibold">{{ des.divisa }} {{ des.monto_total }}</span>
-                                                        <span class="text-slate-500 block text-[10px]">{{ des.fecha|date:"d/m/Y H:i" }} {% if des.observacion %}- {{ des.observacion }}{% endif %}</span>
-                                                    </div>
-                                                    <span class="text-xs text-slate-600 font-mono">Detalles: {{ des.detalles.count }} billetes</span>
-                                                </div>
+                                        <!-- Selector de Divisas (Tabs) -->
+                                        <div class="flex space-x-2 mb-3">
+                                            {% for divisa_code, denoms in denominaciones_por_divisa.items %}
+                                                <button type="button" onclick="cambiarDivisaDesglose('{{ divisa_code }}')" class="tab-divisa px-3 py-1 bg-white border border-blue-300 text-blue-800 rounded text-xs font-bold hover:bg-blue-600 hover:text-white transition">
+                                                    {{ divisa_code }}
+                                                </button>
                                             {% endfor %}
                                         </div>
-                                    </div>
-                                {% endif %}
 
-                                <!-- Formulario de Cierre de Turno -->
-                                <form method="POST" action="{% url 'caja:cerrar_turno' item.turno_activo.id %}" class="space-y-4">
-                                    {% csrf_token %}
-                                    <h4 class="font-bold text-slate-800 text-sm border-b pb-1">Registrar Cierre y Saldos Finales Físicos</h4>
-                                    <div class="grid grid-cols-2 gap-3 text-xs">
-                                        <div>
-                                            <label class="block font-medium text-slate-700 mb-1">Final PYG</label>
-                                            <input type="number" step="0.01" name="saldo_final_pyg" value="0" class="w-full border rounded p-1.5 font-mono" required>
-                                        </div>
-                                        <div>
-                                            <label class="block font-medium text-slate-700 mb-1">Final USD</label>
-                                            <input type="number" step="0.01" name="saldo_final_usd" value="0" class="w-full border rounded p-1.5 font-mono" required>
-                                        </div>
-                                        <div>
-                                            <label class="block font-medium text-slate-700 mb-1">Final EUR</label>
-                                            <input type="number" step="0.01" name="saldo_final_eur" value="0" class="w-full border rounded p-1.5 font-mono" required>
-                                        </div>
-                                        <div>
-                                            <label class="block font-medium text-slate-700 mb-1">Final BRL</label>
-                                            <input type="number" step="0.01" name="saldo_final_brl" value="0" class="w-full border rounded p-1.5 font-mono" required>
-                                        </div>
-                                        <div class="col-span-2">
-                                            <label class="block font-medium text-slate-700 mb-1">Final ARS</label>
-                                            <input type="number" step="0.01" name="saldo_final_ars" value="0" class="w-full border rounded p-1.5 font-mono" required>
-                                        </div>
+                                        <form method="POST" action="{% url 'caja:movimiento_efectivo' item.turno_activo.id %}" class="space-y-3">
+                                            {% csrf_token %}
+                                            <input type="hidden" name="divisa" id="input-divisa-hidden" value="PYG">
+                                            
+                                            <div class="grid grid-cols-2 gap-3 text-xs">
+                                                <div>
+                                                    <label class="block font-medium text-slate-700 mb-1">Tipo de Operación</label>
+                                                    <select name="tipo_operacion" class="w-full border rounded p-1.5 font-semibold bg-white" required>
+                                                        <option value="INGRESO">Ingreso Físico de Efectivo</option>
+                                                        <option value="SALIDA">Salida Física de Efectivo</option>
+                                                    </select>
+                                                </div>
+                                                <div>
+                                                    <label class="block font-medium text-slate-700 mb-1">Observación / Motivo</label>
+                                                    <input type="text" name="observacion" placeholder="Ej. Depósito o retiro caja" class="w-full border rounded p-1.5 bg-white">
+                                                </div>
+                                            </div>
+
+                                            <!-- Tablas de Denominaciones por Divisa (Matriz Interactiva) -->
+                                            {% for divisa_code, denoms in denominaciones_por_divisa.items %}
+                                                <div id="tabla-{{ divisa_code }}" class="desglose-tabla hidden space-y-2 border-t pt-2">
+                                                    <div class="text-xs font-bold text-slate-700 mb-1">Desglose de Billetes - Divisa: {{ divisa_code }}</div>
+                                                    <div class="max-h-48 overflow-y-auto border rounded bg-white p-2">
+                                                        <table class="w-full text-xs font-mono">
+                                                            <thead>
+                                                                <tr class="border-b text-slate-600 bg-slate-100">
+                                                                    <th class="p-1 text-left">Denominación</th>
+                                                                    <th class="p-1 text-center">Valor Facial</th>
+                                                                    <th class="p-1 text-center">Cantidad</th>
+                                                                    <th class="p-1 text-right">Subtotal</th>
+                                                                </tr>
+                                                            </thead>
+                                                            <tbody>
+                                                                {% for denom in denoms %}
+                                                                    <tr class="border-b">
+                                                                        <td class="p-1 font-sans">{{ denom.nombre }}</td>
+                                                                        <td class="p-1 text-center">{{ denom.valor_facial }}</td>
+                                                                        <td class="p-1 text-center">
+                                                                            <input type="number" min="0" value="0" name="denom_{{ denom.id }}" id="denom_{{ denom.id }}" oninput="calcularSubtotal('denom_{{ denom.id }}', '{{ denom.valor_facial }}', 'sub_{{ denom.id }}')" class="w-20 border rounded p-1 text-center font-mono">
+                                                                        </td>
+                                                                        <td class="p-1 text-right font-bold">
+                                                                            <span id="sub_{{ denom.id }}" class="subtotal-item">0.00</span>
+                                                                        </td>
+                                                                    </tr>
+                                                                {% endfor %}
+                                                            </tbody>
+                                                        </table>
+                                                    </div>
+                                                </div>
+                                            {% endfor %}
+
+                                            <!-- Sumatoria Automática en Tiempo Real -->
+                                            <div class="bg-slate-900 text-white p-3 rounded flex justify-between items-center text-sm font-mono">
+                                                <span>Subtotal / Total Calculado:</span>
+                                                <span class="text-green-400 font-bold text-base">₲ <span id="total-general-calc">0.00</span></span>
+                                            </div>
+
+                                            <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded transition shadow text-xs">
+                                                Registrar Movimiento con Desglose de Papel Moneda
+                                            </button>
+                                        </form>
                                     </div>
-                                    <button type="submit" onclick="return confirm('¿Confirma el cierre del turno? Esto congelará las operaciones de la caja.')" class="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded transition shadow">
-                                        Cerrar Turno de Caja (Congelar Operaciones)
-                                    </button>
-                                </form>
-                            {% else %}
-                                <!-- Formulario de Apertura de Turno -->
-                                <form method="POST" action="{% url 'caja:abrir_turno' item.caja.id %}" class="space-y-4">
-                                    {% csrf_token %}
-                                    <div class="bg-amber-50 border border-amber-200 text-amber-800 p-3 rounded-lg text-xs mb-3">
-                                        <strong>Atención:</strong> Para operar esta caja debe abrir turno ingresando los saldos iniciales por divisa asociados a su usuario (<strong>{{ request.user.username }}</strong>).
-                                    </div>
-                                    <h4 class="font-bold text-slate-800 text-sm border-b pb-1">Saldos Iniciales Detallados por Divisa</h4>
-                                    <div class="grid grid-cols-2 gap-3 text-xs">
-                                        <div>
-                                            <label class="block font-medium text-slate-700 mb-1">Inicial PYG</label>
-                                            <input type="number" step="0.01" name="saldo_inicial_pyg" value="0" class="w-full border rounded p-1.5 font-mono" required>
+
+                                    <!-- Historial de Desgloses del Turno -->
+                                    {% if item.desgloses_turno %}
+                                        <div class="mb-6 space-y-2">
+                                            <h4 class="font-bold text-slate-800 text-xs uppercase tracking-wider">Desgloses Registrados en este Turno</h4>
+                                            <div class="space-y-2 max-h-40 overflow-y-auto">
+                                                {% for des in item.desgloses_turno %}
+                                                    <div class="bg-slate-50 border rounded p-2 text-xs flex justify-between items-center">
+                                                        <div>
+                                                            <span class="font-bold {% if des.tipo_operacion == 'INGRESO' %}text-green-700{% else %}text-red-700{% endif %}">[{{ des.get_tipo_operacion_display }}]</span>
+                                                            <span class="font-mono font-semibold">{{ des.divisa }} {{ des.monto_total }}</span>
+                                                            <span class="text-slate-500 block text-[10px]">{{ des.fecha|date:"d/m/Y H:i" }} {% if des.observacion %}- {{ des.observacion }}{% endif %}</span>
+                                                        </div>
+                                                        <span class="text-xs text-slate-600 font-mono">Detalles: {{ des.detalles.count }} billetes</span>
+                                                    </div>
+                                                {% endfor %}
+                                            </div>
                                         </div>
-                                        <div>
-                                            <label class="block font-medium text-slate-700 mb-1">Inicial USD</label>
-                                            <input type="number" step="0.01" name="saldo_inicial_usd" value="0" class="w-full border rounded p-1.5 font-mono" required>
+                                    {% endif %}
+
+                                    <!-- Formulario de Cierre de Turno -->
+                                    <form method="POST" action="{% url 'caja:cerrar_turno' item.turno_activo.id %}" class="space-y-4">
+                                        {% csrf_token %}
+                                        <h4 class="font-bold text-slate-800 text-sm border-b pb-1">Registrar Cierre y Saldos Finales Físicos</h4>
+                                        <div class="grid grid-cols-2 gap-3 text-xs">
+                                            <div>
+                                                <label class="block font-medium text-slate-700 mb-1">Final PYG</label>
+                                                <input type="number" step="0.01" name="saldo_final_pyg" value="0" class="w-full border rounded p-1.5 font-mono" required>
+                                            </div>
+                                            <div>
+                                                <label class="block font-medium text-slate-700 mb-1">Final USD</label>
+                                                <input type="number" step="0.01" name="saldo_final_usd" value="0" class="w-full border rounded p-1.5 font-mono" required>
+                                            </div>
+                                            <div>
+                                                <label class="block font-medium text-slate-700 mb-1">Final EUR</label>
+                                                <input type="number" step="0.01" name="saldo_final_eur" value="0" class="w-full border rounded p-1.5 font-mono" required>
+                                            </div>
+                                            <div>
+                                                <label class="block font-medium text-slate-700 mb-1">Final BRL</label>
+                                                <input type="number" step="0.01" name="saldo_final_brl" value="0" class="w-full border rounded p-1.5 font-mono" required>
+                                            </div>
+                                            <div class="col-span-2">
+                                                <label class="block font-medium text-slate-700 mb-1">Final ARS</label>
+                                                <input type="number" step="0.01" name="saldo_final_ars" value="0" class="w-full border rounded p-1.5 font-mono" required>
+                                            </div>
                                         </div>
-                                        <div>
-                                            <label class="block font-medium text-slate-700 mb-1">Inicial EUR</label>
-                                            <input type="number" step="0.01" name="saldo_inicial_eur" value="0" class="w-full border rounded p-1.5 font-mono" required>
+                                        <button type="submit" onclick="return confirm('¿Confirma el cierre del turno? Esto congelará las operaciones de la caja.')" class="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded transition shadow">
+                                            Cerrar Turno de Caja (Congelar Operaciones)
+                                        </button>
+                                    </form>
+                                {% else %}
+                                    <!-- Formulario de Apertura de Turno -->
+                                    <form method="POST" action="{% url 'caja:abrir_turno' item.caja.id %}" class="space-y-4">
+                                        {% csrf_token %}
+                                        <div class="bg-amber-50 border border-amber-200 text-amber-800 p-3 rounded-lg text-xs mb-3">
+                                            <strong>Atención:</strong> Para operar esta caja debe abrir turno ingresando los saldos iniciales por divisa asociados a su usuario (<strong>{{ request.user.username }}</strong>).
                                         </div>
-                                        <div>
-                                            <label class="block font-medium text-slate-700 mb-1">Inicial BRL</label>
-                                            <input type="number" step="0.01" name="saldo_inicial_brl" value="0" class="w-full border rounded p-1.5 font-mono" required>
+                                        <h4 class="font-bold text-slate-800 text-sm border-b pb-1">Saldos Iniciales Detallados por Divisa</h4>
+                                        <div class="grid grid-cols-2 gap-3 text-xs">
+                                            <div>
+                                                <label class="block font-medium text-slate-700 mb-1">Inicial PYG</label>
+                                                <input type="number" step="0.01" name="saldo_inicial_pyg" value="0" class="w-full border rounded p-1.5 font-mono" required>
+                                            </div>
+                                            <div>
+                                                <label class="block font-medium text-slate-700 mb-1">Inicial USD</label>
+                                                <input type="number" step="0.01" name="saldo_inicial_usd" value="0" class="w-full border rounded p-1.5 font-mono" required>
+                                            </div>
+                                            <div>
+                                                <label class="block font-medium text-slate-700 mb-1">Inicial EUR</label>
+                                                <input type="number" step="0.01" name="saldo_inicial_eur" value="0" class="w-full border rounded p-1.5 font-mono" required>
+                                            </div>
+                                            <div>
+                                                <label class="block font-medium text-slate-700 mb-1">Inicial BRL</label>
+                                                <input type="number" step="0.01" name="saldo_inicial_brl" value="0" class="w-full border rounded p-1.5 font-mono" required>
+                                            </div>
+                                            <div class="col-span-2">
+                                                <label class="block font-medium text-slate-700 mb-1">Inicial ARS</label>
+                                                <input type="number" step="0.01" name="saldo_inicial_ars" value="0" class="w-full border rounded p-1.5 font-mono" required>
+                                            </div>
                                         </div>
-                                        <div class="col-span-2">
-                                            <label class="block font-medium text-slate-700 mb-1">Inicial ARS</label>
-                                            <input type="number" step="0.01" name="saldo_inicial_ars" value="0" class="w-full border rounded p-1.5 font-mono" required>
-                                        </div>
-                                    </div>
-                                    <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded transition shadow">
-                                        Abrir Turno de Caja
-                                    </button>
-                                </form>
-                            {% endif %}
+                                        <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded transition shadow">
+                                            Abrir Turno de Caja
+                                        </button>
+                                    </form>
+                                {% endif %}
+                            </div>
                         </div>
                     </div>
+                {% endfor %}
+            </div>
+        {% else %}
+            <div class="bg-amber-50 border border-amber-300 text-amber-800 p-8 rounded-xl shadow-sm text-center space-y-3 max-w-xl mx-auto my-12">
+                <h3 class="text-xl font-bold">Sin Caja Asignada</h3>
+                <p class="text-sm">Usted no tiene ninguna caja física asignada actualmente en el sistema. Para realizar aperturas de turno, contacte al Administrador y solicite que le asigne una caja.</p>
+                <div>
+                    <a href="{% url 'dashboard_redirect' %}" class="inline-block bg-amber-600 hover:bg-amber-700 text-white px-5 py-2.5 rounded-xl text-sm font-medium transition shadow">
+                        Volver al Panel Principal
+                    </a>
                 </div>
-            {% endfor %}
-        </div>
+            </div>
+        {% endif %}
 
         <!-- Sección de Reportes de Arqueo y Bitácora Histórica (PSE-22) -->
         {% if is_admin %}

@@ -71,6 +71,8 @@ class FinancialInstrumentsRoutingAndValidationTests(TestCase):
             entidad_financiera='Stripe / Bancard',
             numero_tarjeta='4532111122223333',
             fecha_expiracion='12/28',
+            cvc_cvv='123',
+            balance=Decimal('500000000.00'),
             titularidad='Global Trading S.A.'
         )
         req = self._get_request()

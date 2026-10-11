@@ -329,3 +329,63 @@ class CurrencyPurchasePSE13Tests(TestCase):
                 request=req
             )
         self.assertIn("El rol Analista no tiene permisos", str(ctx.exception))
+
+    def test_multiple_users_belong_to_client_benefit(self):
+        """
+        Valida que múltiples usuarios pertenecientes al mismo cliente corporativo
+        (a través de UsuarioClienteRelacion) puedan operar y recibir el beneficio
+        del cliente (4% de descuento) de forma independiente.
+        """
+        from authentication.models import UsuarioClienteRelacion
+        client_corp = Cliente.objects.create(
+            nombre_o_razon_social='Corporacion MultiUsuario SA',
+            tipo_cliente='JURIDICA',
+            documento_identidad='80077788-9',
+            email='corp@multiusuario.com',
+            categoria='CORPORATIVO'
+        )
+        ClientAccreditationMethod.objects.create(
+            cliente=client_corp,
+            tipo_medio='CUENTA_BANCARIA',
+            entidad_financiera='Banco Corp',
+            numero_cuenta='99887766',
+            titularidad='Corporacion MultiUsuario SA',
+            estado='VERIFICADO',
+            es_predeterminado=True
+        )
+
+        user1 = User.objects.create_user(username='op1_corp', password='password123')
+        user2 = User.objects.create_user(username='op2_corp', password='password123')
+
+        UsuarioClienteRelacion.objects.create(keycloak_user_id=str(user1.id), cliente=client_corp, rol_en_cliente='OPERADOR')
+        UsuarioClienteRelacion.objects.create(keycloak_user_id=str(user2.id), cliente=client_corp, rol_en_cliente='OPERADOR')
+
+        req1 = self.factory.get(self.purchase_url)
+        req1.user = user1
+        req1.session = {'active_client_id': str(client_corp.id)}
+
+        tx1 = CurrencyPurchaseService.process_purchase(
+            user=user1,
+            from_currency='PYG',
+            to_currency='USD',
+            amount=500000,
+            payment_method_id_or_code=self.pm_sufficient.code,
+            request=req1
+        )
+        self.assertEqual(tx1.benefit_percentage, Decimal('4.00'))
+        self.assertEqual(tx1.cliente, client_corp)
+
+        req2 = self.factory.get(self.purchase_url)
+        req2.user = user2
+        req2.session = {'active_client_id': str(client_corp.id)}
+
+        tx2 = CurrencyPurchaseService.process_purchase(
+            user=user2,
+            from_currency='PYG',
+            to_currency='USD',
+            amount=500000,
+            payment_method_id_or_code=self.pm_sufficient.code,
+            request=req2
+        )
+        self.assertEqual(tx2.benefit_percentage, Decimal('4.00'))
+        self.assertEqual(tx2.cliente, client_corp)

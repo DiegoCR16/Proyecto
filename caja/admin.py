@@ -10,9 +10,14 @@ class CajaAdmin(admin.ModelAdmin):
     """
     Administración de Cajas Físicas en Django Admin.
     """
-    list_display = ('nombre', 'codigo', 'activa')
+    list_display = ('nombre', 'codigo', 'activa', 'get_cajeros_asignados')
     search_fields = ('nombre', 'codigo')
     list_filter = ('activa', )
+    filter_horizontal = ('cajeros_asignados',)
+
+    def get_cajeros_asignados(self, obj):
+        return ", ".join([u.username for u in obj.cajeros_asignados.all()])
+    get_cajeros_asignados.short_description = "Cajeros Asignados"
 
 
 @admin.register(TurnoCaja)

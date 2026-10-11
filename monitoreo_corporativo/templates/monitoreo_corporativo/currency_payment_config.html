@@ -197,6 +197,20 @@
                             <input type="text" id="pm_name" name="pm_name" placeholder="ej. Tarjeta Crédito Visa Platinum" required maxlength="100"
                                 class="w-full px-3.5 py-2.5 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-blue-800 focus:outline-none">
                         </div>
+                        <!-- Campos dinámicos según tipo de método de pago -->
+                        <div id="card_specific_fields" class="grid grid-cols-2 gap-2 hidden">
+                            <div>
+                                <label class="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">Fecha Venc. (MM/AA)</label>
+                                <input type="text" id="pm_expiry_date" name="pm_expiry_date" placeholder="ej. 12/28" maxlength="10"
+                                    class="w-full px-3.5 py-2 border border-slate-300 rounded-xl text-xs font-mono focus:ring-2 focus:ring-blue-800 focus:outline-none">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">CVC / CVV</label>
+                                <input type="password" id="pm_cvc" name="pm_cvc" placeholder="ej. 123" maxlength="4"
+                                    class="w-full px-3.5 py-2 border border-slate-300 rounded-xl text-xs font-mono focus:ring-2 focus:ring-blue-800 focus:outline-none">
+                            </div>
+                        </div>
+
                         <div>
                             <label id="lbl_account_number" class="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">Número de Cuenta / Tarjeta *</label>
                             <input type="text" id="pm_account_number" name="pm_account_number" placeholder="ej. 4532-xxxx-xxxx-1234 o Cta 102938" maxlength="100"
@@ -354,6 +368,15 @@
             const bankInput = document.getElementById('pm_bank_name');
             const accTypeLabel = document.getElementById('lbl_account_type');
             const accTypeInput = document.getElementById('pm_account_type');
+            const cardFields = document.getElementById('card_specific_fields');
+
+            if (cardFields) {
+                if (methodType === 'TARJETA_CREDITO' || methodType === 'TARJETA_DEBITO') {
+                    cardFields.classList.remove('hidden');
+                } else {
+                    cardFields.classList.add('hidden');
+                }
+            }
 
             if (methodType === 'TARJETA_CREDITO' || methodType === 'TARJETA_DEBITO') {
                 accNumLabel.textContent = 'Número de Tarjeta *';

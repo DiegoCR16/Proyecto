@@ -336,6 +336,7 @@ class ClientAccreditationMethod(models.Model):
     numero_telefono = models.CharField(max_length=50, blank=True, null=True, verbose_name="Número de Teléfono / Cuenta Billetera")
     alias_transferencia = models.CharField(max_length=150, blank=True, null=True, verbose_name="Alias de Transferencia")
     numero_tarjeta = models.CharField(max_length=50, blank=True, null=True, verbose_name="Número de Tarjeta")
+    cvc_cvv = models.CharField(max_length=10, blank=True, null=True, verbose_name="Código CVC / CVV")
     fecha_expiracion = models.CharField(max_length=10, blank=True, null=True, verbose_name="Fecha de Expiración (MM/AA)")
     
     moneda = models.CharField(max_length=10, choices=MONEDA_CHOICES, default='PYG', verbose_name="Moneda de la Cuenta")
@@ -391,6 +392,8 @@ class ClientAccreditationMethod(models.Model):
                 raise ValidationError("Debe especificar un número de tarjeta válido con dígitos.")
             if not self.fecha_expiracion:
                 raise ValidationError("La fecha de expiración de la tarjeta es obligatoria (MM/AA).")
+            if not self.cvc_cvv or not any(char.isdigit() for char in self.cvc_cvv):
+                raise ValidationError("El código CVC / CVV de la tarjeta es obligatorio.")
 
     def has_pending_transactions(self):
         """

@@ -14,13 +14,17 @@ class ClienteListView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
+        from django.db import models
         profile, _ = UserProfile.objects.get_or_create(user=request.user) if request.user.is_authenticated else (None, None)
-        kc_user_id = profile.keycloak_id if profile else str(request.user.id)
+        kc_user_id = profile.keycloak_id if profile else None
 
         if request.user.is_superuser:
             clientes = Cliente.objects.all()
         else:
-            relaciones = UsuarioClienteRelacion.objects.filter(keycloak_user_id=kc_user_id).select_related('cliente')
+            q_filter = models.Q(keycloak_user_id=str(request.user.id)) | models.Q(keycloak_user_id=request.user.username)
+            if kc_user_id:
+                q_filter |= models.Q(keycloak_user_id=kc_user_id)
+            relaciones = UsuarioClienteRelacion.objects.filter(q_filter).select_related('cliente')
             clientes = [rel.cliente for rel in relaciones]
 
         serializer = ClienteSerializer(clientes, many=True)

@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Global Exchange - Gestión y Asignación de Cajas</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>body { font-family: 'Inter', sans-serif; }</style>
+</head>
+<body class="bg-slate-50 min-h-screen text-slate-900 flex flex-col justify-between">
+    <header class="bg-slate-900 text-white shadow-md">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between h-16 items-center">
+                <div class="flex items-center space-x-3">
+                    <div class="w-9 h-9 bg-blue-800 rounded-lg flex items-center justify-center font-bold text-lg shadow">GX</div>
+                    <span class="font-bold text-lg tracking-wide">Global Exchange - Panel de Administrador</span>
+                </div>
+                <div class="flex items-center space-x-4 text-sm">
+                    <span class="text-slate-300">Usuario: <strong class="text-white">{{ request.user.username }}</strong></span>
+                    <a href="{% url 'dashboard_redirect' %}" class="bg-slate-800 hover:bg-slate-700 text-white px-3.5 py-1.5 rounded-lg text-sm font-medium transition duration-200">Dashboard Admin</a>
+                    <a href="{% url 'logout' %}" class="bg-red-600 hover:bg-red-700 text-white px-3.5 py-1.5 rounded-lg text-sm font-medium transition duration-200">Cerrar Sesión</a>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 flex-grow w-full">
+        {% if messages %}
+            <div class="mb-6 space-y-2">
+                {% for message in messages %}
+                    <div class="p-4 rounded-lg text-sm {% if message.tags == 'error' %}bg-red-100 text-red-800 border border-red-300{% else %}bg-green-100 text-green-800 border border-green-300{% endif %}">
+                        {{ message }}
+                    </div>
+                {% endfor %}
+            </div>
+        {% endif %}
+
+        <div class="mb-8 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+            <div>
+                <h1 class="text-3xl font-extrabold text-slate-900">Gestión y Asignación de Cajas Físicas</h1>
+                <p class="text-slate-600 mt-1">Cree nuevas cajas, modifique su estado, elimínelas y asigne o desasigne cajeros autorizados.</p>
+            </div>
+            <div>
+                <a href="{% url 'dashboard_redirect' %}" class="inline-flex items-center bg-slate-900 hover:bg-slate-800 text-white px-4 py-2.5 rounded-xl text-sm font-medium shadow-sm transition">
+                    &larr; Volver al Panel
+                </a>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            <!-- Formulario Crear Caja -->
+            <div class="bg-white p-6 rounded-xl shadow-lg border border-slate-200 h-fit">
+                <h2 class="text-lg font-bold text-slate-900 mb-4 pb-2 border-b">Registrar Nueva Caja</h2>
+                <form method="POST" class="space-y-4">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="crear">
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">Nombre de la Caja</label>
+                        <input type="text" name="nombre" placeholder="Ej. Caja Principal 03" class="w-full border rounded p-2 text-sm" required>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">Código</label>
+                        <input type="text" name="codigo" placeholder="Ej. C03" class="w-full border rounded p-2 text-sm font-mono" required>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">Cajeros Autorizados / Asignados</label>
+                        <div class="max-h-36 overflow-y-auto border rounded p-2 bg-white space-y-1">
+                            {% for cajero in cajeros_list %}
+                                <label class="flex items-center space-x-2 text-xs cursor-pointer hover:bg-slate-50 p-1 rounded">
+                                    <input type="checkbox" name="cajeros_asignados" value="{{ cajero.id }}" class="rounded text-blue-600">
+                                    <span class="font-medium text-slate-800">{{ cajero.username }}</span>
+                                </label>
+                            {% empty %}
+                                <span class="text-xs text-slate-400 italic">No hay cajeros registrados en el sistema.</span>
+                            {% endfor %}
+                        </div>
+                        <span class="text-[10px] text-slate-500 mt-1 block">Marque los cajeros que podrán operar esta caja.</span>
+                    </div>
+                    <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded transition shadow text-sm">
+                        Crear Caja Física
+                    </button>
+                </form>
+            </div>
+
+            <!-- Listado y Edición de Cajas -->
+            <div class="lg:col-span-2 space-y-6">
+                <div class="bg-white rounded-xl shadow-lg border border-slate-200 overflow-hidden">
+                    <div class="bg-slate-900 text-white p-4 font-bold text-sm">
+                        Cajas Físicas Registradas en el Sistema ({{ cajas.count }})
+                    </div>
+                    <div class="p-6 space-y-6">
+                        {% for caja in cajas %}
+                            <div class="border border-slate-200 rounded-lg p-5 bg-slate-50 space-y-4">
+                                <form method="POST" class="space-y-3">
+                                    {% csrf_token %}
+                                    <input type="hidden" name="action" value="editar">
+                                    <input type="hidden" name="caja_id" value="{{ caja.id }}">
+                                    <div class="grid grid-cols-1 md:grid-cols-3 gap-3 items-center">
+                                        <div>
+                                            <label class="block text-[11px] font-bold text-slate-600 mb-1">Nombre</label>
+                                            <input type="text" name="nombre" value="{{ caja.nombre }}" class="w-full border rounded p-1.5 text-xs bg-white font-semibold" required>
+                                        </div>
+                                        <div>
+                                            <label class="block text-[11px] font-bold text-slate-600 mb-1">Código</label>
+                                            <input type="text" name="codigo" value="{{ caja.codigo }}" class="w-full border rounded p-1.5 text-xs bg-white font-mono" required>
+                                        </div>
+                                        <div class="flex items-center space-x-2 pt-5">
+                                            <input type="checkbox" name="activa" id="activa_{{ caja.id }}" {% if caja.activa %}checked{% endif %} class="rounded text-blue-600">
+                                            <label for="activa_{{ caja.id }}" class="text-xs font-semibold text-slate-700">Caja Activa</label>
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label class="block text-[11px] font-bold text-slate-600 mb-1">Cajeros Autorizados / Asignados (Marque para asignar, desmarque para retirar)</label>
+                                        <div class="max-h-32 overflow-y-auto border rounded p-2 bg-white space-y-1">
+                                            {% for cajero in cajeros_list %}
+                                                <label class="flex items-center space-x-2 text-xs cursor-pointer hover:bg-slate-50 p-1 rounded">
+                                                    <input type="checkbox" name="cajeros_asignados" value="{{ cajero.id }}" {% if cajero in caja.cajeros_asignados.all %}checked{% endif %} class="rounded text-blue-600">
+                                                    <span class="font-medium text-slate-800">{{ cajero.username }}</span>
+                                                </label>
+                                            {% empty %}
+                                                <span class="text-xs text-slate-400 italic">No hay cajeros registrados en el sistema.</span>
+                                            {% endfor %}
+                                        </div>
+                                    </div>
+                                    <div class="flex justify-end space-x-2 pt-2">
+                                        <button type="submit" class="bg-green-600 hover:bg-green-700 text-white text-xs font-bold py-1.5 px-3 rounded shadow transition">
+                                            Guardar Cambios
+                                        </button>
+                                    </div>
+                                </form>
+                                <div class="border-t pt-2 flex justify-between items-center">
+                                    <span class="text-[11px] text-slate-500">ID Caja: #{{ caja.id }} | Turnos Activos: {{ caja.turnocaja_set.filter.count }}</span>
+                                    <form method="POST" onsubmit="return confirm('¿Está seguro de eliminar la caja {{ caja.nombre }}?')">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="action" value="eliminar">
+                                        <input type="hidden" name="caja_id" value="{{ caja.id }}">
+                                        <button type="submit" class="bg-red-600 hover:bg-red-700 text-white text-[11px] font-bold py-1 px-2.5 rounded shadow transition">
+                                            Eliminar Caja
+                                        </button>
+                                    </form>
+                                </div>
+                            </div>
+                        {% empty %}
+                            <p class="text-slate-500 text-xs italic">No hay cajas registradas en el sistema.</p>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <footer class="bg-white border-t border-slate-200 py-6 text-center text-xs text-slate-500 mt-10">
+        <p>&copy; 2026 Global Exchange - Ingeniería de Software 2 (FPUNA). Todos los derechos reservados.</p>
+    </footer>
+</body>
+</html>

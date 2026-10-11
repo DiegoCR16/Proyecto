@@ -1357,6 +1357,7 @@ def client_acreditation_management_view(request):
             alias_transferencia = request.POST.get('alias_transferencia', '').strip()
             numero_tarjeta = request.POST.get('numero_tarjeta', '').strip()
             fecha_expiracion = request.POST.get('fecha_expiracion', '').strip()
+            cvc_cvv = request.POST.get('cvc_cvv', '').strip()
             moneda = request.POST.get('moneda', 'PYG').strip()
             titularidad = request.POST.get('titularidad', '').strip()
             es_pred = request.POST.get('es_predeterminado') == 'on'
@@ -1373,6 +1374,7 @@ def client_acreditation_management_view(request):
                     alias_transferencia=alias_transferencia if tipo_medio == 'ALIAS' else None,
                     numero_tarjeta=numero_tarjeta if tipo_medio in ['TARJETA_CREDITO', 'TARJETA_DEBITO'] else None,
                     fecha_expiracion=fecha_expiracion if tipo_medio in ['TARJETA_CREDITO', 'TARJETA_DEBITO'] else None,
+                    cvc_cvv=cvc_cvv if tipo_medio in ['TARJETA_CREDITO', 'TARJETA_DEBITO'] else None,
                     moneda=moneda,
                     titularidad=titularidad,
                     estado='VERIFICADO',
@@ -1402,6 +1404,7 @@ def client_acreditation_management_view(request):
             alias_transferencia = request.POST.get('alias_transferencia', method.alias_transferencia or '').strip()
             numero_tarjeta = request.POST.get('numero_tarjeta', method.numero_tarjeta or '').strip()
             fecha_expiracion = request.POST.get('fecha_expiracion', method.fecha_expiracion or '').strip()
+            cvc_cvv = request.POST.get('cvc_cvv', method.cvc_cvv or '').strip()
             moneda = request.POST.get('moneda', method.moneda).strip()
             titularidad = request.POST.get('titularidad', method.titularidad).strip()
             es_pred = request.POST.get('es_predeterminado') == 'on'
@@ -1415,6 +1418,7 @@ def client_acreditation_management_view(request):
                 method.alias_transferencia = alias_transferencia if tipo_medio == 'ALIAS' else None
                 method.numero_tarjeta = numero_tarjeta if tipo_medio in ['TARJETA_CREDITO', 'TARJETA_DEBITO'] else None
                 method.fecha_expiracion = fecha_expiracion if tipo_medio in ['TARJETA_CREDITO', 'TARJETA_DEBITO'] else None
+                method.cvc_cvv = cvc_cvv if tipo_medio in ['TARJETA_CREDITO', 'TARJETA_DEBITO'] else None
                 method.moneda = moneda
                 method.titularidad = titularidad
                 method.es_predeterminado = es_pred

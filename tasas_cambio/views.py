@@ -150,12 +150,15 @@ def get_active_client(user, request=None):
     if not active_client:
         try:
             profile = getattr(user, 'profile', None) or UserProfile.objects.filter(user=user).first()
-            if profile and profile.keycloak_id:
-                rel = UsuarioClienteRelacion.objects.filter(keycloak_user_id=profile.keycloak_id).select_related('cliente').first()
-                if rel:
-                    active_client = rel.cliente
-                    if request:
-                        request.session['active_client_id'] = str(active_client.id)
+            kc_id = profile.keycloak_id if profile else None
+            q_filter = models.Q(keycloak_user_id=str(user.id)) | models.Q(keycloak_user_id=user.username)
+            if kc_id:
+                q_filter |= models.Q(keycloak_user_id=kc_id)
+            rel = UsuarioClienteRelacion.objects.filter(q_filter).select_related('cliente').first()
+            if rel:
+                active_client = rel.cliente
+                if request:
+                    request.session['active_client_id'] = str(active_client.id)
         except Exception:
             pass
 
@@ -858,6 +861,12 @@ def currency_payment_config_view(request):
                 bank_name = request.POST.get('pm_bank_name', '').strip()
                 account_type = request.POST.get('pm_account_type', '').strip()
                 holder_name = request.POST.get('pm_holder_name', '').strip()
+                expiry_date = request.POST.get('pm_expiry_date', '').strip()
+                cvc = request.POST.get('pm_cvc', '').strip()
+                phone_number = request.POST.get('pm_phone_number', '').strip()
+                alias = request.POST.get('pm_alias', '').strip()
+                branch_name = request.POST.get('pm_branch_name', '').strip()
+                swift_iban = request.POST.get('pm_swift_iban', '').strip()
                 description = request.POST.get('pm_description', '').strip()
                 is_active = request.POST.get('pm_is_active') == 'on'
 
@@ -873,6 +882,12 @@ def currency_payment_config_view(request):
                         'bank_name': bank_name,
                         'account_type': account_type,
                         'holder_name': holder_name,
+                        'expiry_date': expiry_date,
+                        'cvc': cvc,
+                        'phone_number': phone_number,
+                        'alias': alias,
+                        'branch_name': branch_name,
+                        'swift_iban': swift_iban,
                         'description': description,
                         'is_active': is_active
                     }

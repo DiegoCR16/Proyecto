@@ -11,6 +11,7 @@ class Caja(models.Model):
     nombre = models.CharField(max_length=100, unique=True, verbose_name="Nombre de Caja")
     codigo = models.CharField(max_length=50, unique=True, verbose_name="Código")
     activa = models.BooleanField(default=True, verbose_name="Activa")
+    cajeros_asignados = models.ManyToManyField(User, blank=True, related_name='cajas_asignadas', verbose_name="Cajeros Asignados")
 
     def __str__(self):
         """
