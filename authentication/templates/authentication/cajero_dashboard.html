@@ -68,11 +68,8 @@
                     <p class="text-sm text-slate-600 mb-4">Ejecutar compras y ventas de divisas digitales o en efectivo asociadas al turno activo.</p>
                 </div>
                 <div class="space-y-2">
-                    <a href="{% url 'procesamiento_operaciones:currency_purchase' %}" class="block text-center bg-blue-900 hover:bg-blue-800 text-white font-semibold py-2 px-3 rounded-lg text-xs transition">
-                        Registrar Compra de Divisas &rarr;
-                    </a>
-                    <a href="{% url 'procesamiento_operaciones:currency_sale' %}" class="block text-center bg-blue-700 hover:bg-blue-600 text-white font-semibold py-2 px-3 rounded-lg text-xs transition">
-                        Registrar Venta de Divisas &rarr;
+                    <a href="{% url 'caja:ventanilla_pos' %}" class="block text-center bg-emerald-700 hover:bg-emerald-800 text-white font-bold py-3 px-3 rounded-lg text-sm transition shadow">
+                        💷 POS Ventanilla Presencial (PSE-38) &rarr;
                     </a>
                 </div>
             </div>

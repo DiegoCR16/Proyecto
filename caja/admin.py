@@ -2,7 +2,7 @@
 from django.contrib import admin
 from .models import (
     Caja, TurnoCaja, DenominacionDivisa, DesgloseEfectivoCaja, 
-    DetalleDesgloseBillete, ArqueoCaja, BitacoraArqueo
+    DetalleDesgloseBillete, ArqueoCaja, BitacoraArqueo, OperacionVentanilla
 )
 
 @admin.register(Caja)
@@ -78,4 +78,14 @@ class BitacoraArqueoAdmin(admin.ModelAdmin):
     list_display = ('id', 'turno', 'divisa', 'tipo_descuadre', 'monto_diferencia', 'administrador_notificado', 'fecha')
     list_filter = ('tipo_descuadre', 'divisa', 'administrador_notificado', 'fecha')
     search_fields = ('turno__caja__nombre', 'mensaje')
+
+
+@admin.register(OperacionVentanilla)
+class OperacionVentanillaAdmin(admin.ModelAdmin):
+    """
+    Administración de Operaciones de Ventanilla (PSE-38).
+    """
+    list_display = ('comprobante_numero', 'turno', 'cajero', 'cliente', 'tipo_operacion', 'moneda_origen', 'moneda_destino', 'monto_origen', 'total_a_cobrar_entregar', 'fecha')
+    list_filter = ('tipo_operacion', 'moneda_origen', 'moneda_destino', 'fecha')
+    search_fields = ('comprobante_numero', 'cliente__nombre_o_razon_social', 'cajero__username')
 

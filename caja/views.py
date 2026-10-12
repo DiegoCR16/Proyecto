@@ -12,12 +12,14 @@ import csv
 
 from .models import (
     Caja, TurnoCaja, DenominacionDivisa, DesgloseEfectivoCaja, 
-    DetalleDesgloseBillete, ArqueoCaja, BitacoraArqueo, 
+    DetalleDesgloseBillete, ArqueoCaja, BitacoraArqueo, OperacionVentanilla,
     verificar_turno_activo, inicializar_denominaciones_default, procesar_arqueo_cierre
 )
-from authentication.models import UserProfile
+from authentication.models import UserProfile, Cliente
 from gestion_clientes.views import get_user_interface_context
 from procesamiento_operaciones.models import CurrencyPurchaseTransaction, CurrencySaleTransaction
+from tasas_cambio.models import ExchangeRate, ClientBenefitRule
+from tasas_cambio.views import ensure_default_benefit_rules
 
 
 @login_required
@@ -395,3 +397,269 @@ def detalle_turno_operaciones_view(request, turno_id):
         'now': timezone.now(),
     }
     return render(request, 'caja/detalle_turno_operaciones.html', context)
+
+
+def ventanilla_pos_view(request):
+    """
+    Vista web para el procesamiento operativo en ventanilla (POS) (PSE-38).
+    Valida que el cajero tenga un turno de caja activo, permite buscar/registrar cliente presencial,
+    seleccionar tipo de operación (Compra/Venta), par de divisas, monto, calcular tasa/comisión/vuelto
+    y procesar la transacción con emisión de comprobante y actualización en tiempo real del saldo en caja.
+
+    Args:
+        request (HttpRequest): Objeto HttpRequest.
+
+    Returns:
+        HttpResponse: Respuesta HTTP renderizada con la plantilla del POS de ventanilla.
+    """
+    inicializar_denominaciones_default()
+
+    profile, _ = UserProfile.objects.get_or_create(user=request.user)
+    interface_ctx = get_user_interface_context(request, profile)
+    is_admin = interface_ctx.get('is_admin', False)
+
+    # Verificar si el cajero tiene un turno activo
+    turno_activo = TurnoCaja.objects.filter(cajero=request.user, estado='ABIERTO').first()
+
+    tasas = ExchangeRate.objects.all()
+    clientes = Cliente.objects.all().order_by('-creado_en')[:50]
+
+    cliente_encontrado = None
+    benefit_percentage = Decimal('0.00')
+    category_name = 'Minorista'
+    ensure_default_benefit_rules()
+
+    doc_busqueda = request.GET.get('documento_busqueda', '').strip()
+    if doc_busqueda:
+        cliente_encontrado = Cliente.objects.filter(documento_identidad__icontains=doc_busqueda).first()
+        if cliente_encontrado:
+            cat = cliente_encontrado.categoria or 'MINORISTA'
+            rule = ClientBenefitRule.objects.filter(category_code__iexact=cat).first()
+            if rule:
+                benefit_percentage = rule.benefit_percentage
+                category_name = rule.category_name
+            elif str(cat).upper() == 'VIP':
+                benefit_percentage = Decimal('2.00')
+                category_name = 'VIP'
+            elif str(cat).upper() == 'CORPORATIVO':
+                benefit_percentage = Decimal('4.00')
+                category_name = 'Corporativo'
+
+    operaciones_recientes = OperacionVentanilla.objects.filter(cajero=request.user).order_by('-fecha')[:10]
+
+    context = {
+        'turno_activo': turno_activo,
+        'tasas': tasas,
+        'clientes': clientes,
+        'cliente_encontrado': cliente_encontrado,
+        'benefit_percentage': benefit_percentage,
+        'category_name': category_name,
+        'doc_busqueda': doc_busqueda,
+        'operaciones_recientes': operaciones_recientes,
+        'is_admin': is_admin,
+    }
+    return render(request, 'caja/ventanilla_pos.html', context)
+
+
+@login_required
+def procesar_ventanilla_view(request):
+    """
+    Procesa la operación presencial de compra o venta de divisas en ventanilla (PSE-38),
+    validando turno activo, buscando o registrando cliente ocasional, calculando cotización/comisión/vuelto,
+    actualizando el saldo en caja mediante desglose físico y emitiendo comprobante.
+
+    Args:
+        request (HttpRequest): Objeto HttpRequest con datos POST de la operación de ventanilla.
+
+    Returns:
+        HttpResponseRedirect: Redirección a la vista de ventanilla POS.
+    """
+    if request.method != 'POST':
+        return redirect('caja:ventanilla_pos')
+
+    turno_activo = TurnoCaja.objects.filter(cajero=request.user, estado='ABIERTO').first()
+    if not turno_activo:
+        messages.error(request, "Acceso bloqueado: No cuenta con un turno de caja activo para procesar operaciones en ventanilla.")
+        return redirect('caja:ventanilla_pos')
+
+    try:
+        tipo_operacion = request.POST.get('tipo_operacion', 'COMPRA')
+        moneda_origen = request.POST.get('moneda_origen', 'USD')
+        moneda_destino = request.POST.get('moneda_destino', 'PYG')
+        monto_origen = Decimal(request.POST.get('monto_origen') or '0')
+        efectivo_recibido = Decimal(request.POST.get('efectivo_recibido') or '0')
+
+        cliente_id = request.POST.get('cliente_id')
+        cliente = None
+        if cliente_id:
+            cliente = Cliente.objects.filter(id=cliente_id).first()
+
+        if not cliente:
+            nombre_cliente = request.POST.get('nombre_cliente', 'Cliente Ocasional Ventanilla')
+            doc_cliente = request.POST.get('documento_cliente', f'OCASIONAL-{uuid.uuid4().hex[:8].upper()}' if 'uuid' in globals() else 'OCASIONAL-001')
+            email_cliente = request.POST.get('email_cliente', 'ocasional@globalexchange.com')
+            cliente, _ = Cliente.objects.get_or_create(
+                documento_identidad=doc_cliente,
+                defaults={
+                    'nombre_o_razon_social': nombre_cliente,
+                    'email': email_cliente,
+                    'tipo_cliente': 'FISICA',
+                    'categoria': 'MINORISTA'
+                }
+            )
+
+        if monto_origen <= 0:
+            messages.error(request, "El monto de origen debe ser mayor a cero.")
+            return redirect('caja:ventanilla_pos')
+
+        # Resolver beneficio por categoría del cliente (VIP / Corporativo)
+        ensure_default_benefit_rules()
+        benefit_percentage = Decimal('0.00')
+        category_name = 'Minorista'
+        if cliente:
+            cat = cliente.categoria or 'MINORISTA'
+            rule = ClientBenefitRule.objects.filter(category_code__iexact=cat).first()
+            if rule:
+                benefit_percentage = rule.benefit_percentage
+                category_name = rule.category_name
+            elif str(cat).upper() == 'VIP':
+                benefit_percentage = Decimal('2.00')
+                category_name = 'VIP'
+            elif str(cat).upper() == 'CORPORATIVO':
+                benefit_percentage = Decimal('4.00')
+                category_name = 'Corporativo'
+
+        def get_db_rate(cur):
+            """Obtiene la tasa de base de datos ajustada por beneficio de categoría."""
+            if cur == 'PYG':
+                return Decimal('1.0000')
+            r = ExchangeRate.objects.filter(currency_code=cur).first()
+            if not r:
+                defaults = {'USD': Decimal('7300'), 'EUR': Decimal('7800'), 'BRL': Decimal('1400'), 'ARS': Decimal('7.5')}
+                return defaults.get(cur, Decimal('7300'))
+            base = r.buy_rate if tipo_operacion == 'COMPRA' else r.sell_rate
+            if benefit_percentage > 0:
+                if tipo_operacion == 'COMPRA':
+                    return (base * (Decimal('1.0000') + (benefit_percentage / Decimal('100.00')))).quantize(Decimal('0.0001'))
+                return (base * (Decimal('1.0000') - (benefit_percentage / Decimal('100.00')))).quantize(Decimal('0.0001'))
+            return base
+
+        def get_standard_rate(cur):
+            """Obtiene la tasa estándar (sin beneficio) para trazabilidad en comprobantes."""
+            if cur == 'PYG':
+                return Decimal('1.0000')
+            r = ExchangeRate.objects.filter(currency_code=cur).first()
+            if not r:
+                defaults = {'USD': Decimal('7300'), 'EUR': Decimal('7800'), 'BRL': Decimal('1400'), 'ARS': Decimal('7.5')}
+                return defaults.get(cur, Decimal('7300'))
+            return r.buy_rate if tipo_operacion == 'COMPRA' else r.sell_rate
+
+        tasa_origen = get_db_rate(moneda_origen)
+        tasa_destino = get_db_rate(moneda_destino)
+        std_origen = get_standard_rate(moneda_origen)
+        std_destino = get_standard_rate(moneda_destino)
+
+        valor_pyg = monto_origen if moneda_origen == 'PYG' else (monto_origen * tasa_origen)
+        comision = monto_origen * Decimal('0.005') # 0.5%
+        comision_pyg = comision if moneda_origen == 'PYG' else (comision * tasa_origen)
+
+        neto_pyg = valor_pyg - comision_pyg if tipo_operacion == 'COMPRA' else valor_pyg + comision_pyg
+        monto_destino = neto_pyg if moneda_destino == 'PYG' else (neto_pyg / tasa_destino if tasa_destino > 0 else neto_pyg)
+        tasa = tasa_origen if moneda_origen != 'PYG' else tasa_destino
+        tasa_std = std_origen if moneda_origen != 'PYG' else std_destino
+        total_a_cobrar_entregar = monto_destino
+        vuelto = efectivo_recibido - monto_destino if efectivo_recibido > monto_destino else Decimal('0.00')
+
+        import uuid as uuid_mod
+        comprobante_num = f"TICKET-VNT-{uuid_mod.uuid4().hex[:8].upper()}"
+
+        operacion = OperacionVentanilla.objects.create(
+            turno=turno_activo,
+            cajero=request.user,
+            cliente=cliente,
+            tipo_operacion=tipo_operacion,
+            moneda_origen=moneda_origen,
+            moneda_destino=moneda_destino,
+            monto_origen=monto_origen,
+            monto_destino=monto_destino,
+            tasa_aplicada=tasa,
+            benefit_percentage=benefit_percentage,
+            comision=comision,
+            total_a_cobrar_entregar=total_a_cobrar_entregar,
+            efectivo_recibido=efectivo_recibido,
+            vuelto=vuelto,
+            comprobante_numero=comprobante_num
+        )
+
+        if tipo_operacion == 'COMPRA':
+            CurrencyPurchaseTransaction.objects.create(
+                user=request.user,
+                cliente=cliente,
+                turno=turno_activo,
+                from_currency=moneda_origen,
+                to_currency=moneda_destino,
+                amount=monto_origen,
+                converted_amount=monto_destino,
+                applied_rate=tasa,
+                standard_rate=tasa_std,
+                commission_amount=comision,
+                total_pyg=total_a_cobrar_entregar if moneda_destino == 'PYG' else (monto_origen * tasa),
+                status='SUCCESS',
+                payment_method_type='EFECTIVO_VENTANILLA'
+            )
+            DesgloseEfectivoCaja.objects.create(
+                turno=turno_activo,
+                tipo_operacion='INGRESO',
+                divisa=moneda_origen,
+                monto_total=monto_origen,
+                observacion=f"Ventanilla Compra #{comprobante_num} - Cliente {cliente.nombre_o_razon_social}"
+            )
+            DesgloseEfectivoCaja.objects.create(
+                turno=turno_activo,
+                tipo_operacion='SALIDA',
+                divisa=moneda_destino,
+                monto_total=total_a_cobrar_entregar,
+                observacion=f"Ventanilla Compra Pago Net #{comprobante_num} - Cliente {cliente.nombre_o_razon_social}"
+            )
+        else:
+            CurrencySaleTransaction.objects.create(
+                user=request.user,
+                cliente=cliente,
+                turno=turno_activo,
+                from_currency=moneda_origen,
+                to_currency=moneda_destino,
+                amount=monto_origen,
+                converted_amount=monto_destino,
+                applied_rate=tasa,
+                standard_rate=tasa_std,
+                commission_amount=comision,
+                total_pyg=total_a_cobrar_entregar if moneda_origen == 'PYG' else (monto_origen * tasa),
+                status='SUCCESS',
+                payment_method_type='EFECTIVO_VENTANILLA'
+            )
+            DesgloseEfectivoCaja.objects.create(
+                turno=turno_activo,
+                tipo_operacion='INGRESO',
+                divisa=moneda_origen,
+                monto_total=total_a_cobrar_entregar,
+                observacion=f"Ventanilla Venta Cobro Net #{comprobante_num} - Cliente {cliente.nombre_o_razon_social}"
+            )
+            DesgloseEfectivoCaja.objects.create(
+                turno=turno_activo,
+                tipo_operacion='SALIDA',
+                divisa=moneda_destino,
+                monto_total=monto_destino,
+                observacion=f"Ventanilla Venta Entrega Divisa #{comprobante_num} - Cliente {cliente.nombre_o_razon_social}"
+            )
+
+        if cliente:
+            vol_add = monto_origen if moneda_origen == 'PYG' else (monto_origen * tasa)
+            cliente.transaction_volume = Decimal(str(cliente.transaction_volume or 0)) + Decimal(str(vol_add))
+            cliente.save()
+
+        messages.success(request, f"¡Operación procesada con éxito! Comprobante N° {comprobante_num} emitido. Saldo de caja actualizado en tiempo real.")
+        return redirect('caja:ventanilla_pos')
+
+    except Exception as e:
+        messages.error(request, f"Error al procesar operación en ventanilla: {str(e)}")
+        return redirect('caja:ventanilla_pos')

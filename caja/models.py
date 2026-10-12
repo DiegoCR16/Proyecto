@@ -3,6 +3,7 @@ from django.db import models
 from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError
 from decimal import Decimal
+from authentication.models import Cliente
 
 class Caja(models.Model):
     """
@@ -392,3 +393,58 @@ def procesar_arqueo_cierre(turno):
                 mensaje=mensaje,
                 administrador_notificado=True
             )
+
+
+class OperacionVentanilla(models.Model):
+    """
+    Modelo que registra las operaciones presenciales de compra o venta de divisas en ventanilla (PSE-38),
+    asociadas a un turno de caja activo, cliente presencial, cálculo de cotización, comisiones,
+    vuelto en efectivo y actualización automática del saldo en caja.
+
+    Attributes:
+        turno (TurnoCaja): Turno de caja activo del cajero.
+        cajero (User): Usuario cajero que atiende la operación.
+        cliente (Cliente): Cliente presencial (identificado por CI/RUC o creado ocasionalmente).
+        tipo_operacion (CharField): 'COMPRA' o 'VENTA'.
+        moneda_origen (CharField): Código de moneda origen (ej. 'USD', 'PYG').
+        moneda_destino (CharField): Código de moneda destino (ej. 'PYG', 'USD').
+        monto_origen (DecimalField): Monto aportado por el cliente en moneda origen.
+        monto_destino (DecimalField): Monto convertido a entregar al cliente.
+        tasa_aplicada (DecimalField): Tasa de cambio vigente aplicada.
+        comision (DecimalField): Monto de comisión aplicado.
+        total_a_cobrar_entregar (DecimalField): Monto total neto en efectivo.
+        efectivo_recibido (DecimalField): Efectivo físico recibido del cliente.
+        vuelto (DecimalField): Vuelto en efectivo calculado a entregar.
+        comprobante_numero (CharField): Número único del comprobante emitido.
+        fecha (DateTimeField): Fecha y hora de la transacción.
+    """
+    TIPO_OPERACION_CHOICES = [
+        ('COMPRA', 'Compra de Divisas'),
+        ('VENTA', 'Venta de Divisas'),
+    ]
+
+    turno = models.ForeignKey(TurnoCaja, on_delete=models.CASCADE, related_name='operaciones_ventanilla', verbose_name="Turno de Caja")
+    cajero = models.ForeignKey(User, on_delete=models.CASCADE, verbose_name="Cajero")
+    cliente = models.ForeignKey(Cliente, on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Cliente Presencial")
+    tipo_operacion = models.CharField(max_length=20, choices=TIPO_OPERACION_CHOICES, verbose_name="Tipo de Operación")
+    moneda_origen = models.CharField(max_length=10, verbose_name="Moneda Origen")
+    moneda_destino = models.CharField(max_length=10, verbose_name="Moneda Destino")
+    monto_origen = models.DecimalField(max_digits=15, decimal_places=2, verbose_name="Monto Origen")
+    monto_destino = models.DecimalField(max_digits=15, decimal_places=2, verbose_name="Monto Destino")
+    tasa_aplicada = models.DecimalField(max_digits=12, decimal_places=4, verbose_name="Tasa Aplicada")
+    benefit_percentage = models.DecimalField(max_digits=5, decimal_places=2, default=Decimal('0.00'), verbose_name="Beneficio por Categoría (%)")
+    comision = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'), verbose_name="Comisión (Gs)")
+    total_a_cobrar_entregar = models.DecimalField(max_digits=18, decimal_places=2, verbose_name="Total a Cobrar / Entregar")
+    efectivo_recibido = models.DecimalField(max_digits=18, decimal_places=2, verbose_name="Efectivo Recibido")
+    vuelto = models.DecimalField(max_digits=18, decimal_places=2, default=Decimal('0.00'), verbose_name="Vuelto en Efectivo")
+    comprobante_numero = models.CharField(max_length=50, unique=True, verbose_name="Número de Comprobante")
+    fecha = models.DateTimeField(auto_now_add=True, verbose_name="Fecha y Hora de Operación")
+
+    class Meta:
+        verbose_name = "Operación de Ventanilla"
+        verbose_name_plural = "Operaciones de Ventanilla"
+        ordering = ['-fecha']
+
+    def __str__(self):
+        """Devuelve la representación en cadena de la operación de ventanilla."""
+        return f"Ventanilla #{self.comprobante_numero} - {self.tipo_operacion}: {self.monto_origen} {self.moneda_origen} -> {self.monto_destino} {self.moneda_destino}"
