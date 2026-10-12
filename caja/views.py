@@ -6,7 +6,9 @@ from django.db.models import Q
 from django.contrib import messages
 from django.utils import timezone
 from django.core.exceptions import ValidationError
+from django.http import HttpResponse
 from decimal import Decimal
+import csv
 
 from .models import (
     Caja, TurnoCaja, DenominacionDivisa, DesgloseEfectivoCaja, 
@@ -15,6 +17,7 @@ from .models import (
 )
 from authentication.models import UserProfile
 from gestion_clientes.views import get_user_interface_context
+from procesamiento_operaciones.models import CurrencyPurchaseTransaction, CurrencySaleTransaction
 
 
 @login_required
@@ -280,3 +283,115 @@ def gestion_cajas_admin_view(request):
         'cajeros_list': cajeros_list,
     }
     return render(request, 'caja/gestion_cajas_admin.html', context)
+
+
+@login_required
+def detalle_turno_operaciones_view(request, turno_id):
+    """
+    Vista web para consultar el detalle transaccional de todas las operaciones procesadas
+    durante un turno activo o cerrado de caja (PSE-37).
+    Muestra clientes atendidos, tipos de operación (Compra/Venta), consolidado acumulado,
+    filtros, búsqueda y opción de exportar/imprimir planilla de cierre.
+    """
+    turno = get_object_or_404(TurnoCaja, id=turno_id)
+    
+    tx_type_filter = request.GET.get('tx_type', '')
+    search_query = request.GET.get('q', '').strip()
+    export_format = request.GET.get('export', '')
+
+    purchases_qs = CurrencyPurchaseTransaction.objects.filter(
+        Q(turno=turno) | Q(turno__isnull=True, user=turno.cajero, timestamp__gte=turno.fecha_apertura)
+    )
+    sales_qs = CurrencySaleTransaction.objects.filter(
+        Q(turno=turno) | Q(turno__isnull=True, user=turno.cajero, timestamp__gte=turno.fecha_apertura)
+    )
+
+    if turno.fecha_cierre:
+        purchases_qs = purchases_qs.filter(timestamp__lte=turno.fecha_cierre)
+        sales_qs = sales_qs.filter(timestamp__lte=turno.fecha_cierre)
+
+    purchases = []
+    if tx_type_filter in ['', 'COMPRA']:
+        for p in purchases_qs:
+            p.tx_type = 'COMPRA'
+            p.comprobante = f"COMPRA-{p.id}"
+            p.cliente_nombre = p.cliente.nombre_o_razon_social if p.cliente else 'N/A'
+            p.cliente_doc = p.cliente.documento_identidad if p.cliente else 'N/A'
+            p.moneda_str = f"{p.from_currency} -> {p.to_currency}"
+            p.monto_str = p.amount
+            p.medio_pago = str(p.payment_method) if p.payment_method else (p.payment_method_type or 'Efectivo / Caja')
+            purchases.append(p)
+
+    sales = []
+    if tx_type_filter in ['', 'VENTA']:
+        for s in sales_qs:
+            s.tx_type = 'VENTA'
+            s.comprobante = f"VENTA-{s.id}"
+            s.cliente_nombre = s.cliente.nombre_o_razon_social if s.cliente else 'N/A'
+            s.cliente_doc = s.cliente.documento_identidad if s.cliente else 'N/A'
+            s.moneda_str = f"{s.from_currency} -> {s.to_currency}"
+            s.monto_str = s.amount
+            s.medio_pago = str(s.linked_account) if s.linked_account else (s.payment_method_type or 'Efectivo / Cuenta')
+            sales.append(s)
+
+    all_ops = sorted(purchases + sales, key=lambda x: x.timestamp, reverse=True)
+
+    if search_query:
+        q_lower = search_query.lower()
+        filtered_ops = []
+        for op in all_ops:
+            if q_lower in op.cliente_nombre.lower() or q_lower in op.cliente_doc.lower() or q_lower in str(op.id):
+                filtered_ops.append(op)
+        all_ops = filtered_ops
+
+    total_compras_count = len([op for op in all_ops if op.tx_type == 'COMPRA'])
+    total_ventas_count = len([op for op in all_ops if op.tx_type == 'VENTA'])
+    
+    acumulado_compras_pyg = sum([op.total_pyg for op in all_ops if op.tx_type == 'COMPRA' and hasattr(op, 'total_pyg') and op.total_pyg], Decimal('0.00'))
+    acumulado_ventas_pyg = sum([op.total_pyg for op in all_ops if op.tx_type == 'VENTA' and hasattr(op, 'total_pyg') and op.total_pyg], Decimal('0.00'))
+
+    if export_format == 'excel':
+        response = HttpResponse(content_type='text/csv; charset=utf-8')
+        response['Content-Disposition'] = f'attachment; filename="planilla_turno_{turno.id}.csv"'
+        writer = csv.writer(response)
+        writer.writerow(['Hora', 'Comprobante', 'Tipo Operacion', 'Cliente', 'Documento RUC/CI', 'Moneda', 'Monto', 'Medio de Pago', 'Total PYG', 'Estado'])
+        for op in all_ops:
+            writer.writerow([
+                op.timestamp.strftime('%Y-%m-%d %H:%M:%S'),
+                op.comprobante,
+                op.tx_type,
+                op.cliente_nombre,
+                op.cliente_doc,
+                op.moneda_str,
+                op.monto_str,
+                op.medio_pago,
+                getattr(op, 'total_pyg', 0),
+                op.status
+            ])
+        return response
+
+    if export_format == 'pdf' or export_format == 'print':
+        context = {
+            'turno': turno,
+            'operaciones': all_ops,
+            'total_compras_count': total_compras_count,
+            'total_ventas_count': total_ventas_count,
+            'acumulado_compras_pyg': acumulado_compras_pyg,
+            'acumulado_ventas_pyg': acumulado_ventas_pyg,
+            'is_print': True,
+            'now': timezone.now(),
+        }
+        return render(request, 'caja/planilla_cierre_turno_pdf.html', context)
+
+    context = {
+        'turno': turno,
+        'operaciones': all_ops,
+        'total_compras_count': total_compras_count,
+        'total_ventas_count': total_ventas_count,
+        'acumulado_compras_pyg': acumulado_compras_pyg,
+        'acumulado_ventas_pyg': acumulado_ventas_pyg,
+        'tx_type': tx_type_filter,
+        'search_query': search_query,
+        'now': timezone.now(),
+    }
+    return render(request, 'caja/detalle_turno_operaciones.html', context)

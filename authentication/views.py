@@ -449,6 +449,16 @@ def dashboard_redirect_view(request):
         unread_notifications_count = 0
         recent_gateway_logs = []
 
+    active_turn_cajero = None
+    cajas_cajero = []
+    try:
+        from caja.models import TurnoCaja, Caja
+        active_turn_cajero = TurnoCaja.objects.filter(cajero=request.user, estado='ABIERTO').first()
+        if not active_turn_cajero:
+            cajas_cajero = Caja.objects.filter(activa=True, cajeros_asignados=request.user)
+    except Exception:
+        pass
+
     context = {
         'profile': profile,
         'rates': personalized_rates,
@@ -459,6 +469,8 @@ def dashboard_redirect_view(request):
         'unread_notifications': unread_notifications,
         'unread_notifications_count': unread_notifications_count,
         'recent_gateway_logs': recent_gateway_logs,
+        'active_turn_cajero': active_turn_cajero,
+        'cajas_cajero': cajas_cajero,
         'now': timezone.now(),
         **interface_ctx,
     }
