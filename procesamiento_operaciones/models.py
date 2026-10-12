@@ -16,6 +16,7 @@ class CurrencyPurchaseTransaction(models.Model):
     Attributes:
         user (ForeignKey): Usuario solicitante.
         cliente (ForeignKey): Cliente asociado.
+        turno (ForeignKey): Turno de caja asociado.
         from_currency (CharField): Moneda de origen.
         to_currency (CharField): Moneda de destino.
         amount (DecimalField): Monto de origen.
@@ -34,6 +35,7 @@ class CurrencyPurchaseTransaction(models.Model):
     """
     user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Usuario")
     cliente = models.ForeignKey(Cliente, on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Cliente")
+    turno = models.ForeignKey('caja.TurnoCaja', on_delete=models.SET_NULL, null=True, blank=True, related_name='purchase_transactions', verbose_name="Turno de Caja")
     from_currency = models.CharField(max_length=10, verbose_name="Moneda Origen")
     to_currency = models.CharField(max_length=10, verbose_name="Moneda Destino")
     amount = models.DecimalField(max_digits=15, decimal_places=2, verbose_name="Monto Origen")
@@ -113,6 +115,7 @@ class CurrencySaleTransaction(models.Model):
     """
     user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Usuario")
     cliente = models.ForeignKey(Cliente, on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Cliente")
+    turno = models.ForeignKey('caja.TurnoCaja', on_delete=models.SET_NULL, null=True, blank=True, related_name='sale_transactions', verbose_name="Turno de Caja")
     from_currency = models.CharField(max_length=10, verbose_name="Moneda Origen")
     to_currency = models.CharField(max_length=10, default='PYG', verbose_name="Moneda Destino")
     amount = models.DecimalField(max_digits=15, decimal_places=2, verbose_name="Monto Origen")

@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Global Exchange - Detalle Operaciones y Clientes por Turno de Caja (PSE-37)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>body { font-family: 'Inter', sans-serif; }</style>
+</head>
+<body class="bg-slate-50 min-h-screen text-slate-900 flex flex-col justify-between">
+    <!-- Header Corporativo -->
+    <header class="bg-slate-900 text-white shadow-md">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between h-16 items-center">
+                <div class="flex items-center space-x-3">
+                    <div class="w-9 h-9 bg-blue-800 rounded-lg flex items-center justify-center font-bold text-lg shadow">GX</div>
+                    <span class="font-bold text-lg tracking-wide">Global Exchange</span>
+                    <span class="text-xs bg-blue-800 px-3 py-1 rounded-full font-medium ml-2 text-white">Auditoría de Caja (PSE-37)</span>
+                </div>
+                <div class="flex items-center space-x-4 text-sm">
+                    <span class="text-slate-300">Usuario: <strong class="text-white">{{ request.user.username }}</strong></span>
+                    <a href="{% url 'caja:gestion_caja' %}" class="bg-slate-800 hover:bg-slate-700 text-white px-3.5 py-1.5 rounded-lg text-sm font-medium transition duration-250">Gestión de Cajas</a>
+                    <a href="{% url 'logout' %}" class="bg-red-600 hover:bg-red-700 text-white px-3.5 py-1.5 rounded-lg text-sm font-medium transition duration-250">Cerrar Sesión</a>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 flex-grow w-full">
+        <!-- Mensajes -->
+        {% if messages %}
+            <div class="mb-6 space-y-2">
+                {% for message in messages %}
+                    <div class="p-4 rounded-lg text-sm bg-blue-100 text-blue-800 border border-blue-300">{{ message }}</div>
+                {% endfor %}
+            </div>
+        {% endif %}
+
+        <!-- Cabecera e Identificador del Turno -->
+        <div class="mb-8 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+            <div>
+                <div class="flex items-center space-x-3 mb-1">
+                    <h1 class="text-3xl font-extrabold text-slate-900">Panel Auditado: Turno #{{ turno.id }}</h1>
+                    <span class="px-3 py-1 rounded-full text-xs font-bold {% if turno.estado == 'ABIERTO' %}bg-green-600 text-white{% else %}bg-slate-700 text-white{% endif %}">
+                        {{ turno.get_estado_display }}
+                    </span>
+                </div>
+                <p class="text-slate-600 text-sm">Caja: <strong class="text-slate-900">{{ turno.caja.nombre }}</strong> (Código: {{ turno.caja.codigo }}) | Cajero Responsable: <strong class="text-slate-900">{{ turno.cajero.username }}</strong></p>
+                <p class="text-xs text-slate-500 mt-0.5">Apertura: {{ turno.fecha_apertura|date:"d/m/Y H:i" }} {% if turno.fecha_cierre %}| Cierre: {{ turno.fecha_cierre|date:"d/m/Y H:i" }}{% endif %}</p>
+            </div>
+            <div class="flex items-center space-x-3">
+                <a href="?export=excel" class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 rounded-xl text-sm font-medium shadow transition inline-flex items-center space-x-2">
+                    <span>📊 Exportar CSV</span>
+                </a>
+                <a href="?export=pdf" target="_blank" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-xl text-sm font-medium shadow transition inline-flex items-center space-x-2">
+                    <span>🖨️ Imprimir / Planilla Cierre</span>
+                </a>
+                <a href="{% url 'caja:gestion_caja' %}" class="bg-slate-900 hover:bg-slate-800 text-white px-4 py-2.5 rounded-xl text-sm font-medium shadow transition">
+                    &larr; Volver
+                </a>
+            </div>
+        </div>
+
+        <!-- Tarjetas de Resumen Consolidado (Criterio 3) -->
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+            <div class="bg-white p-6 rounded-xl shadow-md border border-slate-200">
+                <span class="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-1">Total Operaciones</span>
+                <span class="text-3xl font-extrabold text-slate-900">{{ operaciones|length }}</span>
+                <span class="text-xs text-slate-500 block mt-1">Compras: {{ total_compras_count }} | Ventas: {{ total_ventas_count }}</span>
+            </div>
+            <div class="bg-white p-6 rounded-xl shadow-md border border-slate-200">
+                <span class="text-xs font-bold text-emerald-600 uppercase tracking-wider block mb-1">Ingresos por Ventas (PYG)</span>
+                <span class="text-2xl font-extrabold text-emerald-700 font-mono">₲ {{ acumulado_ventas_pyg|floatformat:2 }}</span>
+                <span class="text-xs text-slate-500 block mt-1">Acumulado jornada cajero</span>
+            </div>
+            <div class="bg-white p-6 rounded-xl shadow-md border border-slate-200">
+                <span class="text-xs font-bold text-rose-600 uppercase tracking-wider block mb-1">Egresos por Compras (PYG)</span>
+                <span class="text-2xl font-extrabold text-rose-700 font-mono">₲ {{ acumulado_compras_pyg|floatformat:2 }}</span>
+                <span class="text-xs text-slate-500 block mt-1">Acumulado jornada cajero</span>
+            </div>
+            <div class="bg-white p-6 rounded-xl shadow-md border border-slate-200">
+                <span class="text-xs font-bold text-blue-800 uppercase tracking-wider block mb-1">Flujo Neto Turno</span>
+                <span class="text-2xl font-extrabold text-blue-900 font-mono">₲ {{ acumulado_ventas_pyg|floatformat:2 }}</span>
+                <span class="text-xs text-slate-500 block mt-1">Balance transaccional</span>
+            </div>
+        </div>
+
+        <!-- Barra de Filtros y Búsqueda (Criterio 4) -->
+        <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200 mb-6">
+            <form method="GET" class="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+                <div>
+                    <label class="block text-xs font-semibold text-slate-700 mb-1">Tipo de Operación</label>
+                    <select name="tx_type" class="w-full border border-slate-300 rounded-lg p-2 text-sm bg-white font-medium">
+                        <option value="">Todas las Operaciones (Compra y Venta)</option>
+                        <option value="COMPRA" {% if tx_type == 'COMPRA' %}selected{% endif %}>Solo Compras</option>
+                        <option value="VENTA" {% if tx_type == 'VENTA' %}selected{% endif %}>Solo Ventas</option>
+                    </select>
+                </div>
+                <div class="md:col-span-2">
+                    <label class="block text-xs font-semibold text-slate-700 mb-1">Buscar Cliente (Nombre o RUC / Cédula)</label>
+                    <input type="text" name="q" value="{{ search_query }}" placeholder="Ej. Juan Pérez o 1234567-8" class="w-full border border-slate-300 rounded-lg p-2 text-sm">
+                </div>
+                <div class="flex space-x-2">
+                    <button type="submit" class="flex-grow bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg text-sm transition shadow">
+                        🔍 Filtrar y Buscar
+                    </button>
+                    <a href="{% url 'caja:detalle_turno_operaciones' turno.id %}" class="bg-slate-200 hover:bg-slate-300 text-slate-800 font-medium py-2 px-3 rounded-lg text-sm transition">
+                        Limpiar
+                    </a>
+                </div>
+            </form>
+        </div>
+
+        <!-- Tabla de Detalle Transaccional (Criterios 1 & 2) -->
+        <div class="bg-white rounded-xl shadow-lg border border-slate-200 overflow-hidden">
+            <div class="bg-slate-900 text-white p-4 flex justify-between items-center">
+                <h3 class="font-bold text-base">Detalle Transaccional y Clientes Atendidos en Ventanilla</h3>
+                <span class="text-xs bg-blue-800 px-3 py-1 rounded-full font-mono font-bold">{{ operaciones|length }} registros encontrados</span>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="w-full text-xs font-mono text-left">
+                    <thead>
+                        <tr class="bg-slate-100 text-slate-700 border-b uppercase font-sans text-[11px]">
+                            <th class="p-3">Hora</th>
+                            <th class="p-3">Comprobante</th>
+                            <th class="p-3">Tipo Operación</th>
+                            <th class="p-3">Cliente Atendido (Nombre & RUC/CI)</th>
+                            <th class="p-3">Divisa / Moneda</th>
+                            <th class="p-3 text-right">Monto Origen</th>
+                            <th class="p-3">Medio de Pago / Acreditación</th>
+                            <th class="p-3 text-right">Total PYG</th>
+                            <th class="p-3 text-center">Estado</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-200">
+                        {% if operaciones %}
+                            {% for op in operaciones %}
+                                <tr class="hover:bg-slate-50 transition">
+                                    <td class="p-3 text-slate-600 font-semibold">{{ op.timestamp|date:"H:i:s" }} <span class="block text-[10px] text-slate-400 font-normal">{{ op.timestamp|date:"d/m/Y" }}</span></td>
+                                    <td class="p-3 font-bold text-slate-900">{{ op.comprobante }}</td>
+                                    <td class="p-3">
+                                        {% if op.tx_type == 'COMPRA' %}
+                                            <span class="px-2.5 py-1 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800">
+                                                ↓ COMPRA
+                                            </span>
+                                        {% else %}
+                                            <span class="px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
+                                                ↑ VENTA
+                                            </span>
+                                        {% endif %}
+                                    </td>
+                                    <td class="p-3 font-sans">
+                                        <div class="font-bold text-slate-900">{{ op.cliente_nombre }}</div>
+                                        <div class="text-[11px] text-slate-500 font-mono">Doc: {{ op.cliente_doc }}</div>
+                                    </td>
+                                    <td class="p-3 font-bold text-slate-800">{{ op.moneda_str }}</td>
+                                    <td class="p-3 text-right font-semibold">{{ op.monto_str|floatformat:2 }}</td>
+                                    <td class="p-3 font-sans text-slate-700">{{ op.medio_pago }}</td>
+                                    <td class="p-3 text-right font-bold text-slate-900">₲ {{ op.total_pyg|floatformat:2 }}</td>
+                                    <td class="p-3 text-center">
+                                        <span class="px-2 py-0.5 rounded text-[10px] font-semibold {% if op.status == 'SUCCESS' %}bg-green-100 text-green-800{% else %}bg-amber-100 text-amber-800{% endif %}">
+                                            {{ op.status }}
+                                        </span>
+                                    </td>
+                                </tr>
+                            {% endfor %}
+                        {% else %}
+                            <tr>
+                                <td colspan="9" class="p-8 text-center text-slate-500 italic font-sans">
+                                    No se encontraron transacciones registradas para este turno de caja con los filtros seleccionados.
+                                </td>
+                            </tr>
+                        {% endif %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </main>
+
+    <footer class="bg-white border-t border-slate-200 py-6 text-center text-xs text-slate-500 mt-10">
+        <p>&copy; 2026 Global Exchange - Ingeniería de Software 2 (FPUNA). Todos los derechos reservados.</p>
+    </footer>
+</body>
+</html>

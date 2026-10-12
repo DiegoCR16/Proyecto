@@ -43,29 +43,66 @@
         <div class="mb-8 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
             <div>
                 <h1 class="text-3xl font-bold text-slate-900">Panel Operativo de Cajero</h1>
-                <p class="text-slate-600 mt-1">Gestión de turnos de caja, compra/venta de efectivo y arqueo de divisas.</p>
+                <p class="text-slate-600 mt-1">Gestión de turnos de caja, compra/venta de efectivo y auditoría transaccional de ventanilla.</p>
             </div>
             <div class="bg-white border border-slate-200 p-4 rounded-xl shadow-sm flex items-center space-x-3">
-                <div class="w-9 h-9 rounded-full bg-amber-100 text-amber-800 flex items-center justify-center font-bold text-sm">
+                <div class="w-9 h-9 rounded-full {% if active_turn_cajero %}bg-green-100 text-green-800{% else %}bg-amber-100 text-amber-800{% endif %} flex items-center justify-center font-bold text-sm">
                     💱
                 </div>
                 <div>
-                    <span class="text-[10px] font-medium text-slate-500 uppercase tracking-wider block">Estado de Caja</span>
-                    <span class="font-bold text-green-700 text-sm">Turno Abierto &bull; Sucursal Central</span>
+                    <span class="text-[10px] font-medium text-slate-500 uppercase tracking-wider block">Estado de Caja (Turno)</span>
+                    {% if active_turn_cajero %}
+                        <span class="font-bold text-green-700 text-sm">Turno Activo #{{ active_turn_cajero.id }} &bull; {{ active_turn_cajero.caja.nombre }}</span>
+                    {% else %}
+                        <span class="font-bold text-red-600 text-sm">Sin Turno Activo &bull; Operaciones Bloqueadas</span>
+                    {% endif %}
                 </div>
             </div>
         </div>
 
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-            <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-                <h3 class="text-lg font-semibold text-slate-800 mb-2">Operación de Caja</h3>
-                <p class="text-sm text-slate-600 mb-4">Ejecutar transacciones de ventanilla (compra/venta de efectivo y billetes).</p>
-                <a href="#" class="text-amber-800 font-semibold text-sm hover:underline">Nueva Transacción &rarr;</a>
+        <!-- Tarjetas de Acceso Operativo Directo -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+            <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200 flex flex-col justify-between">
+                <div>
+                    <h3 class="text-lg font-semibold text-slate-800 mb-2">Operaciones de Ventanilla</h3>
+                    <p class="text-sm text-slate-600 mb-4">Ejecutar compras y ventas de divisas digitales o en efectivo asociadas al turno activo.</p>
+                </div>
+                <div class="space-y-2">
+                    <a href="{% url 'procesamiento_operaciones:currency_purchase' %}" class="block text-center bg-blue-900 hover:bg-blue-800 text-white font-semibold py-2 px-3 rounded-lg text-xs transition">
+                        Registrar Compra de Divisas &rarr;
+                    </a>
+                    <a href="{% url 'procesamiento_operaciones:currency_sale' %}" class="block text-center bg-blue-700 hover:bg-blue-600 text-white font-semibold py-2 px-3 rounded-lg text-xs transition">
+                        Registrar Venta de Divisas &rarr;
+                    </a>
+                </div>
             </div>
-            <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-                <h3 class="text-lg font-semibold text-slate-800 mb-2">Arqueo y Cierre</h3>
-                <p class="text-sm text-slate-600 mb-4">Control de saldos, desglose físico de billetes y apertura/cierre de turno de caja (PSE-20).</p>
-                <a href="{% url 'caja:gestion_caja' %}" class="text-amber-800 font-semibold text-sm hover:underline">Gestionar Turnos y Cajas &rarr;</a>
+
+            <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200 flex flex-col justify-between">
+                <div>
+                    <h3 class="text-lg font-semibold text-slate-800 mb-2">Auditoría y Clientes (PSE-37)</h3>
+                    <p class="text-sm text-slate-600 mb-4">Consultar detalle transaccional, clientes atendidos (RUC/CI), consolidado y planilla de cierre.</p>
+                </div>
+                <div>
+                    {% if active_turn_cajero %}
+                        <a href="{% url 'caja:detalle_turno_operaciones' active_turn_cajero.id %}" class="block text-center bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 px-3 rounded-lg text-xs transition shadow">
+                            🔍 Consultar Operaciones del Turno (PSE-37)
+                        </a>
+                    {% else %}
+                        <p class="text-xs text-slate-500 italic text-center py-2">Abra un turno para consultar la planilla y operaciones.</p>
+                    {% endif %}
+                </div>
+            </div>
+
+            <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200 flex flex-col justify-between">
+                <div>
+                    <h3 class="text-lg font-semibold text-slate-800 mb-2">Arqueo, Apertura y Cierre</h3>
+                    <p class="text-sm text-slate-600 mb-4">Control de saldos, desglose de billetes y apertura o cierre de turno de caja (PSE-20/21/22).</p>
+                </div>
+                <div>
+                    <a href="{% url 'caja:gestion_caja' %}" class="block text-center bg-slate-900 hover:bg-slate-800 text-white font-bold py-2.5 px-3 rounded-lg text-xs transition shadow">
+                        ⚙️ Gestionar Turnos y Arqueos &rarr;
+                    </a>
+                </div>
             </div>
         </div>
 

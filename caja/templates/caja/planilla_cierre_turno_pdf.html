@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Planilla de Cierre y Detalle de Turno #{{ turno.id }} - Global Exchange</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #ffffff; color: #0f172a; }
+        @media print {
+            .no-print { display: none !important; }
+            body { padding: 0; }
+        }
+    </style>
+</head>
+<body class="p-8 max-w-5xl mx-auto">
+    <!-- Controles de Impresión -->
+    <div class="no-print mb-6 flex justify-between items-center bg-slate-100 p-4 rounded-xl border border-slate-300">
+        <div>
+            <h3 class="font-bold text-slate-800 text-sm">Vista de Impresión / Planilla de Cierre Auditada (PSE-37)</h3>
+            <p class="text-xs text-slate-600">Puede imprimir este documento o guardarlo como PDF usando el botón de impresión del navegador.</p>
+        </div>
+        <div class="space-x-3">
+            <button onclick="window.print()" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg text-xs shadow transition">
+                🖨️ Imprimir Planilla
+            </button>
+            <a href="{% url 'caja:detalle_turno_operaciones' turno.id %}" class="bg-slate-800 hover:bg-slate-900 text-white font-medium py-2 px-4 rounded-lg text-xs transition">
+                &larr; Volver
+            </a>
+        </div>
+    </div>
+
+    <!-- Cabecera Institucional del Reporte -->
+    <div class="border-b-2 border-slate-900 pb-6 mb-6 flex justify-between items-start">
+        <div>
+            <div class="flex items-center space-x-3 mb-2">
+                <div class="w-10 h-10 bg-slate-900 text-white rounded-xl flex items-center justify-center font-extrabold text-xl">GX</div>
+                <div>
+                    <h1 class="text-2xl font-extrabold text-slate-900 tracking-wide">GLOBAL EXCHANGE S.A.</h1>
+                    <p class="text-xs text-slate-500 font-mono">Casa de Cambios - Sistema Integrado de Operaciones (IS2-FPUNA)</p>
+                </div>
+            </div>
+            <h2 class="text-lg font-bold text-blue-900 mt-4">PLANILLA DE CIERRE Y DETALLE AUDITADO DE TURNO DE CAJA</h2>
+        </div>
+        <div class="text-right text-xs font-mono text-slate-600 space-y-1">
+            <p><strong>Turno ID:</strong> #{{ turno.id }}</p>
+            <p><strong>Fecha Emisión:</strong> {{ now|date:"d/m/Y H:i:s" }}</p>
+            <p><strong>Estado Turno:</strong> {{ turno.get_estado_display }}</p>
+        </div>
+    </div>
+
+    <!-- Información de Caja y Cajero -->
+    <div class="grid grid-cols-2 gap-4 bg-slate-50 p-4 rounded-xl border border-slate-200 mb-6 text-xs font-mono">
+        <div>
+            <p><strong>Caja Física:</strong> {{ turno.caja.nombre }} (Código: {{ turno.caja.codigo }})</p>
+            <p><strong>Cajero Responsable:</strong> {{ turno.cajero.get_full_name|default:turno.cajero.username }}</p>
+        </div>
+        <div>
+            <p><strong>Apertura:</strong> {{ turno.fecha_apertura|date:"d/m/Y H:i" }}</p>
+            <p><strong>Cierre:</strong> {% if turno.fecha_cierre %}{{ turno.fecha_cierre|date:"d/m/Y H:i" }}{% else %}En Curso (Activo){% endif %}</p>
+        </div>
+    </div>
+
+    <!-- Resumen Consolidado (Criterio 3) -->
+    <div class="mb-6">
+        <h3 class="font-bold text-sm text-slate-900 mb-3 uppercase tracking-wider">Consolidado General de Operaciones de la Jornada</h3>
+        <div class="grid grid-cols-3 gap-4 text-xs font-mono">
+            <div class="bg-slate-50 p-3 rounded-lg border border-slate-200">
+                <span class="text-slate-500 block mb-1">Total Transacciones:</span>
+                <strong class="text-base text-slate-900">{{ operaciones|length }} (Compras: {{ total_compras_count }} | Ventas: {{ total_ventas_count }})</strong>
+            </div>
+            <div class="bg-slate-50 p-3 rounded-lg border border-slate-200">
+                <span class="text-emerald-700 block mb-1">Total Ingresos Ventas (PYG):</span>
+                <strong class="text-base text-emerald-800">₲ {{ acumulado_ventas_pyg|floatformat:2 }}</strong>
+            </div>
+            <div class="bg-slate-50 p-3 rounded-lg border border-slate-200">
+                <span class="text-rose-700 block mb-1">Total Egresos Compras (PYG):</span>
+                <strong class="text-base text-rose-800">₲ {{ acumulado_compras_pyg|floatformat:2 }}</strong>
+            </div>
+        </div>
+    </div>
+
+    <!-- Detalle Exhaustivo de Transacciones y Clientes (Criterios 1 y 2) -->
+    <div class="mb-8">
+        <h3 class="font-bold text-sm text-slate-900 mb-3 uppercase tracking-wider">Listado Detallado de Clientes y Operaciones Atendidas</h3>
+        <table class="w-full text-xs font-mono border-collapse border border-slate-300">
+            <thead>
+                <tr class="bg-slate-900 text-white font-sans text-[11px]">
+                    <th class="p-2 border border-slate-300">Hora</th>
+                    <th class="p-2 border border-slate-300">Comprobante</th>
+                    <th class="p-2 border border-slate-300">Tipo</th>
+                    <th class="p-2 border border-slate-300">Cliente Atendido (Nombre & RUC/CI)</th>
+                    <th class="p-2 border border-slate-300">Divisa</th>
+                    <th class="p-2 border border-slate-300 text-right">Monto</th>
+                    <th class="p-2 border border-slate-300">Medio de Pago</th>
+                    <th class="p-2 border border-slate-300 text-right">Total PYG</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% if operaciones %}
+                    {% for op in operaciones %}
+                        <tr class="border border-slate-300 hover:bg-slate-50">
+                            <td class="p-2 border border-slate-300 text-center">{{ op.timestamp|date:"H:i" }}</td>
+                            <td class="p-2 border border-slate-300 font-bold">{{ op.comprobante }}</td>
+                            <td class="p-2 border border-slate-300 text-center font-bold {% if op.tx_type == 'COMPRA' %}text-rose-700{% else %}text-emerald-700{% endif %}">{{ op.tx_type }}</td>
+                            <td class="p-2 border border-slate-300 font-sans">
+                                <strong>{{ op.cliente_nombre }}</strong><br>
+                                <span class="text-[10px] text-slate-500 font-mono">Doc: {{ op.cliente_doc }}</span>
+                            </td>
+                            <td class="p-2 border border-slate-300 text-center">{{ op.moneda_str }}</td>
+                            <td class="p-2 border border-slate-300 text-right">{{ op.monto_str|floatformat:2 }}</td>
+                            <td class="p-2 border border-slate-300 font-sans">{{ op.medio_pago }}</td>
+                            <td class="p-2 border border-slate-300 text-right font-bold">₲ {{ op.total_pyg|floatformat:2 }}</td>
+                        </tr>
+                    {% endfor %}
+                {% else %}
+                    <tr>
+                        <td colspan="8" class="p-6 text-center text-slate-500 italic font-sans">No se registraron operaciones en este turno.</td>
+                    </tr>
+                {% endif %}
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Firmas de Auditoría -->
+    <div class="grid grid-cols-2 gap-12 mt-16 pt-8 border-t border-slate-400 text-center text-xs font-mono">
+        <div>
+            <div class="h-12"></div>
+            <p class="border-t border-slate-600 pt-2">Firma del Cajero Responsable</p>
+            <p class="text-slate-500 text-[10px]">{{ turno.cajero.username }}</p>
+        </div>
+        <div>
+            <div class="h-12"></div>
+            <p class="border-t border-slate-600 pt-2">Firma del Auditor / Administrador</p>
+            <p class="text-slate-500 text-[10px]">Global Exchange S.A.</p>
+        </div>
+    </div>
+</body>
+</html>

@@ -130,16 +130,21 @@
                                             <span class="text-slate-600">Apertura:</span>
                                             <span class="text-slate-900">{{ item.turno_activo.fecha_apertura|date:"d/m/Y H:i" }}</span>
                                         </div>
-                                        <div class="border-t border-slate-200 pt-2 mt-2">
-                                            <span class="font-semibold text-slate-700 block mb-1">Saldos Iniciales Registrados:</span>
-                                            <div class="grid grid-cols-3 gap-2 text-xs font-mono">
-                                                <div class="bg-white p-1.5 rounded border border-slate-200">PYG: <strong>{{ item.turno_activo.saldo_inicial_pyg }}</strong></div>
-                                                <div class="bg-white p-1.5 rounded border border-slate-200">USD: <strong>{{ item.turno_activo.saldo_inicial_usd }}</strong></div>
-                                                <div class="bg-white p-1.5 rounded border border-slate-200">EUR: <strong>{{ item.turno_activo.saldo_inicial_eur }}</strong></div>
-                                                <div class="bg-white p-1.5 rounded border border-slate-200">BRL: <strong>{{ item.turno_activo.saldo_inicial_brl }}</strong></div>
-                                                <div class="bg-white p-1.5 rounded border border-slate-200">ARS: <strong>{{ item.turno_activo.saldo_inicial_ars }}</strong></div>
-                                            </div>
-                                        </div>
+                                         <div class="border-t border-slate-200 pt-2 mt-2">
+                                             <span class="font-semibold text-slate-700 block mb-1">Saldos Iniciales Registrados:</span>
+                                             <div class="grid grid-cols-3 gap-2 text-xs font-mono">
+                                                 <div class="bg-white p-1.5 rounded border border-slate-200">PYG: <strong>{{ item.turno_activo.saldo_inicial_pyg }}</strong></div>
+                                                 <div class="bg-white p-1.5 rounded border border-slate-200">USD: <strong>{{ item.turno_activo.saldo_inicial_usd }}</strong></div>
+                                                 <div class="bg-white p-1.5 rounded border border-slate-200">EUR: <strong>{{ item.turno_activo.saldo_inicial_eur }}</strong></div>
+                                                 <div class="bg-white p-1.5 rounded border border-slate-200">BRL: <strong>{{ item.turno_activo.saldo_inicial_brl }}</strong></div>
+                                                 <div class="bg-white p-1.5 rounded border border-slate-200">ARS: <strong>{{ item.turno_activo.saldo_inicial_ars }}</strong></div>
+                                             </div>
+                                         </div>
+                                         <div class="pt-2">
+                                             <a href="{% url 'caja:detalle_turno_operaciones' item.turno_activo.id %}" class="block text-center bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded transition shadow text-xs">
+                                                 🔍 Consultar Operaciones y Clientes del Turno (PSE-37)
+                                             </a>
+                                         </div>
                                     </div>
 
                                     <!-- Registro de Ingreso / Salida con Desglose de Billetes (PSE-21) -->
@@ -330,14 +335,19 @@
                     <div class="space-y-6">
                         {% for turno in turnos_cerrados %}
                             <div class="border border-slate-200 rounded-lg overflow-hidden">
-                                <div class="bg-slate-900 text-white p-3 flex justify-between items-center text-sm">
-                                    <div>
-                                        <strong>Turno Cerrado #{{ turno.id }}</strong> - Caja: {{ turno.caja.nombre }} (Cajero: {{ turno.cajero.username }})
-                                    </div>
-                                    <div class="text-xs text-slate-400">
-                                        Cierre: {{ turno.fecha_cierre|date:"d/m/Y H:i" }}
-                                    </div>
-                                </div>
+                                 <div class="bg-slate-900 text-white p-3 flex justify-between items-center text-sm">
+                                     <div>
+                                         <strong>Turno Cerrado #{{ turno.id }}</strong> - Caja: {{ turno.caja.nombre }} (Cajero: {{ turno.cajero.username }})
+                                     </div>
+                                     <div class="flex items-center space-x-3">
+                                         <a href="{% url 'caja:detalle_turno_operaciones' turno.id %}" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-3 py-1 rounded text-xs transition">
+                                             🔍 Planilla y Operaciones (PSE-37)
+                                         </a>
+                                         <span class="text-xs text-slate-400">
+                                             Cierre: {{ turno.fecha_cierre|date:"d/m/Y H:i" }}
+                                         </span>
+                                     </div>
+                                 </div>
                                 <div class="p-4 bg-white overflow-x-auto">
                                     <table class="w-full text-xs font-mono">
                                         <thead>

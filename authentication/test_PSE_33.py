@@ -95,6 +95,7 @@ class ClientAccreditationMethodPSE33Tests(TestCase):
             entidad_financiera='Visa Itaú',
             numero_tarjeta='4532 8400 1234 5678',
             fecha_expiracion='12/28',
+            cvc_cvv='123',
             titularidad='Cliente PSE-33 S.A.',
             estado='VERIFICADO'
         )
@@ -108,6 +109,7 @@ class ClientAccreditationMethodPSE33Tests(TestCase):
             entidad_financiera='Mastercard GNB',
             numero_tarjeta='5412 7500 9876 5432',
             fecha_expiracion='08/27',
+            cvc_cvv='456',
             titularidad='Cliente PSE-33 S.A.',
             estado='VERIFICADO'
         )

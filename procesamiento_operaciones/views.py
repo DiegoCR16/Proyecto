@@ -19,6 +19,18 @@ from .models import CurrencyPurchaseTransaction, CurrencySaleTransaction
 from integracion.services import PaymentGatewaySimulator
 from integracion.gateways import PaymentGatewayFactory, StripeGateway, BancardGateway, TigoMoneyGateway, SIPAPGateway
 from integracion.models import PaymentGatewayLog
+from caja.models import TurnoCaja
+
+
+def _get_active_turn(user):
+    """Retorna el turno de caja abierto para el usuario o su caja asignada."""
+    if not user or not user.is_authenticated:
+        return None
+    turn = TurnoCaja.objects.filter(cajero=user, estado='ABIERTO').first()
+    if not turn and hasattr(user, 'cajas_asignadas'):
+        cajas = user.cajas_asignadas.all()
+        turn = TurnoCaja.objects.filter(caja__in=cajas, estado='ABIERTO').first()
+    return turn
 
 
 def _process_financial_instrument(payment_method, total_amount, currency='PYG', origin_method=None, initial_status='SUCCESS'):
@@ -348,6 +360,7 @@ class CurrencySaleService:
         transaction = CurrencySaleTransaction.objects.create(
             user=user if user and user.is_authenticated else None,
             cliente=cliente,
+            turno=_get_active_turn(user),
             from_currency=from_currency,
             to_currency=to_currency,
             amount=amount_dec,
@@ -471,6 +484,7 @@ class CurrencySaleService:
         transaction = CurrencySaleTransaction.objects.create(
             user=user if user and user.is_authenticated else None,
             cliente=cliente,
+            turno=_get_active_turn(user),
             from_currency=from_currency,
             to_currency=to_currency,
             amount=amount_dec,
@@ -1120,6 +1134,7 @@ class CurrencyPurchaseService:
         transaction = CurrencyPurchaseTransaction.objects.create(
             user=user if user and user.is_authenticated else None,
             cliente=cliente,
+            turno=_get_active_turn(user),
             from_currency=from_currency,
             to_currency=to_currency,
             amount=amount_dec,
@@ -1273,6 +1288,7 @@ class CurrencyPurchaseService:
         transaction = CurrencyPurchaseTransaction.objects.create(
             user=user if user and user.is_authenticated else None,
             cliente=cliente,
+            turno=_get_active_turn(user),
             from_currency=from_currency,
             to_currency=to_currency,
             amount=amount_dec,
