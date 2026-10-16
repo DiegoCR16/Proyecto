@@ -29,13 +29,25 @@ class StripeGateway(BasePaymentGateway):
         api_key = os.environ.get('STRIPE_SECRET_KEY', 'sk_test_mock_globalexchange')
         url = 'https://api.stripe.com/v1/payment_intents'
         
-        amount_int = int(amount * 100) if currency.upper() in ['USD', 'EUR'] else int(amount)
-        
+        curr = currency.upper()
+        if curr not in ['USD', 'EUR', 'GBP', 'CAD', 'AUD', 'BRL', 'ARS', 'CLP', 'COP']:
+            amount_usd = amount / Decimal('7500')
+            amount_int = max(50, int(amount_usd * 100))
+            stripe_currency = 'usd'
+        else:
+            amount_int = int(amount * 100) if curr in ['USD', 'EUR', 'GBP', 'CAD', 'AUD'] else int(amount)
+            stripe_currency = currency.lower()
+
         payload = {
             'amount': amount_int,
-            'currency': currency.lower(),
-            'payment_method_types[]': 'card',
-            'metadata[integration]': 'PSE-18 Global Exchange'
+            'currency': stripe_currency,
+            'confirm': 'true',
+            'payment_method': 'pm_card_visa',
+            'automatic_payment_methods[enabled]': 'true',
+            'automatic_payment_methods[allow_redirects]': 'never',
+            'metadata[integration]': 'PSE-18 Global Exchange',
+            'metadata[original_currency]': currency,
+            'metadata[original_amount]': str(amount)
         }
         headers = {
             'Authorization': f'Bearer {api_key}',

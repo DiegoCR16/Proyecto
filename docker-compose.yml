@@ -42,12 +42,15 @@ services:
       target: development
     container_name: global-exchange-web
     command: ./entrypoint.sh
+    env_file:
+      - .env
     volumes:
       - .:/app
     ports:
       - "8000:8000"
     environment:
       - DEBUG=True
+      - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY}
       - SECRET_KEY=django-insecure-*^pm7b%^e43^9+r^v7oo8lxlzh7z6n@hx65rypp*cwm$8kf(3r
       - ALLOWED_HOSTS=localhost,127.0.0.1,web
       - DB_ENGINE=django.db.backends.postgresql
