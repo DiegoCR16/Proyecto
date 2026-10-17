@@ -10,14 +10,18 @@ class FacturaSeguraService:
     Maneja autenticación, generación de documentos electrónicos (DE), consulta de estado y descarga de KuDE/XML.
     """
     
-    BASE_URL = "https://apitest.facturasegura.com.py"
-    LOGIN_URL = f"{BASE_URL}/login?include_auth_token"
-    ESI_URL = f"{BASE_URL}/misife00/v1/esi"
-    
+    @classmethod
+    def _get_base_url(cls):
+        """
+        Obtiene la URL base del servicio de Factura Segura desde la configuración de Django (settings).
+        """
+        return getattr(settings, 'SIFEN_API_BASE_URL', 'https://apitest.facturasegura.com.py')
+
     @classmethod
     def obtener_token(cls, email=None, password=None):
         """
         Se conecta al endpoint de login para obtener el authentication_token.
+        Utiliza credenciales de settings o variables de entorno si no se proveen explícitamente.
         
         Args:
             email (str): Correo electrónico de acceso a Factura Segura.
@@ -29,6 +33,9 @@ class FacturaSeguraService:
         email = email or getattr(settings, 'SIFEN_API_EMAIL', 'test@facturasegura.com.py')
         password = password or getattr(settings, 'SIFEN_API_PASSWORD', 'testpassword')
         
+        base_url = cls._get_base_url()
+        login_url = f"{base_url}/login?include_auth_token"
+        
         headers = {
             'accept': 'application/json',
             'Content-Type': 'application/json'
@@ -39,7 +46,7 @@ class FacturaSeguraService:
         }
         
         try:
-            response = requests.post(cls.LOGIN_URL, json=payload, headers=headers, timeout=30)
+            response = requests.post(login_url, json=payload, headers=headers, timeout=30)
             data = response.json()
             if response.status_code == 200:
                 token = data.get('authentication_token') or data.get('auth_token') or data.get('token')
@@ -63,6 +70,9 @@ class FacturaSeguraService:
         Returns:
             dict: Respuesta con el CDC generado si es exitoso (code: 0) o detalles del error.
         """
+        base_url = cls._get_base_url()
+        esi_url = f"{base_url}/misife00/v1/esi"
+        
         headers = {
             'accept': 'application/json',
             'Content-Type': 'application/json',
@@ -83,7 +93,7 @@ class FacturaSeguraService:
         }
         
         try:
-            response = requests.post(cls.ESI_URL, json=payload, headers=headers, timeout=30)
+            response = requests.post(esi_url, json=payload, headers=headers, timeout=30)
             data = response.json()
             if response.status_code == 200:
                 return data
@@ -106,6 +116,9 @@ class FacturaSeguraService:
         Returns:
             dict: Estado del documento devuelto por SIFEN.
         """
+        base_url = cls._get_base_url()
+        esi_url = f"{base_url}/misife00/v1/esi"
+        
         headers = {
             'accept': 'application/json',
             'Content-Type': 'application/json',
@@ -120,7 +133,7 @@ class FacturaSeguraService:
         }
         
         try:
-            response = requests.post(cls.ESI_URL, json=payload, headers=headers, timeout=30)
+            response = requests.post(esi_url, json=payload, headers=headers, timeout=30)
             data = response.json()
             if response.status_code == 200:
                 return data
@@ -142,7 +155,8 @@ class FacturaSeguraService:
         Returns:
             bytes o None: Contenido binario del PDF del KuDE o None si falla.
         """
-        url = f"{cls.BASE_URL}/misife00/v1/esi/kude/{cdc}"
+        base_url = cls._get_base_url()
+        url = f"{base_url}/misife00/v1/esi/kude/{cdc}"
         headers = {
             'accept': 'application/pdf',
             'Authentication-Token': auth_token
@@ -169,7 +183,8 @@ class FacturaSeguraService:
         Returns:
             str o None: Contenido XML o None si falla.
         """
-        url = f"{cls.BASE_URL}/misife00/v1/esi/xml/{cdc}"
+        base_url = cls._get_base_url()
+        url = f"{base_url}/misife00/v1/esi/xml/{cdc}"
         headers = {
             'accept': 'application/xml',
             'Authentication-Token': auth_token
