@@ -70,3 +70,36 @@ class AssociationKeycloakPSE7Tests(TestCase):
         self.assertTemplateUsed(response, 'gestion_clientes/admin_client_detail.html')
         self.assertContains(response, "Empresa SA")
         self.assertContains(response, "80012345-6")
+
+    def test_admin_approve_member_request_no_double_assignment(self):
+        """
+        Valida que al aprobar una solicitud de miembro, se cree una única relación UsuarioClienteRelacion (sin doble asignación).
+        """
+        from authentication.models import MemberRequest, UsuarioClienteRelacion
+        corp_group = CorporateGroup.objects.create(
+            juridica_profile=self.admin_profile,
+            group_name=self.cliente.nombre_o_razon_social
+        )
+        target_user = User.objects.create_user(username="jorge", email="jorge@gmail.com", password="Password123*")
+        target_profile = UserProfile.objects.create(
+            user=target_user,
+            role=self.client_role,
+            keycloak_id="kc-jorge-uuid-123"
+        )
+        mem_req = MemberRequest.objects.create(
+            corporate_group=corp_group,
+            requester=self.admin_user,
+            target_email="jorge@gmail.com",
+            role_requested="ANALISTA",
+            status="PENDING"
+        )
+
+        self.client.force_login(self.admin_user)
+        approve_url = f'/auth/admin/approve-member/{mem_req.id}/'
+        response = self.client.get(approve_url)
+
+        relaciones = UsuarioClienteRelacion.objects.filter(cliente=self.cliente)
+        self.assertEqual(relaciones.count(), 1)
+        rel = relaciones.first()
+        self.assertEqual(rel.keycloak_user_id, "kc-jorge-uuid-123")
+        self.assertEqual(rel.rol_en_cliente, "ANALISTA")
