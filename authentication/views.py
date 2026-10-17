@@ -3,6 +3,7 @@ from django.conf import settings
 from django.contrib.auth import authenticate
 from django.contrib.auth.models import User
 from django.shortcuts import render
+from django.http import HttpResponse
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
@@ -12,6 +13,7 @@ from .serializers import (
     RoleSerializer, SystemPermissionSerializer, CustomerSerializer, 
     CorporateCustomerRegisterSerializer, TransactionLimitSerializer, KYCAlertSerializer, ClientDocumentSerializer
 )
+from .facturacion_service import FacturaSeguraService
 
 
 class IsAdminOrHasRolePermission(BasePermission):
@@ -936,3 +938,90 @@ class ClientDocumentsAdminTemplateView(APIView):
         return render(request, 'authentication/client_documents_admin.html', {
             'username': request.user.username
         })
+
+
+class SifenLoginAPIView(APIView):
+    """
+    API view para autenticarse en el servicio SIFEN (Factura Segura) y obtener el token.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        email = request.data.get('email')
+        password = request.data.get('password')
+        token = FacturaSeguraService.obtener_token(email, password)
+        if token:
+            return Response({"authentication_token": token}, status=status.HTTP_200_OK)
+        return Response({"error": "No se pudo autenticar con Factura Segura."}, status=status.HTTP_400_BAD_REQUEST)
+
+
+class SifenGenerarDEAPIView(APIView):
+    """
+    API view para generar Documento Electrónico (DE) en SIFEN a partir de una transacción.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        auth_token = request.headers.get('Authentication-Token') or request.data.get('authentication_token')
+        if not auth_token:
+            return Response({"error": "Token de autenticación de SIFEN requerido."}, status=status.HTTP_400_BAD_REQUEST)
+        
+        transaccion_data = request.data.get('transaccion_data', request.data)
+        resultado = FacturaSeguraService.generar_de(auth_token, transaccion_data)
+        return Response(resultado, status=status.HTTP_200_OK)
+
+
+class SifenEstadoAPIView(APIView):
+    """
+    API view para consultar el estado de un Documento Electrónico en SIFEN (get_estado_sifen).
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        auth_token = request.headers.get('Authentication-Token') or request.data.get('authentication_token')
+        cdc = request.data.get('cdc')
+        d_ruc_em = request.data.get('dRucEm')
+        
+        if not auth_token or not cdc or not d_ruc_em:
+            return Response({"error": "Parámetros Authentication-Token, CDC y dRucEm son requeridos."}, status=status.HTTP_400_BAD_REQUEST)
+        
+        resultado = FacturaSeguraService.get_estado_sifen(auth_token, cdc, d_ruc_em)
+        return Response(resultado, status=status.HTTP_200_OK)
+
+
+class SifenDownloadKudeAPIView(APIView):
+    """
+    API view para descargar el KuDE (PDF) de SIFEN.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, cdc):
+        auth_token = request.headers.get('Authentication-Token') or request.query_params.get('authentication_token')
+        if not auth_token:
+            return Response({"error": "Token de autenticación de SIFEN requerido."}, status=status.HTTP_400_BAD_REQUEST)
+        
+        pdf_content = FacturaSeguraService.descargar_kude(auth_token, cdc)
+        if pdf_content:
+            response = HttpResponse(pdf_content, content_type='application/pdf')
+            response['Content-Disposition'] = f'attachment; filename="kude_{cdc}.pdf"'
+            return response
+        return Response({"error": "No se pudo descargar el KuDE."}, status=status.HTTP_404_NOT_FOUND)
+
+
+class SifenDownloadXmlAPIView(APIView):
+    """
+    API view para descargar el XML firmado de SIFEN.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, cdc):
+        auth_token = request.headers.get('Authentication-Token') or request.query_params.get('authentication_token')
+        if not auth_token:
+            return Response({"error": "Token de autenticación de SIFEN requerido."}, status=status.HTTP_400_BAD_REQUEST)
+        
+        xml_content = FacturaSeguraService.descargar_xml(auth_token, cdc)
+        if xml_content:
+            response = HttpResponse(xml_content, content_type='application/xml')
+            response['Content-Disposition'] = f'attachment; filename="de_{cdc}.xml"'
+            return response
+        return Response({"error": "No se pudo descargar el XML."}, status=status.HTTP_404_NOT_FOUND)

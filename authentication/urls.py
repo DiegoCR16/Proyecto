@@ -17,7 +17,12 @@ from .views import (
     KYCAlertView,
     TransactionLimitValidationView,
     UserMenuView,
-    ClientDocumentView
+    ClientDocumentView,
+    SifenLoginAPIView,
+    SifenGenerarDEAPIView,
+    SifenEstadoAPIView,
+    SifenDownloadKudeAPIView,
+    SifenDownloadXmlAPIView
 )
 
 urlpatterns = [
@@ -41,4 +46,9 @@ urlpatterns = [
     path('menu/', UserMenuView.as_view(), name='user-menu-api'),
     path('documents/', ClientDocumentView.as_view(), name='client-documents'),
     path('documents/<int:pk>/', ClientDocumentView.as_view(), name='client-document-detail'),
+    path('sifen/login/', SifenLoginAPIView.as_view(), name='sifen-login'),
+    path('sifen/generar-de/', SifenGenerarDEAPIView.as_view(), name='sifen-generar-de'),
+    path('sifen/estado/', SifenEstadoAPIView.as_view(), name='sifen-estado'),
+    path('sifen/kude/<str:cdc>/', SifenDownloadKudeAPIView.as_view(), name='sifen-download-kude'),
+    path('sifen/xml/<str:cdc>/', SifenDownloadXmlAPIView.as_view(), name='sifen-download-xml'),
 ]
