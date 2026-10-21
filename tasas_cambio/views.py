@@ -1108,7 +1108,7 @@ def check_and_trigger_rate_alerts(currency_code, new_buy_rate, new_sell_rate):
             
             NotificationLog.objects.create(
                 cliente=alert.cliente,
-                user=alert.user,
+                user=None if alert.cliente else alert.user,
                 title=f"¡Alerta de Tasa Alcanzada: {code}!",
                 message=msg,
                 notification_type='ALERTA_TASA',

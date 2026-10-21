@@ -136,6 +136,8 @@ class RateAlertsPSE35Tests(TestCase):
         notif = NotificationLog.objects.filter(cliente=self.cliente, notification_type='ALERTA_TASA').first()
         self.assertIsNotNone(notif)
         self.assertIn("alcanzó", notif.message)
+        self.assertEqual(notif.cliente, self.cliente)
+        self.assertIsNone(notif.user)
 
     def test_abrupt_variation_broadcast_notification(self):
         """
