@@ -89,7 +89,7 @@ class SifenServiceTestCase(TestCase):
         Prueba el endpoint API de login SIFEN.
         """
         mock_obtener_token.return_value = "token-api-123"
-        response = self.client.post('/api/sifen/login/', {
+        response = self.client.post('/auth/sifen/login/', {
             'email': 'test@facturasegura.com.py',
             'password': 'password123'
         }, format='json')
@@ -103,7 +103,7 @@ class SifenServiceTestCase(TestCase):
         Prueba el endpoint API de generación de DE.
         """
         mock_generar_de.return_value = {"code": 0, "cdc": "12345"}
-        response = self.client.post('/api/sifen/generar-de/', {
+        response = self.client.post('/auth/sifen/generar-de/', {
             'authentication_token': 'token-api-123',
             'transaccion_data': {'tasa_cambio': 7300}
         }, format='json')
