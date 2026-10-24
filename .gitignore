@@ -1,4 +1,9 @@
 
+# Python bytecode and cache files
+__pycache__/
+*.py[cod]
+*$py.class
+
 .opencode.json
 
 opencode.json
