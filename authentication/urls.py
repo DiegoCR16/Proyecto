@@ -14,4 +14,9 @@ urlpatterns = [
     path('roles/management/', views.admin_roles_view, name='roles_management'),
     path('audit/', views.admin_audit_logs_view, name='admin_audit_logs'),
     path('logout/', views.logout_view, name='logout'),
+    path('sifen/login/', views.SifenLoginAPIView.as_view(), name='sifen-login'),
+    path('sifen/generar-de/', views.SifenGenerarDEAPIView.as_view(), name='sifen-generar-de'),
+    path('sifen/estado/', views.SifenEstadoAPIView.as_view(), name='sifen-estado'),
+    path('sifen/kude/<str:cdc>/', views.SifenDownloadKudeAPIView.as_view(), name='sifen-download-kude'),
+    path('sifen/xml/<str:cdc>/', views.SifenDownloadXmlAPIView.as_view(), name='sifen-download-xml'),
 ]
