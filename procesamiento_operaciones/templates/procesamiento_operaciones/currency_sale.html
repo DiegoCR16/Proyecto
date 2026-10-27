@@ -92,6 +92,18 @@
             <div class="bg-white/80 p-3 rounded-xl border border-green-200 text-xs text-slate-700 font-mono">
                 <strong>Desglose transparente:</strong> {{ success_transaction.transparent_breakdown }}
             </div>
+            {% if success_transaction.sifen_cdc %}
+            <div class="bg-purple-50 p-4 rounded-xl border border-purple-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-xs">
+                <div>
+                    <span class="font-bold text-purple-900 block">Factura Electrónica SIFEN Generada</span>
+                    <span class="font-mono text-purple-700">CDC: {{ success_transaction.sifen_cdc }}</span>
+                </div>
+                <div class="flex space-x-3">
+                    <a href="/auth/sifen/xml/{{ success_transaction.sifen_cdc }}/" target="_blank" class="bg-purple-700 hover:bg-purple-800 text-white px-3 py-1.5 rounded-lg font-semibold shadow-sm transition">Descargar XML</a>
+                    <a href="/auth/sifen/kude/{{ success_transaction.sifen_cdc }}/" target="_blank" class="bg-blue-700 hover:bg-blue-800 text-white px-3 py-1.5 rounded-lg font-semibold shadow-sm transition">Descargar KuDE (PDF)</a>
+                </div>
+            </div>
+            {% endif %}
         </div>
         {% endif %}
 

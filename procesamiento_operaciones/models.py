@@ -74,6 +74,15 @@ class CurrencyPurchaseTransaction(models.Model):
         """Devuelve la representación en cadena de la transacción de compra."""
         return f"Compra #{self.id or 0}: {self.amount} {self.from_currency} -> {self.converted_amount} {self.to_currency} ({self.status})"
 
+    @property
+    def sifen_cdc(self):
+        """Extrae el CDC de la factura electrónica SIFEN desde el desglose transparente."""
+        if self.transparent_breakdown and "SIFEN CDC:" in self.transparent_breakdown:
+            parts = self.transparent_breakdown.split("SIFEN CDC:")
+            if len(parts) > 1:
+                return parts[1].split("|")[0].strip()
+        return None
+
     def save(self, *args, **kwargs):
         """
         Garantiza la inmutabilidad del registro transaccional. Una vez guardado en la base de datos,
@@ -154,6 +163,15 @@ class CurrencySaleTransaction(models.Model):
     def __str__(self):
         """Devuelve la representación en cadena de la transacción de venta."""
         return f"Venta #{self.id or 0}: {self.amount} {self.from_currency} -> {self.converted_amount} {self.to_currency} ({self.status})"
+
+    @property
+    def sifen_cdc(self):
+        """Extrae el CDC de la factura electrónica SIFEN desde el desglose transparente."""
+        if self.transparent_breakdown and "SIFEN CDC:" in self.transparent_breakdown:
+            parts = self.transparent_breakdown.split("SIFEN CDC:")
+            if len(parts) > 1:
+                return parts[1].split("|")[0].strip()
+        return None
 
     def save(self, *args, **kwargs):
         """

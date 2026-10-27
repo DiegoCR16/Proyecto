@@ -49,7 +49,14 @@ class FacturaSeguraService:
             response = requests.post(login_url, json=payload, headers=headers, timeout=30)
             data = response.json()
             if response.status_code == 200:
-                token = data.get('authentication_token') or data.get('auth_token') or data.get('token')
+                resp_dict = data.get('response', {})
+                token = (
+                    data.get('authentication_token') or 
+                    data.get('auth_token') or 
+                    data.get('token') or 
+                    resp_dict.get('authentication_token') or
+                    resp_dict.get('user', {}).get('authentication_token')
+                )
                 return token
             logger.error(f"Error en autenticación SIFEN: {response.status_code} - {response.text}")
             return None
@@ -79,16 +86,32 @@ class FacturaSeguraService:
             'Authentication-Token': auth_token
         }
         
+        default_emis = {
+            "dRucEm": "2595733",
+            "dDVEmi": "3",
+            "iTipCont": 1,
+            "dNumTim": "02595733",
+            "dEst": "001",
+            "dPunExp": "003"
+        }
+        user_emis = transaccion_data.get("emis", {})
+        merged_emis = {**default_emis, **user_emis}
+
+        de_data = transaccion_data.get("DE", {
+            "dVerFor": 150,
+            "gTasaCambio": transaccion_data.get("tasa_cambio", 7300),
+            "gEmis": merged_emis,
+            "gDatGralOpe": transaccion_data.get("dat_gral_ope", {}),
+            "gDtipDE": transaccion_data.get("dtip_de", {})
+        })
+        if "gEmis" in de_data and isinstance(de_data["gEmis"], dict):
+            de_data["gEmis"] = {**default_emis, **de_data["gEmis"]}
+
         payload = {
+            "operation": "generar_de",
             "operacion": "generar_de",
             "params": {
-                "DE": transaccion_data.get("DE", {
-                    "dVerFor": 150,
-                    "gTasaCambio": transaccion_data.get("tasa_cambio", 7300),
-                    "gEmis": transaccion_data.get("emis", {}),
-                    "gDatGralOpe": transaccion_data.get("dat_gral_ope", {}),
-                    "gDtipDE": transaccion_data.get("dtip_de", {})
-                })
+                "DE": de_data
             }
         }
         
@@ -125,6 +148,7 @@ class FacturaSeguraService:
             'Authentication-Token': auth_token
         }
         payload = {
+            "operation": "get_estado_sifen",
             "operacion": "get_estado_sifen",
             "params": {
                 "CDC": cdc,

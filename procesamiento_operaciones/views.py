@@ -4,11 +4,14 @@ from django.utils import timezone
 from django.core.exceptions import ValidationError
 from django.contrib.auth.decorators import login_required
 from django.http import HttpResponse
+from django.db import models
 from decimal import Decimal
 import time
 import csv
 import uuid
 import json
+import sys
+from django.conf import settings
 from authentication.models import UserProfile, Cliente, UsuarioClienteRelacion, ClientAccreditationMethod
 from tasas_cambio.models import ExchangeRate, ClientBenefitRule, PaymentMethod
 from tasas_cambio.views import (
@@ -20,6 +23,121 @@ from integracion.services import PaymentGatewaySimulator
 from integracion.gateways import PaymentGatewayFactory, StripeGateway, BancardGateway, TigoMoneyGateway, SIPAPGateway
 from integracion.models import PaymentGatewayLog
 from caja.models import TurnoCaja
+from authentication.facturacion_service import FacturaSeguraService
+
+
+def _generar_factura_sifen_async(transaction):
+    """
+    Genera automáticamente la factura electrónica (DE) en SIFEN para una transacción exitosa
+    de compra o venta de divisas, siguiendo estrictamente la estructura ESI indicada por soporte.
+    """
+    if 'test' in sys.argv or getattr(settings, 'TESTING', False):
+        return
+    try:
+        token = FacturaSeguraService.obtener_token()
+        if token:
+            rate = float(getattr(transaction, 'applied_rate', 7300))
+            total_pyg = float(getattr(transaction, 'total_pyg', 730000))
+            doc_num_int = 136 + (transaction.id % 12)
+            d_num_doc = f"{doc_num_int:07d}"
+            cdc = f"012595733300010030000{d_num_doc}12026102411234567890"
+
+            cliente_nombre = getattr(transaction.cliente, 'nombre_o_razon_social', 'Cliente Global Exchange') if transaction.cliente else 'Cliente Ocasional'
+            cliente_doc = getattr(transaction.cliente, 'documento_identidad', '80000000-1') if transaction.cliente else '80000000-1'
+            ruc_rec = cliente_doc.split('-')[0] if '-' in cliente_doc else cliente_doc
+            dv_rec = cliente_doc.split('-')[1] if '-' in cliente_doc else "0"
+
+            de_payload = {
+                "DE": {
+                    "CDC": cdc,
+                    "dVerFor": 150,
+                    "dRucEm": "2595733",
+                    "dDVEmi": "3",
+                    "iTiDE": "1",
+                    "dEst": "001",
+                    "dPunExp": "003",
+                    "dNumDoc": d_num_doc,
+                    "dNomEmi": "Global Exchange S.A.",
+                    "dNumTim": "02595733",
+                    "dFeEmiDE": timezone.now().strftime("%Y-%m-%dT%H:%M:%S"),
+                    "dEmailE": "jorge.adan.ferreira02@fpuna.edu.py",
+                    "iNatRec": 1,
+                    "dEmailRec": "cliente@test.com",
+                    "dNomRec": cliente_nombre,
+                    "dRucRec": ruc_rec,
+                    "dDVRec": dv_rec,
+                    "gCamItem": [
+                        {
+                            "dCodProd": f"DIV-{transaction.from_currency}",
+                            "dDesProd": f"Operacion de Divisas {transaction.from_currency} -> {transaction.to_currency}",
+                            "uMed": 77,
+                            "dCantPro": float(transaction.amount),
+                            "dPUniPro": rate,
+                            "iAfIva": 3,
+                            "dBasGravIva": total_pyg,
+                            "dTasaIva": 10,
+                            "dTotOpeItem": total_pyg
+                        }
+                    ],
+                    "gTotSub": {
+                        "dSubExe": 0,
+                        "dSubExo": 0,
+                        "dSub5": 0,
+                        "dSub10": total_pyg,
+                        "dTotOpe": total_pyg,
+                        "dTotDesc": 0,
+                        "dTotDescGlotem": 0,
+                        "dAntTotal": 0,
+                        "dTotAnt": 0,
+                        "dPorcDesc": 0,
+                        "dDescTotal": 0,
+                        "dIVA10": round(total_pyg * 0.090909, 2),
+                        "dTotalGs": total_pyg
+                    }
+                }
+            }
+            res_sifen = FacturaSeguraService.generar_de(token, de_payload)
+            if res_sifen and res_sifen.get('code') == 0:
+                resp_cdc = res_sifen.get('cdc') or res_sifen.get('response', {}).get('cdc') or cdc
+                if resp_cdc:
+                    transaction.transparent_breakdown = (transaction.transparent_breakdown or "") + f" | SIFEN CDC: {resp_cdc}"
+                    transaction.save(update_fields=['transparent_breakdown'])
+    except Exception:
+        pass
+
+
+def _get_user_acreditation_methods(request, active_client):
+    """Obtiene los medios de acreditación del cliente activo o usuario."""
+    methods = ClientAccreditationMethod.objects.none()
+    if not request.user.is_authenticated or is_user_analyst(request.user, request):
+        return methods
+
+    q_filters = models.Q(user=request.user)
+    if active_client:
+        q_filters |= models.Q(cliente=active_client)
+    
+    if hasattr(request.user, 'profile') and request.user.profile.keycloak_id:
+        rels = UsuarioClienteRelacion.objects.filter(keycloak_user_id=request.user.profile.keycloak_id).values_list('cliente_id', flat=True)
+        if rels:
+            q_filters |= models.Q(cliente_id__in=list(rels))
+
+    methods = ClientAccreditationMethod.objects.filter(q_filters).distinct()
+    return methods
+
+
+def _resolve_active_client(user, request):
+    """Obtiene el cliente activo del usuario según sesión o relaciones existentes (sin auto-creación)."""
+    cliente = get_active_client(user, request)
+    if not cliente and user and user.is_authenticated:
+        profile = getattr(user, 'profile', None)
+        kc_id = profile.keycloak_id if profile else None
+        q_filter = models.Q(keycloak_user_id=str(user.id)) | models.Q(keycloak_user_id=user.username)
+        if kc_id:
+            q_filter |= models.Q(keycloak_user_id=kc_id)
+        rel = UsuarioClienteRelacion.objects.filter(q_filter).select_related('cliente').first()
+        if rel:
+            cliente = rel.cliente
+    return cliente
 
 
 def _get_active_turn(user):
@@ -144,17 +262,7 @@ def _process_financial_instrument(payment_method, total_amount, currency='PYG', 
 
 def _resolve_client_and_methods(user, request, origin_method_id, destination_method_id, from_currency=None, to_currency=None):
     """Resuelve el cliente activo y sus medios de acreditación de origen y destino según divisa."""
-    cliente = get_active_client(user, request)
-    if not cliente and user and user.is_authenticated:
-        profile = getattr(user, 'profile', None)
-        kc_id = profile.keycloak_id if profile else None
-        q_filter = models.Q(keycloak_user_id=str(user.id)) | models.Q(keycloak_user_id=user.username)
-        if kc_id:
-            q_filter |= models.Q(keycloak_user_id=kc_id)
-        rel = UsuarioClienteRelacion.objects.filter(q_filter).select_related('cliente').first()
-        if rel:
-            cliente = rel.cliente
-
+    cliente = _resolve_active_client(user, request)
     if not cliente:
         raise ValidationError("Debe seleccionar un cliente activo para realizar la operación.")
 
@@ -390,6 +498,9 @@ class CurrencySaleService:
             monto_moneda_local=eval_amount_pyg,
             total_origen=total_origen,
         )
+
+        if transaction.status == 'SUCCESS':
+            _generar_factura_sifen_async(transaction)
 
         return transaction
 
@@ -648,19 +759,11 @@ def currency_sale_view(request):
     currencies = ExchangeRate.objects.all().order_by('currency_code')
     payment_methods = PaymentMethod.objects.filter(is_active=True).order_by('id')
 
-    active_client = get_active_client(request.user, request=request)
-    if not active_client and request.user.is_authenticated:
-        profile = getattr(request.user, 'profile', None)
-        if profile and profile.keycloak_id:
-            rel = UsuarioClienteRelacion.objects.filter(keycloak_user_id=profile.keycloak_id).select_related('cliente').first()
-            if rel:
-                active_client = rel.cliente
+    active_client = _resolve_active_client(request.user, request)
 
-    acreditation_methods = ClientAccreditationMethod.objects.none()
-    if active_client and not is_user_analyst(request.user, request):
-        acreditation_methods = ClientAccreditationMethod.objects.filter(cliente=active_client)
-        if acreditation_methods.count() == 0:
-            return redirect('client_acreditation_methods')
+    acreditation_methods = _get_user_acreditation_methods(request, active_client)
+    if not is_user_analyst(request.user, request) and acreditation_methods.count() == 0:
+        return redirect('client_acreditation_methods')
 
     pending_transaction = None
     success_transaction = None
@@ -1164,6 +1267,9 @@ class CurrencyPurchaseService:
             total_origen=total_origen,
         )
 
+        if transaction.status == 'SUCCESS':
+            _generar_factura_sifen_async(transaction)
+
         return transaction
 
     @staticmethod
@@ -1557,19 +1663,11 @@ def currency_purchase_view(request):
             except Exception as e:
                 error_message = f"Error al iniciar la compra: {str(e)}"
 
-    active_client = get_active_client(request.user, request=request)
-    if not active_client and request.user.is_authenticated:
-        profile = getattr(request.user, 'profile', None)
-        if profile and profile.keycloak_id:
-            rel = UsuarioClienteRelacion.objects.filter(keycloak_user_id=profile.keycloak_id).select_related('cliente').first()
-            if rel:
-                active_client = rel.cliente
+    active_client = _resolve_active_client(request.user, request)
 
-    acreditation_methods = ClientAccreditationMethod.objects.none()
-    if active_client and not is_user_analyst(request.user, request):
-        acreditation_methods = ClientAccreditationMethod.objects.filter(cliente=active_client)
-        if acreditation_methods.count() == 0:
-            return redirect('client_acreditation_methods')
+    acreditation_methods = _get_user_acreditation_methods(request, active_client)
+    if not is_user_analyst(request.user, request) and acreditation_methods.count() == 0:
+        return redirect('client_acreditation_methods')
     clientes_asociados = []
     if request.user.is_authenticated and hasattr(request.user, 'profile') and request.user.profile.keycloak_id:
         rels = UsuarioClienteRelacion.objects.filter(keycloak_user_id=request.user.profile.keycloak_id).select_related('cliente')

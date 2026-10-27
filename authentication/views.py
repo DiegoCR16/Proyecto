@@ -438,7 +438,6 @@ def dashboard_redirect_view(request):
             'last_updated': rate.last_updated,
         })
 
-<<<<<<< HEAD
     user_mode = request.session.get('user_mode', False)
 
     try:
