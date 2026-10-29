@@ -758,6 +758,8 @@ class SifenDownloadKudeAPIView(APIView):
     def get(self, request, cdc):
         auth_token = request.headers.get('Authentication-Token') or request.query_params.get('authentication_token')
         if not auth_token:
+            auth_token = FacturaSeguraService.obtener_token()
+        if not auth_token:
             return Response({"error": "Token de autenticación de SIFEN requerido."}, status=status.HTTP_400_BAD_REQUEST)
         
         pdf_content = FacturaSeguraService.descargar_kude(auth_token, cdc)
@@ -776,6 +778,8 @@ class SifenDownloadXmlAPIView(APIView):
 
     def get(self, request, cdc):
         auth_token = request.headers.get('Authentication-Token') or request.query_params.get('authentication_token')
+        if not auth_token:
+            auth_token = FacturaSeguraService.obtener_token()
         if not auth_token:
             return Response({"error": "Token de autenticación de SIFEN requerido."}, status=status.HTTP_400_BAD_REQUEST)
         

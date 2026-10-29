@@ -173,7 +173,8 @@ class FinancialInstrumentsRoutingAndValidationTests(TestCase):
             entidad_financiera='Chase Bank New York',
             swift_iban='CHASUS33XXX',
             numero_cuenta='US33CHASE001',
-            titularidad='Global Trading S.A.'
+            titularidad='Global Trading S.A.',
+            balance=Decimal('500000000.00')
         )
         req = self._get_request()
         tx = CurrencySaleService.process_sale(

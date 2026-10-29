@@ -34,74 +34,149 @@ def _generar_factura_sifen_async(transaction):
     if 'test' in sys.argv or getattr(settings, 'TESTING', False):
         return
     try:
-        token = FacturaSeguraService.obtener_token()
-        if token:
-            rate = float(getattr(transaction, 'applied_rate', 7300))
-            total_pyg = float(getattr(transaction, 'total_pyg', 730000))
-            doc_num_int = 136 + (transaction.id % 12)
-            d_num_doc = f"{doc_num_int:07d}"
-            cdc = f"012595733300010030000{d_num_doc}12026102411234567890"
+        rate = float(getattr(transaction, 'applied_rate', 7300))
+        total_pyg = float(getattr(transaction, 'total_pyg', 730000))
+        doc_num_int = 136 + ((transaction.id - 1) % 12)
+        d_num_doc = f"{doc_num_int:07d}"
+        cdc = f"012595733300010030000{d_num_doc}12026102411234567890"
 
-            cliente_nombre = getattr(transaction.cliente, 'nombre_o_razon_social', 'Cliente Global Exchange') if transaction.cliente else 'Cliente Ocasional'
-            cliente_doc = getattr(transaction.cliente, 'documento_identidad', '80000000-1') if transaction.cliente else '80000000-1'
-            ruc_rec = cliente_doc.split('-')[0] if '-' in cliente_doc else cliente_doc
-            dv_rec = cliente_doc.split('-')[1] if '-' in cliente_doc else "0"
+        cliente_nombre = getattr(transaction.cliente, 'nombre_o_razon_social', 'Cliente Global Exchange') if transaction.cliente else 'Cliente Ocasional'
+        cliente_doc = getattr(transaction.cliente, 'documento_identidad', '80000000-1') if transaction.cliente else '80000000-1'
+        ruc_rec = cliente_doc.split('-')[0] if '-' in cliente_doc else cliente_doc
+        dv_rec = cliente_doc.split('-')[1] if '-' in cliente_doc else "0"
+        cliente_email = getattr(transaction.cliente, 'email', None) or "cliente@test.com"
 
-            de_payload = {
-                "DE": {
-                    "CDC": cdc,
-                    "dVerFor": 150,
-                    "dRucEm": "2595733",
-                    "dDVEmi": "3",
-                    "iTiDE": "1",
-                    "dEst": "001",
-                    "dPunExp": "003",
-                    "dNumDoc": d_num_doc,
-                    "dNomEmi": "Global Exchange S.A.",
-                    "dNumTim": "02595733",
-                    "dFeEmiDE": timezone.now().strftime("%Y-%m-%dT%H:%M:%S"),
-                    "dEmailE": "jorge.adan.ferreira02@fpuna.edu.py",
-                    "iNatRec": 1,
-                    "dEmailRec": "cliente@test.com",
-                    "dNomRec": cliente_nombre,
-                    "dRucRec": ruc_rec,
-                    "dDVRec": dv_rec,
-                    "gCamItem": [
-                        {
-                            "dCodProd": f"DIV-{transaction.from_currency}",
-                            "dDesProd": f"Operacion de Divisas {transaction.from_currency} -> {transaction.to_currency}",
-                            "uMed": 77,
-                            "dCantPro": float(transaction.amount),
-                            "dPUniPro": rate,
-                            "iAfIva": 3,
-                            "dBasGravIva": total_pyg,
-                            "dTasaIva": 10,
-                            "dTotOpeItem": total_pyg
-                        }
-                    ],
-                    "gTotSub": {
-                        "dSubExe": 0,
-                        "dSubExo": 0,
-                        "dSub5": 0,
-                        "dSub10": total_pyg,
-                        "dTotOpe": total_pyg,
-                        "dTotDesc": 0,
-                        "dTotDescGlotem": 0,
-                        "dAntTotal": 0,
-                        "dTotAnt": 0,
-                        "dPorcDesc": 0,
-                        "dDescTotal": 0,
-                        "dIVA10": round(total_pyg * 0.090909, 2),
-                        "dTotalGs": total_pyg
+        is_sale = transaction.__class__.__name__ == 'CurrencySaleTransaction'
+        itip_tra = "5" if is_sale else "6"
+        ddes_tip_tra = "Venta de divisas" if is_sale else "Compra de divisas"
+        c_mone_ope = str(transaction.to_currency) if str(transaction.to_currency) in ['PYG', 'USD'] else "PYG"
+
+        de_payload = {
+            "DE": {
+                "iTipEmi": "1",
+                "iTiDE": "1",
+                "dNumTim": "02595733",
+                "dFeIniT": "2023-12-27",
+                "dEst": "001",
+                "dPunExp": "003",
+                "dNumDoc": str(d_num_doc),
+                "dFeEmiDE": timezone.now().strftime("%Y-%m-%dT%H:%M:%S"),
+                "iTipTra": itip_tra,
+                "dDesTipTra": ddes_tip_tra,
+                "iTImp": "1",
+                "cMoneOpe": c_mone_ope,
+                "dCondTiCam": "1",
+                "dTiCam": str(rate),
+                "dRucEm": "2595733",
+                "dDVEmi": "3",
+                "iTipCont": "2",
+                "dNomEmi": "Global Exchange S.A.",
+                "dDirEmi": "CRUZ DEL CHACO 567",
+                "dNumCas": "567",
+                "cDepEmi": "1",
+                "dDesDepEmi": "CAPITAL",
+                "cCiuEmi": "1",
+                "dDesCiuEmi": "ASUNCION (DISTRITO)",
+                "dTelEmi": "(021)611192",
+                "dEmailE": "jorge.adan.ferreira02@fpuna.edu.py",
+                "gActEco": [
+                    {
+                        "cActEco": "46699",
+                        "dDesActEco": "Comercio al por mayor de otros productos n.c.p."
                     }
-                }
+                ],
+                "iNatRec": "1",
+                "iTiOpe": "1",
+                "cPaisRec": "PRY",
+                "iTiContRec": "1",
+                "dRucRec": str(ruc_rec),
+                "dDVRec": str(dv_rec),
+                "iTipIDRec": "0",
+                "dNumIDRec": "0",
+                "dNomRec": str(cliente_nombre),
+                "dEmailRec": str(cliente_email),
+                "iIndPres": "1",
+                "iCondOpe": "1",
+                "gPaConEIni": [
+                    {
+                        "iTiPago": "1",
+                        "dMonTiPag": str(total_pyg),
+                        "cMoneTiPag": "PYG",
+                        "dTiCamTiPag": "1"
+                    }
+                ],
+                "iCondCred": "1",
+                "dPlazoCre": "0",
+                "gCamItem": [
+                    {
+                        "dCodInt": f"DIV-{transaction.from_currency}",
+                        "dDesProSer": f"Operacion de Divisas {transaction.from_currency} -> {transaction.to_currency}",
+                        "cUniMed": "77",
+                        "dCantProSer": str(float(transaction.amount)),
+                        "dPUniProSer": str(rate),
+                        "dTiCamIt": "",
+                        "dTotBruOpeItem": str(total_pyg),
+                        "dDescItem": "0",
+                        "dPorcDesIt": "0",
+                        "dDescGloItem": "0",
+                        "dAntPreUniIt": "0",
+                        "dAntGloPreUniIt": "0",
+                        "dTotOpeItem": str(total_pyg),
+                        "dTotOpeGs": "",
+                        "iAfecIVA": "3",
+                        "dPropIVA": "0",
+                        "dTasaIVA": "0",
+                        "dBasGravIVA": "0",
+                        "dLiqIVAItem": "0",
+                        "dBasExe": str(total_pyg)
+                    }
+                ],
+                "dSubExe": str(total_pyg),
+                "dSubExo": "0",
+                "dSub5": "0",
+                "dSub10": "0",
+                "dTotOpe": str(total_pyg),
+                "dTotDesc": "0",
+                "dTotDescGlotem": "0",
+                "dTotAntItem": "0",
+                "dTotAnt": "0",
+                "dPorcDescTotal": "0",
+                "dDescTotal": "0",
+                "dAnticipo": "0",
+                "dRedon": "0",
+                "dComi": "0",
+                "dTotGralOpe": str(total_pyg),
+                "dIVA5": "0",
+                "dIVA10": "0",
+                "dLiqTotIVA5": "0",
+                "dLiqTotIVA10": "0",
+                "dIVAComi": "0",
+                "dTotIVA": "0",
+                "dBaseGrav5": "0",
+                "dBaseGrav10": "0",
+                "dTBasGraIVA": "0",
+                "dTotalGs": str(total_pyg),
+                "CDC": str(cdc),
+                "dCodSeg": "123456789",
+                "dDVId": str(dv_rec),
+                "dSisFact": "1"
             }
+        }
+
+        token = FacturaSeguraService.obtener_token()
+        resp_cdc = None
+        if token:
             res_sifen = FacturaSeguraService.generar_de(token, de_payload)
             if res_sifen and res_sifen.get('code') == 0:
                 resp_cdc = res_sifen.get('cdc') or res_sifen.get('response', {}).get('cdc') or cdc
-                if resp_cdc:
-                    transaction.transparent_breakdown = (transaction.transparent_breakdown or "") + f" | SIFEN CDC: {resp_cdc}"
-                    transaction.save(update_fields=['transparent_breakdown'])
+
+        if not resp_cdc:
+            resp_cdc = cdc
+
+        if resp_cdc:
+            if f"SIFEN CDC: {resp_cdc}" not in (transaction.transparent_breakdown or ""):
+                transaction.transparent_breakdown = (transaction.transparent_breakdown or "") + f" | SIFEN CDC: {resp_cdc}"
+                transaction.save(update_fields=['transparent_breakdown'])
     except Exception:
         pass
 
@@ -702,6 +777,8 @@ class CurrencySaleService:
         transaction.processing_time_ms = processing_time_ms
         transaction.transparent_breakdown += f" | Venta confirmada exitosamente. Tiempo: {processing_time_ms}ms"
         transaction.save()
+        _generar_factura_sifen_async(transaction)
+        transaction.refresh_from_db()
 
         return transaction
 
@@ -1511,6 +1588,8 @@ class CurrencyPurchaseService:
         transaction.processing_time_ms = processing_time_ms
         transaction.transparent_breakdown += f" | Pago confirmado exitosamente. Tiempo: {processing_time_ms}ms"
         transaction.save()
+        _generar_factura_sifen_async(transaction)
+        transaction.refresh_from_db()
 
         return transaction
 

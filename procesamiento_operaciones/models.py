@@ -83,6 +83,16 @@ class CurrencyPurchaseTransaction(models.Model):
                 return parts[1].split("|")[0].strip()
         return None
 
+    @property
+    def sifen_estado(self):
+        """Estado de la factura electrónica (Emitida, Aprobada, Rechazada)."""
+        if self.transparent_breakdown:
+            if "SIFEN Estado: Rechazada" in self.transparent_breakdown:
+                return "Rechazada"
+            if "SIFEN Estado: Aprobada" in self.transparent_breakdown or "SIFEN CDC:" in self.transparent_breakdown:
+                return "Aprobada"
+        return "Emitida"
+
     def save(self, *args, **kwargs):
         """
         Garantiza la inmutabilidad del registro transaccional. Una vez guardado en la base de datos,
@@ -172,6 +182,16 @@ class CurrencySaleTransaction(models.Model):
             if len(parts) > 1:
                 return parts[1].split("|")[0].strip()
         return None
+
+    @property
+    def sifen_estado(self):
+        """Estado de la factura electrónica (Emitida, Aprobada, Rechazada)."""
+        if self.transparent_breakdown:
+            if "SIFEN Estado: Rechazada" in self.transparent_breakdown:
+                return "Rechazada"
+            if "SIFEN Estado: Aprobada" in self.transparent_breakdown or "SIFEN CDC:" in self.transparent_breakdown:
+                return "Aprobada"
+        return "Emitida"
 
     def save(self, *args, **kwargs):
         """
