@@ -422,13 +422,21 @@ def admin_client_detail_view(request, cliente_id):
                         details=f"Admin {request.user.username} desasignó al usuario (KC ID: {kc_uid}) del cliente {cliente.nombre_o_razon_social}."
                     )
 
-    usuarios_relacionados = cliente.usuarios_relacionados.all()
+    associated_kc_ids = list(cliente.usuarios_relacionados.values_list('keycloak_user_id', flat=True))
+    usuarios_relacionados = list(cliente.usuarios_relacionados.all())
+    seen_users = set()
+    unique_usuarios_relacionados = []
     for rel in usuarios_relacionados:
         u = User.objects.filter(profile__keycloak_id=rel.keycloak_user_id).first() or User.objects.filter(id=rel.keycloak_user_id).first()
         rel.resolved_username = u.username if u else rel.keycloak_user_id
         rel.resolved_email = u.email if u else ""
-
-    associated_kc_ids = list(usuarios_relacionados.values_list('keycloak_user_id', flat=True))
+        user_identifier = u.id if u else rel.keycloak_user_id
+        if user_identifier not in seen_users:
+            seen_users.add(user_identifier)
+            unique_usuarios_relacionados.append(rel)
+        else:
+            rel.delete()
+    usuarios_relacionados = unique_usuarios_relacionados
     available_users = User.objects.exclude(profile__keycloak_id__in=associated_kc_ids).select_related('profile')
 
     audit_logs = AuditLog.objects.filter(
@@ -666,6 +674,16 @@ def admin_approve_member_request(request, request_id):
                 fisica_profile=target_profile,
                 defaults={'role_in_group': mem_req.role_requested}
             )
+            cliente_obj = Cliente.objects.filter(nombre_o_razon_social=mem_req.corporate_group.group_name).first()
+            if cliente_obj:
+                rol_map = mem_req.role_requested.upper()
+                kc_uid = target_profile.keycloak_id or str(target_user.id)
+                if kc_uid:
+                    UsuarioClienteRelacion.objects.get_or_create(
+                        keycloak_user_id=kc_uid,
+                        cliente=cliente_obj,
+                        defaults={'rol_en_cliente': rol_map}
+                    )
             try:
                 if target_profile.keycloak_id and mem_req.corporate_group.keycloak_group_id:
                     token_url = f"{settings.KEYCLOAK_SERVER_URL}/realms/{settings.KEYCLOAK_REALM}/protocol/openid-connect/token"
