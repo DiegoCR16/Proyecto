@@ -157,11 +157,11 @@ LOGIN_URL = '/auth/login/'
 LOGIN_REDIRECT_URL = '/auth/dashboard/'
 LOGOUT_REDIRECT_URL = '/auth/login/'
 
-EMAIL_BACKEND = os.environ.get('EMAIL_BACKEND', 'django.core.mail.backends.smtp.EmailBackend')
-EMAIL_HOST = os.environ.get('EMAIL_HOST', 'mailpit')
-EMAIL_PORT = int(os.environ.get('EMAIL_PORT', 1025))
-EMAIL_USE_TLS = False
-EMAIL_USE_SSL = False
+# EMAIL_BACKEND = os.environ.get('EMAIL_BACKEND', 'django.core.mail.backends.smtp.EmailBackend')
+# EMAIL_HOST = os.environ.get('EMAIL_HOST', 'mailpit')
+# EMAIL_PORT = int(os.environ.get('EMAIL_PORT', 1025))
+# EMAIL_USE_TLS = False
+# EMAIL_USE_SSL = False
 DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL', 'no-reply@globalexchange.com')
 
 MAILERS = {
@@ -174,3 +174,16 @@ MAILERS = {
 SIFEN_API_EMAIL = os.environ.get('SIFEN_API_EMAIL', 'test@facturasegura.com.py')
 SIFEN_API_PASSWORD = os.environ.get('SIFEN_API_PASSWORD', 'testpassword')
 SIFEN_API_BASE_URL = os.environ.get('SIFEN_API_BASE_URL', 'https://apitest.facturasegura.com.py')
+FACTURASEGURA_NUMERO_INICIAL = 137
+FACTURASEGURA_NUMERO_FINAL = 147
+
+FACTURASEGURA_EMISOR_ACTIVIDADES_ECONOMICAS = [
+    {
+        'cActEco': '62010',
+        'dDesActEco': 'Actividades de programación informática'
+    },
+    {
+        'cActEco': '74909',
+        'dDesActEco': 'Otras actividades profesionales, científicas y técnicas n.c.p.'
+    }
+]

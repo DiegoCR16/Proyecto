@@ -9,8 +9,13 @@ from decimal import Decimal
 from datetime import timedelta
 import random
 import time
-from authentication.models import UserProfile, Cliente, UsuarioClienteRelacion
+from urllib.parse import urlencode
+from django.urls import reverse
+from authentication.models import UserProfile, Cliente, UsuarioClienteRelacion, ClientAccreditationMethod
 from .models import ExchangeRate, ExchangeRateHistory, ClientBenefitRule, PaymentMethod
+
+LIMITE_MINIMO_OPERACION_PYG = Decimal('50000.00')
+LIMITE_MAXIMO_OPERACION_PYG = Decimal('1000000000.00')
 
 def ensure_default_benefit_rules():
     """
@@ -422,6 +427,121 @@ class SimuladorConversionService:
             }
 
 
+def resolver_tipo_operacion(operacion, from_currency, to_currency):
+    """
+    Determina si una simulación corresponde a una compra o a una venta de divisas.
+
+    Args:
+        operacion (str): 'COMPRA', 'VENTA' o vacío para deducirla de las monedas.
+        from_currency (str): Código de la moneda que entrega el cliente.
+        to_currency (str): Código de la moneda que recibe el cliente.
+
+    Returns:
+        str: 'COMPRA' o 'VENTA'.
+
+    Raises:
+        ValidationError: Si las monedas son iguales o no corresponden a la operación indicada.
+    """
+    if from_currency == to_currency:
+        raise ValidationError("La moneda origen y la moneda destino deben ser distintas.")
+    if operacion == 'COMPRA' and to_currency == 'PYG':
+        raise ValidationError("Para simular una compra, la moneda destino debe ser una divisa extranjera.")
+    if operacion == 'VENTA' and from_currency == 'PYG':
+        raise ValidationError("Para simular una venta, la moneda origen debe ser una divisa extranjera.")
+    if operacion in ('COMPRA', 'VENTA'):
+        return operacion
+    return 'VENTA' if to_currency == 'PYG' else 'COMPRA'
+
+
+def _validar_limites_operacion(simulation_result):
+    """
+    Evalúa si el resultado de una simulación respeta los límites operativos en guaraníes.
+
+    Usa la misma equivalencia que los servicios de compra y venta: el monto en PYG
+    o, para otra divisa, su valor según la tasa de compra con el beneficio aplicado.
+
+    Args:
+        simulation_result (dict): Resultado de SimuladorConversionService.simular.
+
+    Returns:
+        str or None: Mensaje del límite incumplido, o None si el monto es operable.
+    """
+    equivalent_pyg = simulation_result['amount']
+    if simulation_result['from_currency'] != 'PYG':
+        buy_rate = ExchangeRate.objects.get(currency_code=simulation_result['from_currency']).buy_rate
+        benefit = simulation_result['benefit_percentage']
+        equivalent_pyg *= buy_rate * (Decimal('1.00') + (benefit / Decimal('100.00')))
+
+    if equivalent_pyg < LIMITE_MINIMO_OPERACION_PYG:
+        return f"El monto equivale a ₲ {equivalent_pyg:,.2f} y el mínimo para operar es ₲ {LIMITE_MINIMO_OPERACION_PYG:,.0f}."
+    if equivalent_pyg > LIMITE_MAXIMO_OPERACION_PYG:
+        return f"El monto equivale a ₲ {equivalent_pyg:,.2f} y el máximo para operar es ₲ {LIMITE_MAXIMO_OPERACION_PYG:,.0f}."
+    return None
+
+
+def construir_propuesta_operacion(simulation_result, operacion, request):
+    """
+    Prepara la acción que el simulador ofrece para ejecutar la operación simulada.
+
+    Args:
+        simulation_result (dict): Resultado de SimuladorConversionService.simular.
+        operacion (str): 'COMPRA' o 'VENTA'.
+        request (HttpRequest): Solicitud actual, usada para conocer usuario y cliente activo.
+
+    Returns:
+        dict: Tipo y etiqueta de la operación, junto con la URL que la abre precargada
+        ('url') o el motivo por el que aún no se puede operar ('bloqueo') y un enlace
+        para resolverlo ('enlace_url', 'enlace_texto').
+    """
+    propuesta = {
+        'tipo': operacion,
+        'etiqueta': 'Compra' if operacion == 'COMPRA' else 'Venta',
+        'url': None,
+        'bloqueo': None,
+        'enlace_url': None,
+        'enlace_texto': None,
+    }
+
+    limit_error = _validar_limites_operacion(simulation_result)
+    if limit_error:
+        propuesta['bloqueo'] = limit_error
+        return propuesta
+
+    user = request.user
+    if not user.is_authenticated:
+        propuesta['bloqueo'] = "Inicie sesión para realizar esta operación."
+        propuesta['enlace_url'] = reverse('login')
+        propuesta['enlace_texto'] = 'Iniciar sesión'
+        return propuesta
+
+    if is_user_analyst(user, request):
+        propuesta['bloqueo'] = "El rol Analista no tiene permisos para realizar operaciones."
+        return propuesta
+
+    client = get_active_client(user, request)
+    if not client:
+        propuesta['bloqueo'] = "Seleccione un cliente activo desde su panel para realizar esta operación."
+        propuesta['enlace_url'] = '/auth/dashboard/'
+        propuesta['enlace_texto'] = 'Ir al panel'
+        return propuesta
+
+    if not ClientAccreditationMethod.objects.filter(cliente=client).exists():
+        propuesta['bloqueo'] = "Registre un medio de acreditación para realizar esta operación."
+        propuesta['enlace_url'] = reverse('client_acreditation_methods')
+        propuesta['enlace_texto'] = 'Registrar medio'
+        return propuesta
+
+    url_name = 'currency_purchase' if operacion == 'COMPRA' else 'currency_sale'
+    query = urlencode({
+        'from_currency': simulation_result['from_currency'],
+        'to_currency': simulation_result['to_currency'],
+        'amount': simulation_result['amount'],
+        'desde_simulador': '1',
+    })
+    propuesta['url'] = f"{reverse(f'procesamiento_operaciones:{url_name}')}?{query}"
+    return propuesta
+
+
 def currency_simulator_view(request):
     """
     Vista web para el simulador de conversión de divisas (PSE-11).
@@ -442,13 +562,20 @@ def currency_simulator_view(request):
 
     currencies = ExchangeRate.objects.all().order_by('currency_code')
     simulation_result = None
+    operation_proposal = None
     error_message = None
 
-    from_currency = request.GET.get('from_currency', 'PYG')
-    to_currency = request.GET.get('to_currency', 'USD')
-    amount_str = request.GET.get('amount', '100000')
+    requested_operation = request.GET.get('operation', '').upper()
+    if requested_operation == 'VENTA':
+        default_from, default_to, default_amount = 'USD', 'PYG', '100'
+    else:
+        default_from, default_to, default_amount = 'PYG', 'USD', '100000'
+    from_currency = request.GET.get('from_currency', default_from)
+    to_currency = request.GET.get('to_currency', default_to)
+    amount_str = request.GET.get('amount', default_amount)
 
     if request.method == 'POST':
+        requested_operation = request.POST.get('operation', '').upper()
         from_currency = request.POST.get('from_currency')
         to_currency = request.POST.get('to_currency')
         amount_str = request.POST.get('amount')
@@ -456,7 +583,8 @@ def currency_simulator_view(request):
         try:
             if not from_currency or not to_currency or not amount_str:
                 raise ValidationError("Todos los campos (moneda origen, moneda destino y monto) son obligatorios.")
-            
+
+            operation = resolver_tipo_operacion(requested_operation, from_currency, to_currency)
             simulation_result = SimuladorConversionService.simular(
                 from_currency=from_currency,
                 to_currency=to_currency,
@@ -464,6 +592,7 @@ def currency_simulator_view(request):
                 user=request.user,
                 request=request
             )
+            operation_proposal = construir_propuesta_operacion(simulation_result, operation, request)
         except ValidationError as e:
             error_message = e.messages[0] if hasattr(e, 'messages') else str(e)
         except Exception as e:
@@ -471,6 +600,7 @@ def currency_simulator_view(request):
     else:
         if request.GET.get('amount'):
             try:
+                operation = resolver_tipo_operacion(requested_operation, from_currency, to_currency)
                 simulation_result = SimuladorConversionService.simular(
                     from_currency=from_currency,
                     to_currency=to_currency,
@@ -478,6 +608,7 @@ def currency_simulator_view(request):
                     user=request.user,
                     request=request
                 )
+                operation_proposal = construir_propuesta_operacion(simulation_result, operation, request)
             except ValidationError as e:
                 error_message = e.messages[0] if hasattr(e, 'messages') else str(e)
             except Exception:
@@ -528,6 +659,11 @@ def currency_simulator_view(request):
         'to_currency': to_currency,
         'amount': amount_str,
         'simulation_result': simulation_result,
+        'operation_proposal': operation_proposal,
+        'selected_operation': operation_proposal['tipo'] if operation_proposal else (
+            requested_operation if requested_operation in ('COMPRA', 'VENTA')
+            else ('VENTA' if to_currency == 'PYG' else 'COMPRA')
+        ),
         'error_message': error_message,
         'user_profile': user_profile,
         'benefit_percentage': benefit_percentage,

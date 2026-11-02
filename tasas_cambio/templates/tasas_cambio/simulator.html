@@ -75,6 +75,20 @@
 
                 <form method="POST" action="{% url 'tasas_cambio:simulator' %}" class="space-y-6">
                     {% csrf_token %}
+                    <fieldset>
+                        <legend class="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-2">¿Qué desea simular? *</legend>
+                        <div class="grid grid-cols-2 gap-3">
+                            <label class="cursor-pointer">
+                                <input type="radio" name="operation" value="COMPRA" class="sr-only peer" {% if selected_operation != 'VENTA' %}checked{% endif %}>
+                                <span class="block text-center py-3 rounded-xl border border-slate-300 text-sm font-semibold text-slate-700 transition peer-checked:bg-blue-600 peer-checked:border-blue-600 peer-checked:text-white peer-focus-visible:ring-2 peer-focus-visible:ring-blue-800">Comprar divisas</span>
+                            </label>
+                            <label class="cursor-pointer">
+                                <input type="radio" name="operation" value="VENTA" class="sr-only peer" {% if selected_operation == 'VENTA' %}checked{% endif %}>
+                                <span class="block text-center py-3 rounded-xl border border-slate-300 text-sm font-semibold text-slate-700 transition peer-checked:bg-blue-600 peer-checked:border-blue-600 peer-checked:text-white peer-focus-visible:ring-2 peer-focus-visible:ring-blue-800">Vender divisas</span>
+                            </label>
+                        </div>
+                    </fieldset>
+
                     <div>
                         <label class="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-2">Monto a Convertir *</label>
                         <input type="number" step="any" name="amount" id="amount" value="{{ amount|default:'100000' }}" required
@@ -157,9 +171,28 @@
 
                     {% if simulation_result %}
                     <div class="mt-4 space-y-2 text-xs text-slate-300 bg-slate-800/50 p-3 rounded-lg border border-slate-700">
-                        <p><strong>Tipo de Operación:</strong> {{ simulation_result.operation_type }}</p>
+                        <p><strong>Tipo de Operación:</strong> {{ operation_proposal.etiqueta }}{% if simulation_result.operation_type == 'CRUZADA' %} (cruzada){% endif %}</p>
+                        <p><strong>Monto a Entregar:</strong> {{ simulation_result.amount|floatformat:2 }} {{ simulation_result.from_currency }}</p>
                         <p><strong>Tasa Base / Aplicada:</strong> ₲ {{ simulation_result.applied_rate|floatformat:4 }}</p>
                         <p class="text-green-300 mt-1"><strong>Desglose Transparente:</strong> {{ simulation_result.transparent_breakdown }}</p>
+                    </div>
+                    {% endif %}
+
+                    {% if operation_proposal %}
+                    <div class="mt-4">
+                        {% if operation_proposal.url %}
+                        <a href="{{ operation_proposal.url }}" class="block w-full text-center bg-green-600 hover:bg-green-700 text-white font-semibold py-3 px-4 rounded-xl shadow-md transition">
+                            Continuar con esta {{ operation_proposal.etiqueta|lower }} &rarr;
+                        </a>
+                        <p class="text-xs text-slate-400 mt-2">Antes de confirmar podrá revisar el total con la cotización vigente.</p>
+                        {% else %}
+                        <div class="bg-amber-900/40 border border-amber-700 p-3 rounded-lg text-xs text-amber-200">
+                            <p>{{ operation_proposal.bloqueo }}</p>
+                            {% if operation_proposal.enlace_url %}
+                            <a href="{{ operation_proposal.enlace_url }}" class="inline-block mt-2 font-semibold text-white hover:underline">{{ operation_proposal.enlace_texto }} &rarr;</a>
+                            {% endif %}
+                        </div>
+                        {% endif %}
                     </div>
                     {% endif %}
                 </div>
@@ -239,5 +272,37 @@
     <footer class="bg-white border-t border-slate-200 py-6 text-center text-xs text-slate-500">
         <p>&copy; 2026 Global Exchange - Ingeniería de Software 2 (FPUNA). Todos los derechos reservados.</p>
     </footer>
+    <script>
+        (function () {
+            const fromSelect = document.getElementById('from_currency');
+            const toSelect = document.getElementById('to_currency');
+            const amountInput = document.getElementById('amount');
+            const radios = document.querySelectorAll('input[name="operation"]');
+            const defaults = {
+                COMPRA: { from: 'PYG', to: 'USD', amount: '100000' },
+                VENTA: { from: 'USD', to: 'PYG', amount: '100' },
+            };
+
+            function setPygAvailability(operation) {
+                fromSelect.querySelector('option[value="PYG"]').disabled = operation === 'VENTA';
+                toSelect.querySelector('option[value="PYG"]').disabled = operation === 'COMPRA';
+            }
+
+            radios.forEach(function (radio) {
+                radio.addEventListener('change', function () {
+                    const invalid = (radio.value === 'COMPRA' && toSelect.value === 'PYG')
+                        || (radio.value === 'VENTA' && fromSelect.value === 'PYG');
+                    setPygAvailability(radio.value);
+                    if (invalid) {
+                        fromSelect.value = defaults[radio.value].from;
+                        toSelect.value = defaults[radio.value].to;
+                        amountInput.value = defaults[radio.value].amount;
+                    }
+                });
+            });
+
+            setPygAvailability(document.querySelector('input[name="operation"]:checked').value);
+        })();
+    </script>
 </body>
 </html>

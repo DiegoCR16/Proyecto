@@ -17,6 +17,24 @@ class FacturaSeguraService:
         """
         return getattr(settings, 'SIFEN_API_BASE_URL', 'https://apitest.facturasegura.com.py')
 
+    @staticmethod
+    def _respuesta_error(response):
+        """
+        Convierte una respuesta HTTP fallida en el formato de error del servicio.
+
+        Args:
+            response: Respuesta HTTP distinta de 200.
+
+        Returns:
+            dict: Código HTTP, descripción legible y cuerpo original de la respuesta.
+        """
+        try:
+            errores = response.json().get('response', {}).get('errors') or []
+        except (ValueError, AttributeError):
+            errores = []
+        descripcion = ', '.join(str(e) for e in errores) or f"HTTP {response.status_code}"
+        return {"code": response.status_code, "description": descripcion, "error": response.text}
+
     @classmethod
     def obtener_token(cls, email=None, password=None):
         """
@@ -57,6 +75,8 @@ class FacturaSeguraService:
                     resp_dict.get('authentication_token') or
                     resp_dict.get('user', {}).get('authentication_token')
                 )
+                if not token:
+                    logger.error("Login SIFEN sin authentication_token en la respuesta")
                 return token
             logger.error(f"Error en autenticación SIFEN: {response.status_code} - {response.text}")
             return None
@@ -89,47 +109,57 @@ class FacturaSeguraService:
         default_emis = {
             "dRucEm": "2595733",
             "dDVEmi": "3",
-            "iTipCont": 1,
+            "iTipCont": "1",
             "dNumTim": "02595733",
+            "dFeIniT": "2025-03-27",
+            "dFelIniT": "2025-03-27",
             "dEst": "001",
-            "dPunExp": "003"
+            "dPunExp": "003",
+            "dTelEmi": "(021)5887000"
         }
         user_emis = transaccion_data.get("emis", {})
         merged_emis = {**default_emis, **user_emis}
 
         de_data = transaccion_data.get("DE", {
             "dVerFor": 150,
-            "gTasaCambio": transaccion_data.get("tasa_cambio", 7300),
             "gEmis": merged_emis,
             "gDatGralOpe": transaccion_data.get("dat_gral_ope", {}),
             "gDtipDE": transaccion_data.get("dtip_de", {})
         })
         if "gEmis" in de_data and isinstance(de_data["gEmis"], dict):
             de_data["gEmis"] = {**default_emis, **de_data["gEmis"]}
-        
+
         if isinstance(de_data, dict) and "dEmailRec" not in de_data:
-            de_data["dEmailRec"] = transaccion_data.get("dEmailRec", "cliente@test.com")
+            de_data["dEmailRec"] = transaccion_data.get("dEmailRec", "soporte@facturasegura.com.py")
+
+        if isinstance(de_data, dict) and "gActEco" not in de_data:
+            de_data["gActEco"] = getattr(settings, 'FACTURASEGURA_EMISOR_ACTIVIDADES_ECONOMICAS', [
+                {
+                    'cActEco': '62010',
+                    'dDesActEco': 'Actividades de programación informática'
+                },
+                {
+                    'cActEco': '74909',
+                    'dDesActEco': 'Otras actividades profesionales, científicas y técnicas n.c.p.'
+                }
+            ])
+
+
 
         payload = {
             "operation": "generar_de",
-            "operacion": "generar_de",
             "params": {
                 "DE": de_data
             }
         }
         
         try:
-            import json
-            print("=== JSON PAYLOAD ENVIADO A SIFEN (FACTURA SEGURA) ===")
-            print(json.dumps(payload, indent=2, ensure_ascii=False))
-            print("====================================================")
-
+            logger.debug("Payload enviado a SIFEN: %s", payload)
             response = requests.post(esi_url, json=payload, headers=headers, timeout=30)
-            data = response.json()
             if response.status_code == 200:
-                return data
+                return response.json()
             logger.error(f"Error al generar DE en SIFEN: {response.status_code} - {response.text}")
-            return {"code": response.status_code, "error": response.text}
+            return cls._respuesta_error(response)
         except requests.exceptions.RequestException as e:
             logger.error(f"Excepción de red al generar DE en SIFEN: {str(e)}")
             return {"code": -1, "error": str(e)}
@@ -157,7 +187,6 @@ class FacturaSeguraService:
         }
         payload = {
             "operation": "get_estado_sifen",
-            "operacion": "get_estado_sifen",
             "params": {
                 "CDC": cdc,
                 "dRucEm": d_ruc_em
@@ -166,11 +195,10 @@ class FacturaSeguraService:
         
         try:
             response = requests.post(esi_url, json=payload, headers=headers, timeout=30)
-            data = response.json()
             if response.status_code == 200:
-                return data
+                return response.json()
             logger.error(f"Error al consultar estado SIFEN: {response.status_code} - {response.text}")
-            return {"code": response.status_code, "error": response.text}
+            return cls._respuesta_error(response)
         except requests.exceptions.RequestException as e:
             logger.error(f"Excepción de red al consultar estado SIFEN: {str(e)}")
             return {"code": -1, "error": str(e)}
@@ -178,56 +206,31 @@ class FacturaSeguraService:
     @classmethod
     def descargar_kude(cls, auth_token, cdc):
         """
-        Descarga el KuDE (PDF) correspondiente a un CDC utilizando petición HTTP GET.
+        Descarga el KuDE (PDF) oficial correspondiente a un CDC utilizando petición HTTP GET
+        al endpoint oficial de Factura Segura.
         
         Args:
             auth_token (str): Token de autenticación activo.
             cdc (str): Código de Control (CDC).
             
         Returns:
-            bytes: Contenido binario del PDF del KuDE.
+            bytes: Contenido binario del PDF del KuDE si es exitoso, None en caso contrario.
         """
         base_url = cls._get_base_url()
-        url = f"{base_url}/misife00/v1/esi/kude/{cdc}"
+        url = f"{base_url}/misife00/v1/esi/dwn_kude/2595733/{cdc}"
         headers = {
             'accept': 'application/pdf',
             'Authentication-Token': auth_token
         }
         try:
-            response = requests.get(url, headers=headers, timeout=15)
+            response = requests.get(url, headers=headers, timeout=30)
             if response.status_code == 200:
                 return response.content
-        except Exception:
-            pass
-        # Fallback de prueba local/sandbox si SIFEN no responde o da 404
-        stream_content = (
-            b"BT\n"
-            b"/F1 14 Tf\n"
-            b"50 720 Td\n"
-            b"(Global Exchange S.A. - Factura Electronica SIFEN KuDE) Tj\n"
-            b"50 690 Td\n"
-            b"(CDC: " + str(cdc).encode() + b") Tj\n"
-            b"50 660 Td\n"
-            b"(Estado: APROBADO) Tj\n"
-            b"ET"
-        )
-        length = len(stream_content)
-        mock_pdf = (
-            b"%PDF-1.4\n"
-            b"1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n"
-            b"2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n"
-            b"3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> >> >> >>\nendobj\n"
-            b"4 0 obj\n<< /Length " + str(length).encode() + b" >>\nendobj\n"
-            b"stream\n" + stream_content + b"\nendstream\nendobj\n"
-            b"xref\n0 5\n0000000000 65535 f \n"
-            b"0000000009 00000 n \n"
-            b"0000000057 00000 n \n"
-            b"0000000114 00000 n \n"
-            b"0000000295 00000 n \n"
-            b"trailer\n<< /Size 5 /Root 1 0 R >>\n"
-            b"startxref\n450\n%%EOF"
-        )
-        return mock_pdf
+            logger.error(f"Error al descargar KuDE de SIFEN: {response.status_code} - {response.text}")
+            return None
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Excepción de red al descargar KuDE de SIFEN: {str(e)}")
+            return None
 
     @classmethod
     def descargar_xml(cls, auth_token, cdc):
@@ -242,7 +245,7 @@ class FacturaSeguraService:
             str: Contenido XML.
         """
         base_url = cls._get_base_url()
-        url = f"{base_url}/misife00/v1/esi/xml/{cdc}"
+        url = f"{base_url}/misife00/v1/esi/dwn_xml/2595733/{cdc}"
         headers = {
             'accept': 'application/xml',
             'Authentication-Token': auth_token
@@ -251,21 +254,8 @@ class FacturaSeguraService:
             response = requests.get(url, headers=headers, timeout=15)
             if response.status_code == 200:
                 return response.text
-        except Exception:
-            pass
-        # Fallback de prueba local/sandbox si SIFEN no responde o da 404
-        return (
-            f"<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
-            f"<rDE xmlns=\"http://ekuatia.set.gov.py/sifen/xsd\">\n"
-            f"  <dVerFor>150</dVerFor>\n"
-            f"  <DE>\n"
-            f"    <CDC>{cdc}</CDC>\n"
-            f"    <dEstado>APROBADO</dEstado>\n"
-            f"    <dFecFirma>2026-10-28T12:00:00</dFecFirma>\n"
-            f"    <gEmis>\n"
-            f"      <dRucEm>2595733</dRucEm>\n"
-            f"      <dNomEmi>Global Exchange S.A.</dNomEmi>\n"
-            f"    </gEmis>\n"
-            f"  </DE>\n"
-            f"</rDE>"
-        )
+            logger.error(f"Error al descargar XML oficial de SIFEN: {response.status_code} - {response.text}")
+            return None
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Excepción de red al descargar XML de SIFEN: {str(e)}")
+            return None

@@ -16,188 +16,575 @@ from authentication.models import UserProfile, Cliente, UsuarioClienteRelacion, 
 from tasas_cambio.models import ExchangeRate, ClientBenefitRule, PaymentMethod
 from tasas_cambio.views import (
     ensure_default_payment_methods, ensure_default_benefit_rules,
-    SimuladorConversionService, get_user_effective_category, get_active_client
+    SimuladorConversionService, get_user_effective_category, get_active_client,
+    LIMITE_MINIMO_OPERACION_PYG, LIMITE_MAXIMO_OPERACION_PYG
 )
-from .models import CurrencyPurchaseTransaction, CurrencySaleTransaction
+from .models import CurrencyPurchaseTransaction, CurrencySaleTransaction, SifenSecuencia
 from integracion.services import PaymentGatewaySimulator
 from integracion.gateways import PaymentGatewayFactory, StripeGateway, BancardGateway, TigoMoneyGateway, SIPAPGateway
 from integracion.models import PaymentGatewayLog
 from caja.models import TurnoCaja
 from authentication.facturacion_service import FacturaSeguraService
+import re
+import logging
+import unicodedata
+from datetime import timedelta
+from decimal import Decimal, ROUND_HALF_UP
+from django.db import transaction as db_transaction
+
+
+logger = logging.getLogger(__name__)
+
+# ---- Datos fijos del emisor / timbrado -------------------------------------
+SIFEN_EST = "001"
+SIFEN_PUNTO_EXP = "003"
+SIFEN_TIDE = "1"  # Factura electronica
+SIFEN_RUC_EMISOR = "2595733"
+SIFEN_LARGO_CDC = 44
+SIFEN_LIMITE_SINCRONIZACION = 5
+SIFEN_VENCIMIENTO_RESERVA = timedelta(minutes=5)
+EMAIL_FALLBACK = "soporte@facturasegura.com.py"
+
+ACTIVIDADES_DEFAULT = [
+    {"cActEco": "62010", "dDesActEco": "Actividades de programación informática"},
+    {
+        "cActEco": "74909",
+        "dDesActEco": "Otras actividades profesionales, científicas y técnicas n.c.p.",
+    },
+]
+
+
+class SifenRangoAgotado(Exception):
+    """Ya se aprobaron todos los numeros de documento permitidos."""
+
+
+def _clave_secuencia():
+    """Devuelve la clave de numeracion del establecimiento, punto y tipo de documento."""
+    return f"{SIFEN_EST}-{SIFEN_PUNTO_EXP}-{SIFEN_TIDE}"
+
+
+def _reservar_numero_documento():
+    """
+    Reserva el proximo dNumDoc sin avanzar la numeracion, que solo cambia al aprobarse.
+
+    Returns:
+        int: Numero reservado, o None si otro documento aun espera el resultado de SIFEN.
+
+    Raises:
+        SifenRangoAgotado: Si el proximo numero supera FACTURASEGURA_NUMERO_FINAL.
+    """
+    inicial = int(settings.FACTURASEGURA_NUMERO_INICIAL)
+    final = int(settings.FACTURASEGURA_NUMERO_FINAL)
+    with db_transaction.atomic():
+        sec, _ = SifenSecuencia.objects.select_for_update().get_or_create(
+            clave=_clave_secuencia(), defaults={"ultimo_numero": inicial - 1}
+        )
+        if sec.numero_en_proceso is not None:
+            return None
+        numero = sec.ultimo_numero + 1
+        if numero > final:
+            raise SifenRangoAgotado(f"Se agoto el rango de numeros de documento (hasta {final})")
+        sec.numero_en_proceso = numero
+        sec.cdc_en_proceso = ""
+        sec.reservado_en = timezone.now()
+        sec.save()
+        return numero
+
+
+def _guardar_cdc_en_proceso(numero, cdc):
+    """Asocia el CDC recibido al numero reservado para poder consultar su resultado."""
+    SifenSecuencia.objects.filter(clave=_clave_secuencia(), numero_en_proceso=numero).update(cdc_en_proceso=cdc)
+
+
+def _liberar_numero(numero, aprobado=False):
+    """Libera la reserva; la numeracion solo avanza si SIFEN aprobo el documento."""
+    with db_transaction.atomic():
+        sec = SifenSecuencia.objects.select_for_update().filter(clave=_clave_secuencia()).first()
+        if sec is None or sec.numero_en_proceso != numero:
+            return
+        if aprobado:
+            sec.ultimo_numero = numero
+        sec.numero_en_proceso = None
+        sec.cdc_en_proceso = ""
+        sec.reservado_en = None
+        sec.save()
+
+
+def _resolver_numero_en_proceso(token):
+    """
+    Consulta el documento que espera resultado y libera su numero si ya es definitivo.
+
+    Args:
+        token (str): Token de autenticacion activo.
+
+    Returns:
+        bool: True si se puede emitir otro documento.
+    """
+    sec = SifenSecuencia.objects.filter(clave=_clave_secuencia()).first()
+    if sec is None or sec.numero_en_proceso is None:
+        return True
+    if not sec.cdc_en_proceso:
+        # Reserva sin CDC: otra emision en curso, o una que se interrumpio
+        if sec.reservado_en and timezone.now() - sec.reservado_en > SIFEN_VENCIMIENTO_RESERVA:
+            _liberar_numero(sec.numero_en_proceso)
+            return True
+        return False
+    res = FacturaSeguraService.get_estado_sifen(token, sec.cdc_en_proceso, SIFEN_RUC_EMISOR) or {}
+    resultados = res.get("results") or []
+    if res.get("code") != 0 or not resultados:
+        logger.error("No se pudo consultar el CDC %s: %s", sec.cdc_en_proceso, res)
+        return False
+    estado = _mapear_estado_sifen(resultados[0].get("estado_sifen"))
+    if estado == "Pendiente":
+        return False
+    _liberar_numero(sec.numero_en_proceso, aprobado=estado == "Aprobada")
+    return True
+
+
+def _emitir_siguiente_en_cola():
+    """Emite la operacion mas antigua que espera un numero de documento."""
+    candidatas = [
+        modelo.objects.filter(transparent_breakdown__contains="SIFEN Estado: En cola")
+        .exclude(transparent_breakdown__contains="SIFEN CDC:")
+        .exclude(transparent_breakdown__contains="SIFEN Estado: Error")
+        .order_by("timestamp")
+        .first()
+        for modelo in (CurrencyPurchaseTransaction, CurrencySaleTransaction)
+    ]
+    candidatas = [tx for tx in candidatas if tx]
+    if candidatas:
+        _generar_factura_sifen_async(min(candidatas, key=lambda tx: tx.timestamp))
+
+
+def _remove_accents(text):
+    if text is None:
+        return ""
+    if isinstance(text, bool):
+        return "1" if text else "0"
+    if isinstance(text, (int, float)):
+        return str(text)
+    nfkd = unicodedata.normalize("NFKD", str(text))
+    cleaned = "".join(c for c in nfkd if not unicodedata.combining(c))
+    return re.sub(r'["\']', "", cleaned).strip()
+
+
+def _sanitize_de(d):
+    """Convierte todo a string, sin tildes ni comillas (formato que espera Factura Segura)."""
+    if not isinstance(d, dict):
+        return _remove_accents(d)
+    res = {}
+    for k, v in d.items():
+        if isinstance(v, dict):
+            res[str(k)] = _sanitize_de(v)
+        elif isinstance(v, list):
+            res[str(k)] = [
+                _sanitize_de(i) if isinstance(i, dict) else _remove_accents(i) for i in v
+            ]
+        elif v is None:
+            res[str(k)] = ""
+        else:
+            res[str(k)] = _remove_accents(v)
+    return res
+
+
+def _datos_receptor(cliente, email):
+    """
+    Campos del receptor PLANOS (van en la raiz del DE).
+      - documento con guion (RUC-DV) -> contribuyente (iNatRec=1, B2B)
+      - documento sin guion (cedula)  -> no contribuyente (iNatRec=2, B2C)
+      - sin cliente / sin documento   -> innominado
+    """
+    doc = (getattr(cliente, "documento_identidad", "") or "").strip() if cliente else ""
+    nombre = (getattr(cliente, "nombre_o_razon_social", "") or "").strip() if cliente else ""
+
+    if "-" in doc:
+        ruc = re.sub(r"\D", "", doc.split("-", 1)[0])
+        dv = re.sub(r"\D", "", doc.split("-", 1)[1])
+        if ruc and dv:
+            return {
+                "iNatRec": "1",
+                "iTiOpe": "1",
+                "cPaisRec": "PRY",
+                # 1 = persona fisica, 2 = persona juridica (RUC 80000000 en adelante)
+                "iTiContRec": "2" if int(ruc) >= 80000000 else "1",
+                "dRucRec": ruc,
+                "dDVRec": dv,
+                "iTipIDRec": "0",
+                "dNumIDRec": "0",
+                "dNomRec": nombre or "Sin Nombre",
+                "dEmailRec": email,
+            }
+
+    numero = re.sub(r"\D", "", doc)
+    if numero:
+        return {
+            "iNatRec": "2",
+            "iTiOpe": "2",
+            "cPaisRec": "PRY",
+            "iTipIDRec": "1",  # 1 = cedula paraguaya
+            "dNumIDRec": numero,
+            "dNomRec": nombre or "Sin Nombre",
+            "dEmailRec": email,
+        }
+
+    # Innominado
+    return {
+        "iNatRec": "2",
+        "iTiOpe": "2",
+        "cPaisRec": "PRY",
+        "iTipIDRec": "5",  # 5 = innominado
+        "dNumIDRec": "0",
+        "dNomRec": "Sin Nombre",
+        "dEmailRec": email,
+    }
+
+
+def _calcular_item(tx):
+    """
+    Devuelve (cantidad, precio_unitario, total_pyg) coherentes entre si.
+    La cantidad es la divisa; el precio es guaranies por unidad de divisa.
+    """
+    entero = Decimal("1")
+    cuatro = Decimal("0.0001")
+    ocho = Decimal("0.00000001")
+
+    amount = Decimal(str(tx.amount))
+    convertido = Decimal(str(getattr(tx, "converted_amount", 0) or 0))
+    rate = Decimal(str(getattr(tx, "applied_rate", 0) or 0))
+    from_cur = str(tx.from_currency)
+    to_cur = str(tx.to_currency)
+
+    price = None
+    if from_cur == "PYG":
+        # Cliente entrega guaranies y recibe divisa: cantidad = divisa recibida
+        qty = convertido
+        total = amount.quantize(entero, rounding=ROUND_HALF_UP)
+    elif to_cur == "PYG":
+        # Cliente entrega divisa y recibe guaranies
+        qty = amount
+        price = rate.quantize(cuatro, rounding=ROUND_HALF_UP)
+        total = (qty.quantize(cuatro, rounding=ROUND_HALF_UP) * price).quantize(
+            entero, rounding=ROUND_HALF_UP
+        )
+    else:
+        # Cruce entre dos divisas: se factura por el equivalente en guaranies
+        qty = amount
+        total = Decimal(str(tx.monto_moneda_local)).quantize(entero, rounding=ROUND_HALF_UP)
+
+    qty = qty.quantize(cuatro, rounding=ROUND_HALF_UP)
+    if qty <= 0 or total <= 0:
+        raise ValueError(f"Monto inválido para facturar (cantidad={qty}, total={total})")
+    if price is None:
+        price = (total / qty).quantize(ocho, rounding=ROUND_HALF_UP)
+    return qty, price, total
+
+
+def _construir_de(transaction, item, numero_documento):
+    """
+    Arma el payload del Documento Electronico de una operacion de divisas.
+
+    Args:
+        transaction: Transaccion de compra o venta a facturar.
+        item (tuple): Cantidad, precio unitario y total en PYG de _calcular_item.
+        numero_documento (str): dNumDoc de 7 digitos.
+
+    Returns:
+        dict: Payload con la clave "DE", listo para FacturaSeguraService.generar_de.
+    """
+    qty, price, total = item
+    monto_item = format(total, "f")
+
+    # ---- Receptor -------------------------------------------------------
+    cliente = transaction.cliente
+    raw_email = (
+        getattr(cliente, "email", None)
+        or getattr(transaction.user, "email", None)
+        or EMAIL_FALLBACK
+    )
+    email = str(raw_email).strip()
+    if "@" not in email:
+        email = EMAIL_FALLBACK
+
+    # ---- Tipo de transaccion (Manual SIFEN: 5 = venta, 6 = compra de divisas)
+    is_sale = transaction.__class__.__name__ == "CurrencySaleTransaction"
+    itip_tra = "5" if is_sale else "6"
+
+    # ---- Pago: siempre en guaranies por el total de la operacion -----------
+    gpacon_ein = [
+        {
+            "iTiPago": "1",
+            "dMonTiPag": monto_item,
+            "cMoneTiPag": "PYG",
+            "dTiCamTiPag": "1",
+        }
+    ]
+
+    # Fecha en hora local (no UTC)
+    fecha_emision = timezone.localtime(timezone.now()).strftime("%Y-%m-%dT%H:%M:%S")
+
+    raw_de = {
+        # ---- Cabecera ----
+        "iTipEmi": "1",
+        "iTiDE": SIFEN_TIDE,
+        "dNumTim": "02595733",
+        "dFeIniT": "2025-03-27",
+        "dEst": SIFEN_EST,
+        "dPunExp": SIFEN_PUNTO_EXP,
+        "dNumDoc": numero_documento,
+        "dFeEmiDE": fecha_emision,
+        "iTipTra": itip_tra,
+        "iTImp": "1",
+        "cMoneOpe": "PYG",
+        "dCondTiCam": "1",
+        "dTiCam": "1",
+        # ---- Emisor ----
+        "dRucEm": "2595733",
+        "dDVEmi": "3",
+        "iTipCont": "1",
+        "dNomEmi": "Global Exchange S.A.",
+        "dDirEmi": "CRUZ DEL CHACO 567",
+        "dNumCas": "567",
+        "cDepEmi": "1",
+        "dDesDepEmi": "CAPITAL",
+        "cCiuEmi": "1",
+        "dDesCiuEmi": "ASUNCION (DISTRITO)",
+        "dTelEmi": "(021)5887000",
+        "dEmailE": "jorge.adan.ferreira02@fpuna.edu.py",
+        "gActEco": getattr(
+            settings, "FACTURASEGURA_EMISOR_ACTIVIDADES_ECONOMICAS", ACTIVIDADES_DEFAULT
+        ),
+        # ---- Receptor (campos planos en la raiz) ----
+        **_datos_receptor(cliente, email),
+        # ---- Condicion de la operacion ----
+        "iIndPres": "1",
+        "iCondOpe": "1",
+        "gPaConEIni": gpacon_ein,
+        "iCondCred": "1",
+        "dPlazoCre": "0",
+        # ---- Item (operacion exenta) ----
+        "gCamItem": [
+            {
+                "dCodInt": f"DIV-{transaction.from_currency}",
+                "dDesProSer": (
+                    f"Operacion de Divisas {transaction.from_currency} -> "
+                    f"{transaction.to_currency}"
+                ),
+                "cUniMed": "77",
+                "dCantProSer": f"{qty:.4f}",
+                "dPUniProSer": format(price, "f"),
+                "dTiCamIt": "",
+                "dTotBruOpeItem": monto_item,
+                "dDescItem": "0",
+                "dPorcDesIt": "0",
+                "dDescGloItem": "0",
+                "dAntPreUniIt": "0",
+                "dAntGloPreUniIt": "0",
+                "dTotOpeItem": monto_item,
+                "dTotOpeGs": "",
+                "iAfecIVA": "3",
+                "dPropIVA": "0",
+                "dTasaIVA": "0",
+                "dBasGravIVA": "0",
+                "dLiqIVAItem": "0",
+                "dBasExe": "0",
+            }
+        ],
+        # ---- Totales ----
+        "dSubExe": monto_item,
+        "dSubExo": "0",
+        "dSub5": "0",
+        "dSub10": "0",
+        "dTotOpe": monto_item,
+        "dTotDesc": "0",
+        "dTotDescGlotem": "0",
+        "dTotAntItem": "0",
+        "dTotAnt": "0",
+        "dPorcDescTotal": "0",
+        "dDescTotal": "0",
+        "dAnticipo": "0",
+        "dRedon": "0",
+        "dComi": "0",
+        "dTotGralOpe": monto_item,
+        "dIVA5": "0",
+        "dIVA10": "0",
+        "dLiqTotIVA5": "0",
+        "dLiqTotIVA10": "0",
+        "dIVAComi": "0",
+        "dTotIVA": "0",
+        "dBaseGrav5": "0",
+        "dBaseGrav10": "0",
+        "dTBasGraIVA": "0",
+        "dTotalGs": "",
+        # ---- Generados por Factura Segura ----
+        "CDC": "0",
+        "dCodSeg": "0",
+        "dDVId": "0",
+        "dSisFact": "1",
+    }
+
+    de = _sanitize_de(raw_de)
+    # SIFEN compara estas descripciones con su catalogo (error 1262): se envian sin alterar
+    de["gActEco"] = raw_de["gActEco"]
+    return {"DE": de}
+
+
+def _registrar_estado_sifen(transaction, detalle):
+    """Agrega un resultado de SIFEN al desglose, sin interrumpir la operacion si falla."""
+    try:
+        transaction.transparent_breakdown = (
+            f"{transaction.transparent_breakdown or ''} | {detalle}"
+        )
+        transaction.save(update_fields=["transparent_breakdown"])
+    except Exception:
+        logger.exception("No se pudo registrar el estado SIFEN (tx %s)", getattr(transaction, "pk", None))
 
 
 def _generar_factura_sifen_async(transaction):
     """
-    Genera automáticamente la factura electrónica (DE) en SIFEN para una transacción exitosa
-    de compra o venta de divisas, siguiendo estrictamente la estructura ESI indicada por soporte.
+    Genera la factura electronica (DE) en Factura Segura para una operacion exitosa
+    de compra o venta de divisas. Cualquier falla queda registrada en la transaccion
+    como "SIFEN Estado: Error", sin afectar la operacion de cambio ya confirmada.
     """
-    if 'test' in sys.argv or getattr(settings, 'TESTING', False):
+    if "test" in sys.argv or getattr(settings, "TESTING", False):
+        return
+
+    # Idempotencia: no emitir dos veces la misma operacion
+    if "SIFEN CDC:" in (transaction.transparent_breakdown or ""):
+        return
+
+    try:
+        # Se valida todo antes de reservar el numero, para no gastarlo si esto falla
+        item = _calcular_item(transaction)
+        token = FacturaSeguraService.obtener_token()
+        if not token:
+            raise RuntimeError("No se pudo obtener el token de Factura Segura")
+
+        numero = _reservar_numero_documento() if _resolver_numero_en_proceso(token) else None
+        if numero is None:
+            # Otro documento espera resultado: se emitira cuando se conozca
+            if "SIFEN Estado: En cola" not in (transaction.transparent_breakdown or ""):
+                _registrar_estado_sifen(transaction, "SIFEN Estado: En cola")
+            return
+
+        emitida = False
+        try:
+            de_payload = _construir_de(transaction, item, f"{numero:07d}")
+            res = FacturaSeguraService.generar_de(token, de_payload) or {}
+
+            if res.get("code") == 0:
+                results = res.get("results") or []
+                cdc = results[0].get("CDC") if results and isinstance(results[0], dict) else None
+                if not cdc:
+                    raise RuntimeError(f"generar_de respondio OK pero sin CDC: {res}")
+                _guardar_cdc_en_proceso(numero, cdc)
+                emitida = True
+                _registrar_estado_sifen(transaction, f"SIFEN CDC: {cdc} | SIFEN Estado: Emitida")
+            else:
+                desc = str(res.get("description") or res.get("error") or "Sin respuesta")[:150]
+                logger.error("generar_de rechazo la factura (tx %s): %s", transaction.pk, res)
+                _registrar_estado_sifen(
+                    transaction,
+                    f"SIFEN Estado: Error ({res.get('code')}): {desc.replace('|', '/')}",
+                )
+        finally:
+            if not emitida:
+                _liberar_numero(numero)
+
+    except Exception as exc:
+        logger.exception("ERROR EN _generar_factura_sifen_async (tx %s)", getattr(transaction, "pk", None))
+        desc = str(exc)[:150].replace("|", "/")
+        _registrar_estado_sifen(transaction, f"SIFEN Estado: Error: {desc}")
+
+
+def _mapear_estado_sifen(estado_sifen):
+    """
+    Traduce el campo estado_sifen de Factura Segura al estado usado por el sistema.
+
+    Args:
+        estado_sifen (str): Valor recibido, por ejemplo "SOL.APROBACION".
+
+    Returns:
+        str: "Aprobada", "Rechazada" o "Pendiente" si aun no hay resultado final.
+    """
+    estado = str(estado_sifen or "").upper()
+    if estado.startswith("SOL"):
+        return "Pendiente"
+    if "RECH" in estado or "REINGRES" in estado:
+        return "Rechazada"
+    if "APROB" in estado:
+        return "Aprobada"
+    return "Pendiente"
+
+
+def _sincronizar_facturas_sifen(*querysets, limite=SIFEN_LIMITE_SINCRONIZACION):
+    """
+    Consulta en SIFEN las facturas sin resultado final y guarda si fueron aprobadas o rechazadas.
+    Nunca interrumpe la pagina que la llama: una falla solo queda en el log.
+
+    Args:
+        *querysets: Transacciones de compra o venta a revisar.
+        limite (int): Maximo de consultas por llamada, para no demorar la pagina.
+    """
+    if "test" in sys.argv or getattr(settings, "TESTING", False):
         return
     try:
-        rate = float(getattr(transaction, 'applied_rate', 7300))
-        total_pyg = float(getattr(transaction, 'total_pyg', 730000))
-        doc_num_int = 136 + ((transaction.id - 1) % 12)
-        d_num_doc = f"{doc_num_int:07d}"
-        cdc = f"012595733300010030000{d_num_doc}12026102411234567890"
-
-        cliente_nombre = getattr(transaction.cliente, 'nombre_o_razon_social', 'Cliente Global Exchange') if transaction.cliente else 'Cliente Ocasional'
-        cliente_doc = getattr(transaction.cliente, 'documento_identidad', '80000000-1') if transaction.cliente else '80000000-1'
-        ruc_rec = cliente_doc.split('-')[0] if '-' in cliente_doc else cliente_doc
-        dv_rec = cliente_doc.split('-')[1] if '-' in cliente_doc else "0"
-        cliente_email = getattr(transaction.cliente, 'email', None) or "cliente@test.com"
-
-        is_sale = transaction.__class__.__name__ == 'CurrencySaleTransaction'
-        itip_tra = "5" if is_sale else "6"
-        ddes_tip_tra = "Venta de divisas" if is_sale else "Compra de divisas"
-        c_mone_ope = str(transaction.to_currency) if str(transaction.to_currency) in ['PYG', 'USD'] else "PYG"
-
-        de_payload = {
-            "DE": {
-                "iTipEmi": "1",
-                "iTiDE": "1",
-                "dNumTim": "02595733",
-                "dFeIniT": "2023-12-27",
-                "dEst": "001",
-                "dPunExp": "003",
-                "dNumDoc": str(d_num_doc),
-                "dFeEmiDE": timezone.now().strftime("%Y-%m-%dT%H:%M:%S"),
-                "iTipTra": itip_tra,
-                "dDesTipTra": ddes_tip_tra,
-                "iTImp": "1",
-                "cMoneOpe": c_mone_ope,
-                "dCondTiCam": "1",
-                "dTiCam": str(rate),
-                "dRucEm": "2595733",
-                "dDVEmi": "3",
-                "iTipCont": "2",
-                "dNomEmi": "Global Exchange S.A.",
-                "dDirEmi": "CRUZ DEL CHACO 567",
-                "dNumCas": "567",
-                "cDepEmi": "1",
-                "dDesDepEmi": "CAPITAL",
-                "cCiuEmi": "1",
-                "dDesCiuEmi": "ASUNCION (DISTRITO)",
-                "dTelEmi": "(021)611192",
-                "dEmailE": "jorge.adan.ferreira02@fpuna.edu.py",
-                "gActEco": [
-                    {
-                        "cActEco": "46699",
-                        "dDesActEco": "Comercio al por mayor de otros productos n.c.p."
-                    }
-                ],
-                "iNatRec": "1",
-                "iTiOpe": "1",
-                "cPaisRec": "PRY",
-                "iTiContRec": "1",
-                "dRucRec": str(ruc_rec),
-                "dDVRec": str(dv_rec),
-                "iTipIDRec": "0",
-                "dNumIDRec": "0",
-                "dNomRec": str(cliente_nombre),
-                "dEmailRec": str(cliente_email),
-                "iIndPres": "1",
-                "iCondOpe": "1",
-                "gPaConEIni": [
-                    {
-                        "iTiPago": "1",
-                        "dMonTiPag": str(total_pyg),
-                        "cMoneTiPag": "PYG",
-                        "dTiCamTiPag": "1"
-                    }
-                ],
-                "iCondCred": "1",
-                "dPlazoCre": "0",
-                "gCamItem": [
-                    {
-                        "dCodInt": f"DIV-{transaction.from_currency}",
-                        "dDesProSer": f"Operacion de Divisas {transaction.from_currency} -> {transaction.to_currency}",
-                        "cUniMed": "77",
-                        "dCantProSer": str(float(transaction.amount)),
-                        "dPUniProSer": str(rate),
-                        "dTiCamIt": "",
-                        "dTotBruOpeItem": str(total_pyg),
-                        "dDescItem": "0",
-                        "dPorcDesIt": "0",
-                        "dDescGloItem": "0",
-                        "dAntPreUniIt": "0",
-                        "dAntGloPreUniIt": "0",
-                        "dTotOpeItem": str(total_pyg),
-                        "dTotOpeGs": "",
-                        "iAfecIVA": "3",
-                        "dPropIVA": "0",
-                        "dTasaIVA": "0",
-                        "dBasGravIVA": "0",
-                        "dLiqIVAItem": "0",
-                        "dBasExe": str(total_pyg)
-                    }
-                ],
-                "dSubExe": str(total_pyg),
-                "dSubExo": "0",
-                "dSub5": "0",
-                "dSub10": "0",
-                "dTotOpe": str(total_pyg),
-                "dTotDesc": "0",
-                "dTotDescGlotem": "0",
-                "dTotAntItem": "0",
-                "dTotAnt": "0",
-                "dPorcDescTotal": "0",
-                "dDescTotal": "0",
-                "dAnticipo": "0",
-                "dRedon": "0",
-                "dComi": "0",
-                "dTotGralOpe": str(total_pyg),
-                "dIVA5": "0",
-                "dIVA10": "0",
-                "dLiqTotIVA5": "0",
-                "dLiqTotIVA10": "0",
-                "dIVAComi": "0",
-                "dTotIVA": "0",
-                "dBaseGrav5": "0",
-                "dBaseGrav10": "0",
-                "dTBasGraIVA": "0",
-                "dTotalGs": str(total_pyg),
-                "CDC": str(cdc),
-                "dCodSeg": "123456789",
-                "dDVId": str(dv_rec),
-                "dSisFact": "1"
-            }
-        }
+        pendientes = []
+        for queryset in querysets:
+            filas = (
+                queryset.filter(transparent_breakdown__contains="SIFEN CDC:")
+                .exclude(transparent_breakdown__contains="SIFEN Estado: Aprobada")
+                .exclude(transparent_breakdown__contains="SIFEN Estado: Rechazada")
+                .order_by("-timestamp")
+            )
+            # Los CDC con otro largo son registros antiguos que SIFEN no reconoce
+            pendientes += [tx for tx in filas if len(tx.sifen_cdc or "") == SIFEN_LARGO_CDC]
+        pendientes = sorted(pendientes, key=lambda tx: tx.timestamp, reverse=True)[:limite]
+        en_proceso = SifenSecuencia.objects.filter(
+            clave=_clave_secuencia(), numero_en_proceso__isnull=False
+        ).exists()
+        en_cola = any(
+            modelo.objects.filter(transparent_breakdown__contains="SIFEN Estado: En cola")
+            .exclude(transparent_breakdown__contains="SIFEN CDC:")
+            .exclude(transparent_breakdown__contains="SIFEN Estado: Error")
+            .exists()
+            for modelo in (CurrencyPurchaseTransaction, CurrencySaleTransaction)
+        )
+        if not (pendientes or en_proceso or en_cola):
+            return
 
         token = FacturaSeguraService.obtener_token()
-        resp_cdc = None
-        if token:
-            res_sifen = FacturaSeguraService.generar_de(token, de_payload)
-            if res_sifen and res_sifen.get('code') == 0:
-                resp_cdc = res_sifen.get('cdc') or res_sifen.get('response', {}).get('cdc') or cdc
-
-        if not resp_cdc:
-            resp_cdc = cdc
-
-        if resp_cdc:
-            if f"SIFEN CDC: {resp_cdc}" not in (transaction.transparent_breakdown or ""):
-                transaction.transparent_breakdown = (transaction.transparent_breakdown or "") + f" | SIFEN CDC: {resp_cdc}"
-                transaction.save(update_fields=['transparent_breakdown'])
+        if not token:
+            return
+        libre = _resolver_numero_en_proceso(token)
+        for tx in pendientes:
+            res = FacturaSeguraService.get_estado_sifen(token, tx.sifen_cdc, SIFEN_RUC_EMISOR) or {}
+            if res.get("code") == -1:
+                return  # Sin red: no seguir esperando en las demas consultas
+            resultados = res.get("results") or []
+            if res.get("code") != 0 or not resultados:
+                logger.error("No se pudo consultar el CDC %s: %s", tx.sifen_cdc, res)
+                continue
+            estado = _mapear_estado_sifen(resultados[0].get("estado_sifen"))
+            if estado != "Pendiente":
+                detalle = str(resultados[0].get("desc_sifen") or "").replace("|", "/")[:150]
+                sufijo = f" ({detalle})" if detalle else ""
+                _registrar_estado_sifen(tx, f"SIFEN Estado: {estado}{sufijo}")
+        if libre:
+            _emitir_siguiente_en_cola()
     except Exception:
-        pass
+        logger.exception("Error al sincronizar facturas SIFEN")
 
 
 def _get_user_acreditation_methods(request, active_client):
-    """Obtiene los medios de acreditación del cliente activo o usuario."""
-    methods = ClientAccreditationMethod.objects.none()
+    """Obtiene estrictamente los medios de acreditación del cliente activo."""
     if not request.user.is_authenticated or is_user_analyst(request.user, request):
-        return methods
+        return ClientAccreditationMethod.objects.none()
 
-    q_filters = models.Q(user=request.user)
-    if active_client:
-        q_filters |= models.Q(cliente=active_client)
-    
-    if hasattr(request.user, 'profile') and request.user.profile.keycloak_id:
-        rels = UsuarioClienteRelacion.objects.filter(keycloak_user_id=request.user.profile.keycloak_id).values_list('cliente_id', flat=True)
-        if rels:
-            q_filters |= models.Q(cliente_id__in=list(rels))
+    client = active_client or _resolve_active_client(request.user, request)
+    if client:
+        return ClientAccreditationMethod.objects.filter(cliente=client)
 
-    methods = ClientAccreditationMethod.objects.filter(q_filters).distinct()
-    return methods
+    return ClientAccreditationMethod.objects.none()
 
 
 def _resolve_active_client(user, request):
@@ -213,6 +600,39 @@ def _resolve_active_client(user, request):
         if rel:
             cliente = rel.cliente
     return cliente
+
+
+def _resumen_desde_simulador(request, active_client, from_currency, to_currency, amount):
+    """
+    Recalcula con la cotización vigente la simulación con la que el cliente llegó a la operación.
+
+    Los valores se recalculan en el servidor porque la URL solo transporta monedas y monto.
+
+    Args:
+        request (HttpRequest): Solicitud HTTP actual.
+        active_client (Cliente or None): Cliente con el que se ejecutará la operación.
+        from_currency (str): Moneda de origen.
+        to_currency (str): Moneda de destino.
+        amount (str): Monto de origen.
+
+    Returns:
+        dict or None: Resultado de la simulación, o None si no se llegó desde el simulador
+        o los datos recibidos no son válidos.
+    """
+    if request.method != 'GET' or request.GET.get('desde_simulador') != '1':
+        return None
+    try:
+        return SimuladorConversionService.simular(
+            from_currency=from_currency,
+            to_currency=to_currency,
+            amount=amount,
+            user=request.user,
+            request=request,
+            client=active_client,
+            category_override=active_client.categoria if active_client else None
+        )
+    except (ValidationError, ArithmeticError):
+        return None
 
 
 def _get_active_turn(user):
@@ -467,8 +887,8 @@ class CurrencySaleService:
             eval_amount_pyg = amount_dec
 
         # Criterio 1: Validación de Límites (Mínimo 50.000 PYG, Máximo 1.000.000.000 PYG)
-        MIN_LIMIT = Decimal('50000.00')
-        MAX_LIMIT = Decimal('1000000000.00')
+        MIN_LIMIT = LIMITE_MINIMO_OPERACION_PYG
+        MAX_LIMIT = LIMITE_MAXIMO_OPERACION_PYG
 
         if eval_amount_pyg < MIN_LIMIT:
             raise ValidationError(f"El monto de la transacción (₲ {eval_amount_pyg:,.2f}) es inferior al límite mínimo permitido de ₲ 50.000 PYG.")
@@ -634,8 +1054,8 @@ class CurrencySaleService:
         else:
             eval_amount_pyg = amount_dec
 
-        MIN_LIMIT = Decimal('50000.00')
-        MAX_LIMIT = Decimal('1000000000.00')
+        MIN_LIMIT = LIMITE_MINIMO_OPERACION_PYG
+        MAX_LIMIT = LIMITE_MAXIMO_OPERACION_PYG
 
         if eval_amount_pyg < MIN_LIMIT:
             raise ValidationError(f"El monto de la transacción (₲ {eval_amount_pyg:,.2f}) es inferior al límite mínimo permitido de ₲ 50.000 PYG.")
@@ -945,6 +1365,7 @@ def currency_sale_view(request):
         'clientes_asociados': clientes_asociados,
         'benefit_percentage': benefit_percentage,
         'category_display': category_display,
+        'simulacion_origen': _resumen_desde_simulador(request, active_client, from_currency, to_currency, amount_str),
         'now': timezone.now(),
     }
 
@@ -968,6 +1389,7 @@ def currency_sale_history_view(request):
     
     if active_client:
         transactions = CurrencySaleTransaction.objects.filter(cliente=active_client).order_by('-timestamp')
+        _sincronizar_facturas_sifen(transactions)
     else:
         transactions = CurrencySaleTransaction.objects.none()
 
@@ -1007,6 +1429,7 @@ def currency_transactions_history_view(request):
     if active_client:
         purchases_qs = purchases_qs.filter(cliente=active_client)
         sales_qs = sales_qs.filter(cliente=active_client)
+        _sincronizar_facturas_sifen(purchases_qs, sales_qs)
     else:
         purchases_qs = purchases_qs.none()
         sales_qs = sales_qs.none()
@@ -1228,8 +1651,8 @@ class CurrencyPurchaseService:
             eval_amount_pyg = amount_dec
 
         # Criterio 1: Validación de Límites (Mínimo 50.000 PYG, Máximo 1.000.000.000 PYG)
-        MIN_LIMIT = Decimal('50000.00')
-        MAX_LIMIT = Decimal('1000000000.00')
+        MIN_LIMIT = LIMITE_MINIMO_OPERACION_PYG
+        MAX_LIMIT = LIMITE_MAXIMO_OPERACION_PYG
 
         if eval_amount_pyg < MIN_LIMIT:
             raise ValidationError(f"El monto de la transacción (₲ {eval_amount_pyg:,.2f}) es inferior al límite mínimo permitido de ₲ 50.000 PYG.")
@@ -1407,8 +1830,8 @@ class CurrencyPurchaseService:
         else:
             eval_amount_pyg = amount_dec
 
-        MIN_LIMIT = Decimal('50000.00')
-        MAX_LIMIT = Decimal('1000000000.00')
+        MIN_LIMIT = LIMITE_MINIMO_OPERACION_PYG
+        MAX_LIMIT = LIMITE_MAXIMO_OPERACION_PYG
 
         if eval_amount_pyg < MIN_LIMIT:
             raise ValidationError(f"El monto de la transacción (₲ {eval_amount_pyg:,.2f}) es inferior al límite mínimo permitido de ₲ 50.000 PYG.")
@@ -1786,6 +2209,7 @@ def currency_purchase_view(request):
         'benefit_percentage': benefit_percentage,
         'category_display': category_display,
         'acreditation_methods': acreditation_methods,
+        'simulacion_origen': _resumen_desde_simulador(request, active_client, from_currency, to_currency, amount_str),
         'now': timezone.now(),
     }
 
@@ -1809,6 +2233,7 @@ def currency_purchase_history_view(request):
     
     if active_client:
         transactions = CurrencyPurchaseTransaction.objects.filter(cliente=active_client).order_by('-timestamp')
+        _sincronizar_facturas_sifen(transactions)
     else:
         transactions = CurrencyPurchaseTransaction.objects.none()
 

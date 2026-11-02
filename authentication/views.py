@@ -751,7 +751,7 @@ class SifenEstadoAPIView(APIView):
 
 class SifenDownloadKudeAPIView(APIView):
     """
-    API view para descargar el KuDE (PDF) de SIFEN.
+    API view para descargar el KuDE (PDF oficial) de SIFEN.
     """
     permission_classes = [IsAuthenticated]
 
@@ -767,7 +767,7 @@ class SifenDownloadKudeAPIView(APIView):
             response = HttpResponse(pdf_content, content_type='application/pdf')
             response['Content-Disposition'] = f'attachment; filename="kude_{cdc}.pdf"'
             return response
-        return Response({"error": "No se pudo descargar el KuDE."}, status=status.HTTP_404_NOT_FOUND)
+        return Response({"error": "No se pudo descargar el KuDE oficial desde SIFEN."}, status=status.HTTP_404_NOT_FOUND)
 
 
 class SifenDownloadXmlAPIView(APIView):

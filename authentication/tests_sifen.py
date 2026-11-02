@@ -83,6 +83,33 @@ class SifenServiceTestCase(TestCase):
         xml_text = FacturaSeguraService.descargar_xml("mock-token-12345", "01800000123456789012345678901234567890123456")
         self.assertEqual(xml_text, "<rDE>mock xml</rDE>")
 
+    @patch('authentication.facturacion_service.requests.get')
+    def test_descargar_kude_error_no_devuelve_pdf(self, mock_get):
+        """
+        Una falla de SIFEN no debe generar un PDF: el KuDE es un documento fiscal.
+        """
+        mock_response = MagicMock()
+        mock_response.status_code = 403
+        mock_response.text = "Access Denied for this RUC."
+        mock_get.return_value = mock_response
+
+        self.assertIsNone(FacturaSeguraService.descargar_kude("token", "123"))
+
+    @patch('authentication.facturacion_service.requests.post')
+    def test_generar_de_token_invalido_describe_error(self, mock_post):
+        """
+        Un 401 debe devolver el motivo informado por la API en 'description'.
+        """
+        mock_response = MagicMock()
+        mock_response.status_code = 401
+        mock_response.text = "no autorizado"
+        mock_response.json.return_value = {"response": {"errors": ["Debes autenticarte"]}}
+        mock_post.return_value = mock_response
+
+        resultado = FacturaSeguraService.generar_de("token", {"DE": {}})
+        self.assertEqual(resultado["code"], 401)
+        self.assertEqual(resultado["description"], "Debes autenticarte")
+
     @patch('authentication.facturacion_service.FacturaSeguraService.obtener_token')
     def test_api_view_sifen_login(self, mock_obtener_token):
         """

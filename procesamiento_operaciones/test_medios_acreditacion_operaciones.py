@@ -3,11 +3,11 @@ from django.test import TestCase, Client
 from django.urls import reverse
 from django.contrib.auth.models import User
 from decimal import Decimal
-from authentication.models import UserProfile, Role, Cliente, ClientAccreditationMethod
+from authentication.models import UserProfile, Role, Cliente, ClientAccreditationMethod, UsuarioClienteRelacion
 from tasas_cambio.models import ExchangeRate, PaymentMethod, ClientBenefitRule
 from tasas_cambio.views import ensure_default_benefit_rules
 from procesamiento_operaciones.models import CurrencyPurchaseTransaction, CurrencySaleTransaction
-from procesamiento_operaciones.views import CurrencyPurchaseService, CurrencySaleService
+from procesamiento_operaciones.views import CurrencyPurchaseService, CurrencySaleService, _get_user_acreditation_methods
 
 class MediosAcreditacionOperacionesTests(TestCase):
     """
@@ -54,7 +54,7 @@ class MediosAcreditacionOperacionesTests(TestCase):
         self.role, _ = Role.objects.get_or_create(name="Role Bank")
         self.user = User.objects.create_user(username='user_bank', password='password123')
         self.profile = UserProfile.objects.create(
-            user=self.user, role=self.role, category='VIP', is_corporate=True, ci_ruc='80099988-1'
+            user=self.user, role=self.role, category='VIP', is_corporate=True, ci_ruc='80099988-1', keycloak_id='kc-user-123'
         )
 
     def test_redirect_when_no_acreditation_methods(self):
@@ -190,3 +190,44 @@ class MediosAcreditacionOperacionesTests(TestCase):
         self.assertEqual(acc_usd.balance, Decimal('50.00'))
         # Cuenta EUR debe haber recibido saldo acreditado en EUR
         self.assertGreater(acc_eur.balance, Decimal('0.00'))
+
+    def test_multi_client_acreditation_method_isolation(self):
+        """
+        Valida que un usuario con múltiples clientes no arrastre ni vea los medios de pago
+        de otro cliente cuando opera con un cliente que no tiene medios registrados.
+        """
+        cliente_b = Cliente.objects.create(
+            nombre_o_razon_social='Cliente Sin Medios SRL',
+            tipo_cliente='JURIDICA',
+            documento_identidad='80011122-3',
+            email='sinmedios@client.com',
+            categoria='MINORISTA'
+        )
+        UsuarioClienteRelacion.objects.create(
+            keycloak_user_id=self.profile.keycloak_id,
+            cliente=cliente_b,
+            rol_en_cliente='ADMIN'
+        )
+
+        acc_a = ClientAccreditationMethod.objects.create(
+            cliente=self.cliente,
+            tipo_medio='CUENTA_BANCARIA',
+            entidad_financiera='Banco Itaú',
+            numero_cuenta='999888777',
+            titularidad='Cliente A',
+            estado='VERIFICADO'
+        )
+
+        self.client.force_login(self.user)
+        session = self.client.session
+        session['active_client_id'] = str(cliente_b.id)
+        session.save()
+
+        response = self.client.get(self.purchase_url)
+        self.assertRedirects(response, reverse('client_acreditation_methods'))
+
+        req_b = self.client.get(self.purchase_url).wsgi_request
+        req_b.user = self.user
+        req_b.session = {'active_client_id': str(cliente_b.id)}
+        methods_b = _get_user_acreditation_methods(req_b, cliente_b)
+        self.assertEqual(methods_b.count(), 0)

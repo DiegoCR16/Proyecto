@@ -116,12 +116,18 @@
                             <td class="px-6 py-4 whitespace-nowrap font-mono text-xs">
                                 {% if tx.sifen_cdc %}
                                     <span class="bg-purple-100 text-purple-800 px-2 py-1 rounded font-bold block" title="{{ tx.sifen_cdc }}">
-                                        CDC: {{ tx.sifen_cdc|slice:":14" }}...
+                                        {{ tx.sifen_estado }}: {{ tx.sifen_cdc|slice:":14" }}...
                                     </span>
+                                    {% if tx.sifen_estado == 'Aprobada' %}
                                     <div class="mt-1 flex space-x-2">
                                         <a href="/auth/sifen/xml/{{ tx.sifen_cdc }}/" target="_blank" class="text-blue-600 hover:underline text-[10px]">XML</a>
                                         <a href="/auth/sifen/kude/{{ tx.sifen_cdc }}/" target="_blank" class="text-blue-600 hover:underline text-[10px]">KuDE (PDF)</a>
                                     </div>
+                                    {% else %}
+                                    <span class="text-amber-600 text-[10px] font-semibold block mt-1">Pendiente</span>
+                                    {% endif %}
+                                {% elif tx.sifen_estado == 'Error' %}
+                                    <span class="text-red-600 text-xs font-semibold" title="{{ tx.sifen_error }}">Error al facturar</span>
                                 {% else %}
                                     <span class="text-slate-400 text-xs">Pendiente</span>
                                 {% endif %}
