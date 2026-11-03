@@ -115,6 +115,7 @@ class VentanillaPOSPSE38Tests(TestCase):
             caja=self.caja,
             cajero=self.cajero,
             saldo_inicial_pyg=Decimal('10000000.00'),
+            saldo_inicial_eur=Decimal('1000.00'),
             estado='ABIERTO'
         )
         self.client.login(username='cajero_pse38', password='password123')
@@ -140,6 +141,7 @@ class VentanillaPOSPSE38Tests(TestCase):
             caja=self.caja,
             cajero=self.cajero,
             saldo_inicial_pyg=Decimal('5000000.00'),
+            saldo_inicial_usd=Decimal('1000.00'),
             estado='ABIERTO'
         )
         self.client.login(username='cajero_pse38', password='password123')
@@ -148,7 +150,7 @@ class VentanillaPOSPSE38Tests(TestCase):
             'tipo_operacion': 'VENTA',
             'moneda_origen': 'PYG',
             'moneda_destino': 'USD',
-            'monto_origen': '740000.00',
+            'monto_origen': '100.00',
             'efectivo_recibido': '800000.00',
             'nombre_cliente': 'Cliente Ocasional Test',
             'documento_cliente': 'DOC-OCASIONAL-999'

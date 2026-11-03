@@ -22,7 +22,7 @@
             const tipoOp = document.getElementById('tipo_operacion').value;
             const monedaOrigen = document.getElementById('moneda_origen').value;
             const monedaDestino = document.getElementById('moneda_destino').value;
-            const montoOrigen = parseFloat(document.getElementById('monto_origen').value) || 0;
+            const montoInput = parseFloat(document.getElementById('monto_origen').value) || 0;
             const efectivoRecibido = parseFloat(document.getElementById('efectivo_recibido').value) || 0;
 
             function getRate(cur) {
@@ -60,14 +60,34 @@
             let tasaStdOrigen = getStandardRate(monedaOrigen);
             let tasaStdDestino = getStandardRate(monedaDestino);
 
-            let valorPyg = (monedaOrigen === 'PYG') ? montoOrigen : (montoOrigen * tasaOrigen);
-            let comision = montoOrigen * 0.005; // 0.5%
-            let comisionPyg = (monedaOrigen === 'PYG') ? comision : (comision * tasaOrigen);
+            let montoOrigen = 0;
+            let montoDestino = 0;
+            let comision = 0;
+            let displayTotal = 0;
+            let displayTotalCur = '';
 
-            let netoPyg = (tipoOp === 'COMPRA') ? (valorPyg - comisionPyg) : (valorPyg + comisionPyg);
-            let montoDestino = (monedaDestino === 'PYG') ? netoPyg : (netoPyg / tasaDestino);
+            if (tipoOp === 'COMPRA') {
+                montoOrigen = montoInput;
+                let valorPyg = (monedaOrigen === 'PYG') ? montoOrigen : (montoOrigen * tasaOrigen);
+                comision = montoOrigen * 0.005;
+                let comisionPyg = (monedaOrigen === 'PYG') ? comision : (comision * tasaOrigen);
+                let netoPyg = valorPyg - comisionPyg;
+                montoDestino = (monedaDestino === 'PYG') ? netoPyg : (netoPyg / tasaDestino);
+                displayTotal = montoDestino;
+                displayTotalCur = monedaDestino;
+            } else {
+                // VENTA: montoInput es la cantidad que el cliente quiere comprar (montoDestino)
+                montoDestino = montoInput;
+                let netoPyg = (monedaDestino === 'PYG') ? montoDestino : (montoDestino * tasaDestino);
+                let valorPyg = netoPyg / 1.005;
+                let comisionPyg = netoPyg - valorPyg;
+                comision = (monedaOrigen === 'PYG') ? comisionPyg : (comisionPyg / tasaOrigen);
+                montoOrigen = (monedaOrigen === 'PYG') ? valorPyg : (valorPyg / tasaOrigen);
+                displayTotal = montoOrigen;
+                displayTotalCur = monedaOrigen;
+            }
 
-            let vuelto = efectivoRecibido > montoDestino ? efectivoRecibido - montoDestino : 0;
+            let vuelto = efectivoRecibido > montoOrigen ? efectivoRecibido - montoOrigen : 0;
 
             const tasaMostrada = (monedaOrigen !== 'PYG' ? tasaOrigen : tasaDestino);
             const tasaStdMostrada = (monedaOrigen !== 'PYG' ? tasaStdOrigen : tasaStdDestino);
@@ -77,8 +97,8 @@
             }
             document.getElementById('res-tasa').innerText = tasaTexto;
             document.getElementById('res-comision').innerText = comision.toLocaleString('es-PY', { minimumFractionDigits: 2 }) + ' ' + monedaOrigen;
-            document.getElementById('res-total').innerText = montoDestino.toLocaleString('es-PY', { minimumFractionDigits: 2 }) + ' ' + monedaDestino;
-            document.getElementById('res-vuelto').innerText = vuelto.toLocaleString('es-PY', { minimumFractionDigits: 2 }) + ' ' + monedaDestino;
+            document.getElementById('res-total').innerText = displayTotal.toLocaleString('es-PY', { minimumFractionDigits: 2 }) + ' ' + displayTotalCur;
+            document.getElementById('res-vuelto').innerText = vuelto.toLocaleString('es-PY', { minimumFractionDigits: 2 }) + ' ' + monedaOrigen;
 
             const badgeBeneficio = document.getElementById('badge-beneficio');
             if (badgeBeneficio) {
@@ -92,17 +112,21 @@
 
             const secEfectivo = document.getElementById('seccion-efectivo-recibido');
             const filaVuelto = document.getElementById('fila-vuelto');
+            const lblMonto = document.getElementById('label-monto-origen');
+            const lblTotal = document.getElementById('res-total-label');
+            const lblEfectivo = document.getElementById('label-efectivo-recibido');
+
             if (tipoOp === 'COMPRA') {
                 if (secEfectivo) secEfectivo.classList.add('hidden');
                 if (filaVuelto) filaVuelto.classList.add('hidden');
+                if (lblMonto) lblMonto.innerText = `Monto a Vender (en ${monedaOrigen})`;
+                if (lblTotal) lblTotal.innerText = `Total a Entregar al Cliente:`;
             } else {
                 if (secEfectivo) secEfectivo.classList.remove('hidden');
                 if (filaVuelto) filaVuelto.classList.remove('hidden');
-            }
-
-            const lblEfectivo = document.getElementById('label-efectivo-recibido');
-            if (lblEfectivo) {
-                lblEfectivo.innerText = `Efectivo Físico Recibido (en ${monedaDestino})`;
+                if (lblMonto) lblMonto.innerText = `Cantidad a Comprar (en ${monedaDestino})`;
+                if (lblTotal) lblTotal.innerText = `Total a Cobrar al Cliente:`;
+                if (lblEfectivo) lblEfectivo.innerText = `Efectivo Físico Recibido (en ${monedaOrigen})`;
             }
         }
 
@@ -190,6 +214,19 @@
                 <span class="text-xs bg-green-200 text-green-800 px-3 py-1 rounded-full font-medium">Operativo para Ventanilla</span>
             </div>
 
+            <!-- Saldos Actuales por Divisa en Caja -->
+            <div class="mb-6 bg-white rounded-2xl shadow-sm border border-slate-200 p-4">
+                <h3 class="text-xs font-semibold text-slate-700 uppercase tracking-wider mb-2">Cálculo Total de Divisas en el Sistema (Caja Activa)</h3>
+                <div class="grid grid-cols-2 sm:grid-cols-5 gap-3">
+                    {% for cur, saldo in saldos_actuales.items %}
+                        <div class="bg-slate-50 p-2.5 rounded-xl border border-slate-200 text-center">
+                            <span class="text-xs text-slate-500 font-medium block">{{ cur }}</span>
+                            <strong class="text-sm font-bold {% if saldo > 0 %}text-slate-900{% else %}text-red-600{% endif %}">{{ saldo|floatformat:2 }}</strong>
+                        </div>
+                    {% endfor %}
+                </div>
+            </div>
+
             <!-- POS Grid -->
             <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
                 <!-- Formulario POS de Ventanilla -->
@@ -270,9 +307,9 @@
 
                         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                             <div>
-                                <label class="block text-xs font-semibold text-slate-700 uppercase mb-1">Monto de Origen (Cantidad a Cambiar)</label>
+                                <label id="label-monto-origen" class="block text-xs font-semibold text-slate-700 uppercase mb-1">Monto de Origen (Cantidad a Cambiar)</label>
                                 <input type="number" step="0.01" id="monto_origen" name="monto_origen" required placeholder="Ej. 100.00" class="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm font-bold focus:ring-2 focus:ring-blue-600 focus:outline-none">
-                                <span class="text-[11px] text-slate-500 mt-0.5 block">Valor en la moneda origen que el cliente desea operar.</span>
+                                <span class="text-[11px] text-slate-500 mt-0.5 block">Valor en la moneda operada.</span>
                             </div>
                             <div id="seccion-efectivo-recibido">
                                 <label id="label-efectivo-recibido" class="block text-xs font-semibold text-slate-700 uppercase mb-1">Efectivo Físico Recibido (en PYG)</label>
@@ -306,7 +343,7 @@
                                 <strong id="res-comision" class="text-slate-900 font-semibold">0.00 Gs</strong>
                             </div>
                             <div class="flex justify-between py-2 border-b border-slate-100 bg-blue-50 px-3 rounded-lg">
-                                <span class="text-blue-900 font-bold">Total a Cobrar / Entregar:</span>
+                                <span id="res-total-label" class="text-blue-900 font-bold">Total a Cobrar / Entregar:</span>
                                 <strong id="res-total" class="text-blue-900 font-extrabold text-base">0.00 Gs</strong>
                             </div>
                             <div id="fila-vuelto" class="flex justify-between py-2 border-b border-slate-100 bg-green-50 px-3 rounded-lg">

@@ -13,7 +13,8 @@ import csv
 from .models import (
     Caja, TurnoCaja, DenominacionDivisa, DesgloseEfectivoCaja, 
     DetalleDesgloseBillete, ArqueoCaja, BitacoraArqueo, OperacionVentanilla,
-    verificar_turno_activo, inicializar_denominaciones_default, procesar_arqueo_cierre
+    verificar_turno_activo, inicializar_denominaciones_default, procesar_arqueo_cierre,
+    calcular_saldos_actuales_turno
 )
 from authentication.models import UserProfile, Cliente
 from gestion_clientes.views import get_user_interface_context
@@ -352,6 +353,28 @@ def detalle_turno_operaciones_view(request, turno_id):
     acumulado_compras_pyg = sum([op.total_pyg for op in all_ops if op.tx_type == 'COMPRA' and hasattr(op, 'total_pyg') and op.total_pyg], Decimal('0.00'))
     acumulado_ventas_pyg = sum([op.total_pyg for op in all_ops if op.tx_type == 'VENTA' and hasattr(op, 'total_pyg') and op.total_pyg], Decimal('0.00'))
 
+    divisas_list = ['PYG', 'USD', 'EUR', 'BRL', 'ARS']
+    saldos_actuales = calcular_saldos_actuales_turno(turno)
+    
+    resumen_divisas = []
+    for cur in divisas_list:
+        saldo_inicial = getattr(turno, f'saldo_inicial_{cur.lower()}', Decimal('0.00')) or Decimal('0.00')
+        desgloses_cur = turno.desgloses_efectivo.filter(divisa=cur)
+        ingresos = sum([d.monto_total for d in desgloses_cur.filter(tipo_operacion='INGRESO')], Decimal('0.00'))
+        egresos = sum([d.monto_total for d in desgloses_cur.filter(tipo_operacion='SALIDA')], Decimal('0.00'))
+        neto = ingresos - egresos
+        saldo_actual = saldos_actuales.get(cur, saldo_inicial + neto)
+        
+        if saldo_inicial > 0 or ingresos > 0 or egresos > 0 or saldo_actual > 0:
+            resumen_divisas.append({
+                'divisa': cur,
+                'saldo_inicial': saldo_inicial,
+                'ingresos': ingresos,
+                'egresos': egresos,
+                'neto': neto,
+                'saldo_actual': saldo_actual
+            })
+
     if export_format == 'excel':
         response = HttpResponse(content_type='text/csv; charset=utf-8')
         response['Content-Disposition'] = f'attachment; filename="planilla_turno_{turno.id}.csv"'
@@ -392,6 +415,7 @@ def detalle_turno_operaciones_view(request, turno_id):
         'total_ventas_count': total_ventas_count,
         'acumulado_compras_pyg': acumulado_compras_pyg,
         'acumulado_ventas_pyg': acumulado_ventas_pyg,
+        'resumen_divisas': resumen_divisas,
         'tx_type': tx_type_filter,
         'search_query': search_query,
         'now': timezone.now(),
@@ -446,9 +470,11 @@ def ventanilla_pos_view(request):
                 category_name = 'Corporativo'
 
     operaciones_recientes = OperacionVentanilla.objects.filter(cajero=request.user).order_by('-fecha')[:10]
+    saldos_actuales = calcular_saldos_actuales_turno(turno_activo) if turno_activo else {}
 
     context = {
         'turno_activo': turno_activo,
+        'saldos_actuales': saldos_actuales,
         'tasas': tasas,
         'clientes': clientes,
         'cliente_encontrado': cliente_encontrado,
@@ -486,7 +512,7 @@ def procesar_ventanilla_view(request):
         tipo_operacion = request.POST.get('tipo_operacion', 'COMPRA')
         moneda_origen = request.POST.get('moneda_origen', 'USD')
         moneda_destino = request.POST.get('moneda_destino', 'PYG')
-        monto_origen = Decimal(request.POST.get('monto_origen') or '0')
+        monto_input = Decimal(request.POST.get('monto_origen') or '0')
         efectivo_recibido = Decimal(request.POST.get('efectivo_recibido') or '0')
 
         cliente_id = request.POST.get('cliente_id')
@@ -508,8 +534,8 @@ def procesar_ventanilla_view(request):
                 }
             )
 
-        if monto_origen <= 0:
-            messages.error(request, "El monto de origen debe ser mayor a cero.")
+        if monto_input <= 0:
+            messages.error(request, "El monto debe ser mayor a cero.")
             return redirect('caja:ventanilla_pos')
 
         # Resolver beneficio por categoría del cliente (VIP / Corporativo)
@@ -559,16 +585,37 @@ def procesar_ventanilla_view(request):
         std_origen = get_standard_rate(moneda_origen)
         std_destino = get_standard_rate(moneda_destino)
 
-        valor_pyg = monto_origen if moneda_origen == 'PYG' else (monto_origen * tasa_origen)
-        comision = monto_origen * Decimal('0.005') # 0.5%
-        comision_pyg = comision if moneda_origen == 'PYG' else (comision * tasa_origen)
+        if tipo_operacion == 'COMPRA':
+            monto_origen = monto_input
+            valor_pyg = monto_origen if moneda_origen == 'PYG' else (monto_origen * tasa_origen)
+            comision = monto_origen * Decimal('0.005') # 0.5%
+            comision_pyg = comision if moneda_origen == 'PYG' else (comision * tasa_origen)
 
-        neto_pyg = valor_pyg - comision_pyg if tipo_operacion == 'COMPRA' else valor_pyg + comision_pyg
-        monto_destino = neto_pyg if moneda_destino == 'PYG' else (neto_pyg / tasa_destino if tasa_destino > 0 else neto_pyg)
-        tasa = tasa_origen if moneda_origen != 'PYG' else tasa_destino
-        tasa_std = std_origen if moneda_origen != 'PYG' else std_destino
-        total_a_cobrar_entregar = monto_destino
-        vuelto = efectivo_recibido - monto_destino if efectivo_recibido > monto_destino else Decimal('0.00')
+            neto_pyg = valor_pyg - comision_pyg
+            monto_destino = neto_pyg if moneda_destino == 'PYG' else (neto_pyg / tasa_destino if tasa_destino > 0 else neto_pyg)
+            tasa = tasa_origen if moneda_origen != 'PYG' else tasa_destino
+            tasa_std = std_origen if moneda_origen != 'PYG' else std_destino
+            total_a_cobrar_entregar = monto_destino
+            vuelto = Decimal('0.00')
+        else:
+            monto_destino = monto_input
+            neto_pyg = monto_destino if moneda_destino == 'PYG' else (monto_destino * tasa_destino)
+            valor_pyg = neto_pyg / Decimal('1.005')
+            comision_pyg = neto_pyg - valor_pyg
+            comision = comision_pyg if moneda_origen == 'PYG' else (comision_pyg / tasa_origen if tasa_origen > 0 else comision_pyg)
+            monto_origen = valor_pyg if moneda_origen == 'PYG' else (valor_pyg / tasa_origen if tasa_origen > 0 else valor_pyg)
+
+            tasa = tasa_origen if moneda_origen != 'PYG' else tasa_destino
+            tasa_std = std_origen if moneda_origen != 'PYG' else std_destino
+            total_a_cobrar_entregar = monto_origen
+            vuelto = efectivo_recibido - monto_origen if efectivo_recibido > monto_origen else Decimal('0.00')
+
+        # Validar saldo suficiente en caja para la moneda de salida (moneda_destino)
+        saldos_actuales = calcular_saldos_actuales_turno(turno_activo)
+        saldo_actual_salida = saldos_actuales.get(moneda_destino, Decimal('0.00'))
+        if saldo_actual_salida < monto_destino:
+            messages.error(request, f"Saldo insuficiente de {moneda_destino} en caja (Saldo actual: {saldo_actual_salida:,.2f}, Requerido: {monto_destino:,.2f}). No se puede realizar la operación.")
+            return redirect('caja:ventanilla_pos')
 
         import uuid as uuid_mod
         comprobante_num = f"TICKET-VNT-{uuid_mod.uuid4().hex[:8].upper()}"

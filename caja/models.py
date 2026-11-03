@@ -244,6 +244,32 @@ def puede_realizar_transaccion(caja):
     return TurnoCaja.objects.filter(caja=caja, estado='ABIERTO').exists()
 
 
+def calcular_saldos_actuales_turno(turno):
+    """
+    Calcula el saldo actual de cada divisa en un turno activo (saldo inicial + ingresos - salidas).
+    Retorna un diccionario {divisa: monto_actual}.
+    """
+    if not turno:
+        return {}
+    saldos = {
+        'PYG': turno.saldo_inicial_pyg or Decimal('0.00'),
+        'USD': turno.saldo_inicial_usd or Decimal('0.00'),
+        'EUR': turno.saldo_inicial_eur or Decimal('0.00'),
+        'BRL': turno.saldo_inicial_brl or Decimal('0.00'),
+        'ARS': turno.saldo_inicial_ars or Decimal('0.00'),
+    }
+    desgloses = DesgloseEfectivoCaja.objects.filter(turno=turno)
+    for des in desgloses:
+        cur = des.divisa
+        if cur not in saldos:
+            saldos[cur] = Decimal('0.00')
+        if des.tipo_operacion == 'INGRESO':
+            saldos[cur] += des.monto_total
+        elif des.tipo_operacion == 'SALIDA':
+            saldos[cur] -= des.monto_total
+    return saldos
+
+
 class ArqueoCaja(models.Model):
     """
     Modelo que representa el resultado del arqueo automático de caja por divisa al cierre de turno (PSE-22).
