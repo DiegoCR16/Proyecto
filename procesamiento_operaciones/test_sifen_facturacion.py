@@ -11,6 +11,9 @@ from procesamiento_operaciones.models import CurrencyPurchaseTransaction, Curren
 
 CDC_VALIDO = "0" * 44
 SERVICIO = "procesamiento_operaciones.views.FacturaSeguraService"
+INICIAL = settings.FACTURASEGURA_NUMERO_INICIAL
+PRIMER_DOC = f"{INICIAL:07d}"
+SEGUNDO_DOC = f"{INICIAL + 1:07d}"
 
 
 def crear_compra(breakdown="Desglose"):
@@ -147,13 +150,13 @@ class NumeracionSifenTests(TestCase):
 
     @patch(SERVICIO)
     def test_primer_numero_y_no_avanza_sin_aprobacion(self, servicio):
-        """El rango empieza en 137 y el contador no cambia mientras espera resultado."""
+        """El rango empieza en el número inicial y el contador no cambia mientras espera resultado."""
         self._preparar(servicio)
         views._generar_factura_sifen_async(crear_compra())
-        self.assertEqual(self._numeros(servicio), ["0000137"])
+        self.assertEqual(self._numeros(servicio), [PRIMER_DOC])
         sec = SifenSecuencia.objects.get()
-        self.assertEqual(sec.ultimo_numero, 136)
-        self.assertEqual(sec.numero_en_proceso, 137)
+        self.assertEqual(sec.ultimo_numero, INICIAL - 1)
+        self.assertEqual(sec.numero_en_proceso, INICIAL)
 
     @patch(SERVICIO)
     def test_segunda_operacion_espera_y_usa_siguiente_si_se_aprueba(self, servicio):
@@ -170,9 +173,9 @@ class NumeracionSifenTests(TestCase):
         self._resultado(servicio, "Aprobado")
 
         segunda.refresh_from_db()
-        self.assertEqual(self._numeros(servicio), ["0000137", "0000138"])
+        self.assertEqual(self._numeros(servicio), [PRIMER_DOC, SEGUNDO_DOC])
         self.assertEqual(segunda.sifen_estado, "Emitida")
-        self.assertEqual(SifenSecuencia.objects.get().ultimo_numero, 137)
+        self.assertEqual(SifenSecuencia.objects.get().ultimo_numero, INICIAL)
 
     @patch(SERVICIO)
     def test_rechazada_reutiliza_el_numero(self, servicio):
@@ -181,8 +184,8 @@ class NumeracionSifenTests(TestCase):
         views._generar_factura_sifen_async(crear_compra())
         self._resultado(servicio, "Rechazado")
         views._generar_factura_sifen_async(crear_compra())
-        self.assertEqual(self._numeros(servicio), ["0000137", "0000137"])
-        self.assertEqual(SifenSecuencia.objects.get().ultimo_numero, 136)
+        self.assertEqual(self._numeros(servicio), [PRIMER_DOC, PRIMER_DOC])
+        self.assertEqual(SifenSecuencia.objects.get().ultimo_numero, INICIAL - 1)
 
     @patch(SERVICIO)
     def test_error_al_emitir_libera_el_numero(self, servicio):
@@ -191,7 +194,7 @@ class NumeracionSifenTests(TestCase):
         servicio.generar_de.return_value = {"code": -10002, "description": "Falta dato"}
         views._generar_factura_sifen_async(crear_compra())
         views._generar_factura_sifen_async(crear_compra())
-        self.assertEqual(self._numeros(servicio), ["0000137", "0000137"])
+        self.assertEqual(self._numeros(servicio), [PRIMER_DOC, PRIMER_DOC])
         self.assertIsNone(SifenSecuencia.objects.get().numero_en_proceso)
 
     @patch(SERVICIO)
