@@ -493,6 +493,7 @@ def register_view(request):
                 client_name=client_name,
                 ci_ruc=ci_ruc,
                 client_type=client_type,
+                email=email,
                 corporate_group=None,
                 status='PENDING'
             )
@@ -581,7 +582,9 @@ def admin_approve_client_request(request, request_id):
             defaults={
                 'nombre_o_razon_social': client_req.client_name,
                 'tipo_cliente': client_req.client_type,
-                'email': client_req.user.email or f"{client_req.ci_ruc}@globalexchange.com"
+                # Correo indicado en el formulario del cliente; el del usuario solo como respaldo
+                # para solicitudes antiguas creadas antes de guardar este campo.
+                'email': client_req.email or client_req.user.email or f"{client_req.ci_ruc}@globalexchange.com"
             }
         )
         if req_profile.keycloak_id:

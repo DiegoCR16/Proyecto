@@ -197,6 +197,53 @@ class AuthenticationPSE4Tests(TestCase):
         self.assertIsNone(req.corporate_group)
         self.assertFalse(CorporateGroup.objects.filter(juridica_profile=self.ind_profile).exists())
 
+    def test_request_registration_guarda_correo_del_formulario(self):
+        """El correo indicado en el formulario de solicitud se guarda en la solicitud, no el del usuario."""
+        from authentication.models import ClientRegistrationRequest
+        self.ind_user.email = 'usuario@personal.com'
+        self.ind_user.save()
+        self.client.login(username='induser', password='password123')
+        self.client.post('/auth/register/', {
+            'client_name': 'Cliente Correo',
+            'ci_ruc': '5554443',
+            'client_type': 'FISICA',
+            'email': 'contacto@cliente.com'
+        })
+        req = ClientRegistrationRequest.objects.get(ci_ruc='5554443')
+        self.assertEqual(req.email, 'contacto@cliente.com')
+
+    @patch('gestion_clientes.views.requests.post')
+    @patch('gestion_clientes.views.requests.get')
+    @patch('gestion_clientes.views.requests.put')
+    def test_aprobar_solicitud_usa_correo_del_formulario(self, mock_put, mock_get, mock_post):
+        """Al aprobar, el Cliente creado toma el correo del formulario y no el del usuario solicitante."""
+        from authentication.models import ClientRegistrationRequest, Cliente
+        mock_post.return_value.status_code = 500
+        self.ind_user.email = 'usuario@personal.com'
+        self.ind_user.save()
+        req = ClientRegistrationRequest.objects.create(
+            user=self.ind_user, client_name='Cliente Aprobado', ci_ruc='7778889',
+            client_type='FISICA', email='facturas@cliente.com'
+        )
+        self.client.login(username='adminuser', password='password123')
+        self.client.get(f'/auth/admin/approve-client/{req.id}/')
+        cliente = Cliente.objects.get(documento_identidad='7778889')
+        self.assertEqual(cliente.email, 'facturas@cliente.com')
+
+    @patch('gestion_clientes.views.requests.post')
+    def test_aprobar_solicitud_antigua_sin_correo_usa_correo_usuario(self, mock_post):
+        """Solicitudes antiguas sin correo guardado usan el correo del usuario como respaldo."""
+        from authentication.models import ClientRegistrationRequest, Cliente
+        mock_post.return_value.status_code = 500
+        self.ind_user.email = 'usuario@personal.com'
+        self.ind_user.save()
+        req = ClientRegistrationRequest.objects.create(
+            user=self.ind_user, client_name='Cliente Viejo', ci_ruc='1112223', client_type='FISICA'
+        )
+        self.client.login(username='adminuser', password='password123')
+        self.client.get(f'/auth/admin/approve-client/{req.id}/')
+        self.assertEqual(Cliente.objects.get(documento_identidad='1112223').email, 'usuario@personal.com')
+
     def test_cajero_dashboard_render(self):
         """Verifica que un usuario con rol Cajero renderice correctamente la interfaz de cajero."""
         cajero_role = Role.objects.create(name="Cajero", description="Rol de Cajero")

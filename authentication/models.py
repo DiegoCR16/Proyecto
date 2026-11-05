@@ -223,6 +223,7 @@ class ClientRegistrationRequest(models.Model):
     client_name = models.CharField(max_length=255, verbose_name="Nombre / Razón Social del Cliente")
     ci_ruc = models.CharField(max_length=50, unique=True, verbose_name="Cédula o RUC")
     client_type = models.CharField(max_length=20, choices=[('FISICA', 'Persona Física'), ('JURIDICA', 'Persona Jurídica')], default='FISICA', verbose_name="Tipo de Cliente")
+    email = models.EmailField(blank=True, default='', verbose_name="Correo Electrónico del Cliente")
     corporate_group = models.ForeignKey(CorporateGroup, on_delete=models.SET_NULL, null=True, blank=True, related_name='registration_request', verbose_name="Grupo Creado")
     status = models.CharField(max_length=20, choices=[('PENDING', 'Pendiente'), ('APPROVED', 'Aprobado'), ('REJECTED', 'Rechazado')], default='PENDING', verbose_name="Estado")
     timestamp = models.DateTimeField(auto_now_add=True, verbose_name="Fecha de Solicitud")

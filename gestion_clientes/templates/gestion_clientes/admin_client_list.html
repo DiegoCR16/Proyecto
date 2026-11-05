@@ -67,7 +67,7 @@
                 <div class="bg-white p-4 rounded-lg border border-amber-300 flex items-center justify-between shadow-sm">
                     <div>
                         <span class="font-bold text-slate-900">{{ req.client_name }}</span> ({{ req.client_type }})
-                        <div class="text-xs text-slate-600">CI/RUC: <strong class="font-mono">{{ req.ci_ruc }}</strong> | Solicitante: {{ req.user.username }}</div>
+                        <div class="text-xs text-slate-600">CI/RUC: <strong class="font-mono">{{ req.ci_ruc }}</strong> | Correo: {{ req.email|default:"-" }} | Solicitante: {{ req.user.username }}</div>
                     </div>
                     <a href="{% url 'admin_approve_client' req.id %}" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-xs font-semibold transition">
                         Aprobar y Asociar Grupo &rarr;
