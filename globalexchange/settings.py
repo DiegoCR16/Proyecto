@@ -187,3 +187,13 @@ FACTURASEGURA_EMISOR_ACTIVIDADES_ECONOMICAS = [
         'dDesActEco': 'Otras actividades profesionales, científicas y técnicas n.c.p.'
     }
 ]
+
+
+# Durante las pruebas (python manage.py test / pytest) se silencian los logs:
+# los errores simulados a propósito (SIFEN, Keycloak, etc.) no ensucian la salida
+# y solo se ven los puntos de progreso y el resultado final.
+import sys as _sys
+import logging as _logging
+_EJECUTANDO_PRUEBAS = (len(_sys.argv) > 1 and _sys.argv[1] == 'test') or 'pytest' in _sys.modules
+if _EJECUTANDO_PRUEBAS:
+    _logging.disable(_logging.CRITICAL)

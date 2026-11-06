@@ -94,6 +94,12 @@
         </div>
         {% endif %}
 
+        {% if not active_client %}
+        <div class="bg-blue-50 border-l-4 border-blue-600 p-4 rounded-xl shadow-sm">
+            <p class="text-xs text-blue-800">Las alertas por tasa objetivo se configuran dentro de un cliente. Seleccione o ingrese con un cliente para gestionarlas.</p>
+        </div>
+        {% endif %}
+
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
             
             <!-- Column 1: Configuration Form -->

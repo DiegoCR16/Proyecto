@@ -111,6 +111,229 @@ def link_physical_to_corporate_group(corporate_group, fisica_profile, role_in_gr
         pass
     return membership
 
+class KeycloakDeletionError(Exception):
+    """Error al eliminar en Keycloak los recursos asociados a un cliente."""
+
+
+def _get_keycloak_admin_headers():
+    """
+    Obtiene un token de administración (client_credentials) de Keycloak.
+
+    Returns:
+        dict: Cabeceras HTTP con el token Bearer.
+
+    Raises:
+        KeycloakDeletionError: Si no se pudo obtener el token.
+    """
+    token_url = f"{settings.KEYCLOAK_SERVER_URL}/realms/{settings.KEYCLOAK_REALM}/protocol/openid-connect/token"
+    token_data = {
+        'grant_type': 'client_credentials',
+        'client_id': settings.KEYCLOAK_CLIENT_ID,
+        'client_secret': getattr(settings, 'KEYCLOAK_CLIENT_SECRET', ''),
+    }
+    try:
+        token_resp = requests.post(token_url, data=token_data, timeout=5)
+    except requests.RequestException as e:
+        raise KeycloakDeletionError(f"No se pudo conectar con Keycloak: {e}")
+    if token_resp.status_code != 200:
+        raise KeycloakDeletionError(f"No se pudo obtener token de Keycloak (HTTP {token_resp.status_code}).")
+    admin_token = token_resp.json().get('access_token')
+    return {'Authorization': f'Bearer {admin_token}', 'Content-Type': 'application/json'}
+
+
+def _find_keycloak_group_ids(headers, group_name):
+    """
+    Busca en Keycloak los IDs de los grupos cuyo nombre coincide exactamente con ``group_name``.
+
+    Args:
+        headers (dict): Cabeceras de autenticación de administración.
+        group_name (str): Nombre exacto del grupo.
+
+    Returns:
+        list[str]: IDs de grupos encontrados.
+    """
+    groups_url = f"{settings.KEYCLOAK_SERVER_URL}/admin/realms/{settings.KEYCLOAK_REALM}/groups"
+    try:
+        resp = requests.get(groups_url, params={'search': group_name, 'exact': 'true'}, headers=headers, timeout=5)
+    except requests.RequestException as e:
+        raise KeycloakDeletionError(f"Error consultando grupos en Keycloak: {e}")
+    if resp.status_code != 200:
+        raise KeycloakDeletionError(f"Error consultando grupos en Keycloak (HTTP {resp.status_code}).")
+    return [g.get('id') for g in resp.json() if g.get('name') == group_name and g.get('id')]
+
+
+def assign_keycloak_realm_roles(headers, kc_user_id, role_names):
+    """
+    Asigna roles de realm de Keycloak a un usuario (solo los que existen en el realm).
+
+    Args:
+        headers (dict): Cabeceras de autenticación de administración.
+        kc_user_id (str): ID del usuario en Keycloak.
+        role_names (Iterable[str]): Nombres de los roles a asignar.
+    """
+    base = f"{settings.KEYCLOAK_SERVER_URL}/admin/realms/{settings.KEYCLOAK_REALM}"
+    reps = []
+    for name in role_names:
+        resp = requests.get(f"{base}/roles/{requests.utils.quote(name, safe='')}", headers=headers, timeout=5)
+        if resp.status_code == 200:
+            reps.append(resp.json())
+    if reps:
+        requests.post(f"{base}/users/{kc_user_id}/role-mappings/realm", json=reps, headers=headers, timeout=5)
+
+
+def remove_keycloak_realm_roles(headers, kc_user_id, role_names):
+    """
+    Quita a un usuario de Keycloak los roles de realm indicados (comparación sin distinguir mayúsculas).
+
+    Args:
+        headers (dict): Cabeceras de autenticación de administración.
+        kc_user_id (str): ID del usuario en Keycloak.
+        role_names (Iterable[str]): Nombres de los roles a quitar.
+
+    Raises:
+        KeycloakDeletionError: Si Keycloak rechaza la operación.
+    """
+    url = f"{settings.KEYCLOAK_SERVER_URL}/admin/realms/{settings.KEYCLOAK_REALM}/users/{kc_user_id}/role-mappings/realm"
+    targets = {n.lower() for n in role_names}
+    try:
+        resp = requests.get(url, headers=headers, timeout=5)
+        if resp.status_code == 404:
+            return
+        if resp.status_code != 200:
+            raise KeycloakDeletionError(f"Error consultando roles del usuario en Keycloak (HTTP {resp.status_code}).")
+        to_remove = [r for r in resp.json() if r.get('name', '').lower() in targets]
+        if to_remove:
+            del_resp = requests.delete(url, json=to_remove, headers=headers, timeout=5)
+            if del_resp.status_code not in (200, 204, 404):
+                raise KeycloakDeletionError(f"Keycloak rechazó quitar el rol Cliente (HTTP {del_resp.status_code}).")
+    except requests.RequestException as e:
+        raise KeycloakDeletionError(f"Error quitando roles en Keycloak: {e}")
+
+
+def delete_cliente_keycloak_resources(group_names, group_ids, kc_user_ids_sin_cliente=()):
+    """
+    Elimina en Keycloak los grupos del cliente (lo que desvincula a todos sus miembros),
+    los roles de realm del grupo ``<grupo>_CLIENTE``, ``<grupo>_OPERADOR`` y ``<grupo>_ANALISTA``,
+    y quita el rol ``Cliente`` a los usuarios que se quedan sin ningún cliente.
+
+    Args:
+        group_names (Iterable[str]): Nombres de los grupos del cliente.
+        group_ids (Iterable[str]): IDs de grupo de Keycloak ya conocidos localmente.
+        kc_user_ids_sin_cliente (Iterable[str]): IDs Keycloak de usuarios que quedan sin cliente.
+
+    Raises:
+        KeycloakDeletionError: Si Keycloak no responde o rechaza la eliminación.
+    """
+    headers = _get_keycloak_admin_headers()
+    base = f"{settings.KEYCLOAK_SERVER_URL}/admin/realms/{settings.KEYCLOAK_REALM}"
+
+    for kc_uid in kc_user_ids_sin_cliente:
+        remove_keycloak_realm_roles(headers, kc_uid, ['Cliente'])
+
+    ids_to_delete = {gid for gid in group_ids if gid}
+    for name in group_names:
+        ids_to_delete.update(_find_keycloak_group_ids(headers, name))
+
+    for gid in ids_to_delete:
+        try:
+            resp = requests.delete(f"{base}/groups/{gid}", headers=headers, timeout=5)
+        except requests.RequestException as e:
+            raise KeycloakDeletionError(f"Error eliminando grupo en Keycloak: {e}")
+        if resp.status_code not in (200, 204, 404):
+            raise KeycloakDeletionError(f"Keycloak rechazó la eliminación del grupo (HTTP {resp.status_code}).")
+
+    for name in group_names:
+        for rname in ['CLIENTE', 'OPERADOR', 'ANALISTA']:
+            try:
+                requests.delete(f"{base}/roles/{requests.utils.quote(f'{name}_{rname}', safe='')}", headers=headers, timeout=5)
+            except requests.RequestException:
+                pass
+
+
+def _profile_has_other_client(profile, cliente, corp_groups):
+    """
+    Indica si el perfil tiene algún cliente/grupo asociado distinto del que se está eliminando.
+
+    Args:
+        profile (UserProfile): Perfil a evaluar.
+        cliente (Cliente): Cliente que se elimina.
+        corp_groups (list[CorporateGroup]): Grupos que se eliminan junto con el cliente.
+
+    Returns:
+        bool: ``True`` si conserva otro cliente.
+    """
+    group_ids = [g.id for g in corp_groups]
+    return (
+        UsuarioClienteRelacion.objects.filter(
+            models.Q(keycloak_user_id=profile.keycloak_id or '__none__') | models.Q(keycloak_user_id=str(profile.user.id))
+        ).exclude(cliente=cliente).exists()
+        or GroupMembership.objects.filter(fisica_profile=profile).exclude(corporate_group_id__in=group_ids).exists()
+        or CorporateGroup.objects.filter(juridica_profile=profile).exclude(id__in=group_ids).exists()
+    )
+
+
+def delete_cliente_completo(cliente):
+    """
+    Elimina un cliente de forma completa y consistente:
+
+    1. En Keycloak: elimina el grupo del cliente y sus roles de grupo (los usuarios dejan de pertenecer a él)
+       y quita el rol ``Cliente`` a los usuarios que no tienen otro cliente.
+    2. Localmente: elimina el ``Cliente`` (y en cascada sus relaciones usuario-cliente y medios de acreditación),
+       los ``CorporateGroup`` asociados (y en cascada membresías y solicitudes de miembros) y las
+       solicitudes de registro del mismo CI/RUC (para que pueda volver a solicitarse).
+    3. Cada usuario que estaba asociado y no tiene otro cliente vuelve a ser un usuario regular sin rol
+       (``role=None``, ``is_corporate=False``); si tiene otro cliente, sigue iniciando con ese cliente.
+
+    Args:
+        cliente (Cliente): Cliente a eliminar.
+
+    Returns:
+        list[User]: Usuarios que quedaron sin ningún cliente asociado (vuelven a ser usuarios regulares).
+
+    Raises:
+        KeycloakDeletionError: Si falla la eliminación en Keycloak (no se borra nada localmente).
+    """
+    corp_groups = list(CorporateGroup.objects.filter(group_name=cliente.nombre_o_razon_social))
+    reg_requests = ClientRegistrationRequest.objects.filter(ci_ruc=cliente.documento_identidad)
+    for req in reg_requests.exclude(corporate_group__isnull=True).select_related('corporate_group'):
+        if req.corporate_group not in corp_groups:
+            corp_groups.append(req.corporate_group)
+
+    # Perfiles afectados (por relación usuario-cliente y por membresía/propiedad del grupo)
+    kc_ids = list(cliente.usuarios_relacionados.values_list('keycloak_user_id', flat=True))
+    affected_profiles = set(UserProfile.objects.filter(keycloak_id__in=kc_ids))
+    numeric_ids = [k for k in kc_ids if str(k).isdigit()]
+    affected_profiles.update(UserProfile.objects.filter(user__id__in=numeric_ids))
+    for g in corp_groups:
+        affected_profiles.add(g.juridica_profile)
+        affected_profiles.update(m.fisica_profile for m in g.memberships.select_related('fisica_profile'))
+
+    profiles_sin_cliente = [p for p in affected_profiles if not _profile_has_other_client(p, cliente, corp_groups)]
+
+    group_names = {cliente.nombre_o_razon_social} | {g.group_name for g in corp_groups}
+    delete_cliente_keycloak_resources(
+        group_names,
+        [g.keycloak_group_id for g in corp_groups],
+        [p.keycloak_id for p in profiles_sin_cliente if p.keycloak_id],
+    )
+
+    reg_requests.delete()
+    for g in corp_groups:
+        g.delete()
+    cliente.delete()
+
+    client_role_names = ['cliente']
+    for profile in profiles_sin_cliente:
+        if profile.role and profile.role.name.lower() in client_role_names:
+            profile.role = None
+        profile.is_corporate = False
+        profile.save(update_fields=['role', 'is_corporate'])
+        for r in list(profile.roles.all()):
+            if r.name.lower() in client_role_names:
+                profile.roles.remove(r)
+    return [p.user for p in profiles_sin_cliente]
+
+
 def sync_keycloak_clients():
     """
     Sincroniza los usuarios de Keycloak Admin REST API con la base de datos local,
@@ -332,14 +555,21 @@ def admin_client_detail_view(request, cliente_id):
 
         elif action == 'delete_client':
             nombre_cliente = cliente.nombre_o_razon_social
-            cliente.delete()
-            AuditLog.objects.create(
-                user=request.user,
-                action="DELETE_CLIENT",
-                ip_address=get_client_ip(request),
-                details=f"Admin {request.user.username} eliminó el cliente {nombre_cliente}."
-            )
-            return redirect('admin_client_list')
+            try:
+                users_sin_cliente = delete_cliente_completo(cliente)
+            except KeycloakDeletionError as e:
+                error = f"No se pudo eliminar el cliente en Keycloak, no se realizaron cambios: {e}"
+            else:
+                AuditLog.objects.create(
+                    user=request.user,
+                    action="DELETE_CLIENT",
+                    ip_address=get_client_ip(request),
+                    details=(
+                        f"Admin {request.user.username} eliminó el cliente {nombre_cliente} (local y Keycloak). "
+                        f"Usuarios que vuelven a ser usuarios regulares: {[u.username for u in users_sin_cliente]}."
+                    )
+                )
+                return redirect('admin_client_list')
 
         elif action == 'create_user_and_associate':
             username = request.POST.get('new_username', '').strip()
@@ -643,8 +873,22 @@ def admin_approve_client_request(request, request_id):
                 if req_profile.keycloak_id and corp_group.keycloak_group_id:
                     assign_url = f"{settings.KEYCLOAK_SERVER_URL}/admin/realms/{settings.KEYCLOAK_REALM}/users/{req_profile.keycloak_id}/groups/{corp_group.keycloak_group_id}"
                     requests.put(assign_url, headers=headers, timeout=3)
+
+                if req_profile.keycloak_id:
+                    # Rol Cliente (realm) y rol Cliente dentro del grupo del cliente
+                    assign_keycloak_realm_roles(
+                        headers, req_profile.keycloak_id,
+                        ['Cliente', f"{corp_group.group_name}_CLIENTE"]
+                    )
         except Exception:
             pass
+
+        cliente_role, _ = Role.objects.get_or_create(name="Cliente")
+        if req_profile.role is None:
+            req_profile.role = cliente_role
+            req_profile.save(update_fields=['role'])
+        elif req_profile.role != cliente_role:
+            req_profile.roles.add(cliente_role)
 
         AuditLog.objects.create(
             user=request.user,
