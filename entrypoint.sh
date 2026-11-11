@@ -24,5 +24,26 @@ END
 echo "Running database migrations..."
 python manage.py migrate
 
+# PSE-40: población inicial idempotente (divisas, métodos de pago, comisiones, roles, cajas, usuarios).
+# SEED_DATA=false la desactiva; SEED_TEST_USERS=false carga solo catálogos sin usuarios de prueba.
+if [ "${SEED_DATA:-true}" = "true" ]; then
+    echo "Seeding initial data..."
+    if [ "${SEED_TEST_USERS:-true}" = "true" ]; then
+        python manage.py seed_data
+    else
+        python manage.py seed_data --sin-usuarios
+    fi
+fi
+
+# PSE-40: registra la URL de callback y los usuarios de prueba en Keycloak.
+# Corre en segundo plano porque Keycloak tarda en iniciar; no bloquea el servidor web.
+if [ "${KEYCLOAK_BOOTSTRAP:-true}" = "true" ]; then
+    if [ "${SEED_TEST_USERS:-true}" = "true" ]; then
+        python manage.py keycloak_bootstrap &
+    else
+        python manage.py keycloak_bootstrap --sin-usuarios &
+    fi
+fi
+
 echo "Starting Django server..."
 exec python manage.py runserver 0.0.0.0:8000

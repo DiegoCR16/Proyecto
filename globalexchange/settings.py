@@ -24,13 +24,37 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/6.1/howto/deployment/checklist/
 
+def env_bool(name, default=False):
+    """Lee una variable de entorno booleana ('true', '1', 'yes', 'on' => True)."""
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    return value.strip().lower() in ('true', '1', 'yes', 'on')
+
+
+def env_list(name, default=''):
+    """Lee una variable de entorno con valores separados por comas y devuelve una lista sin vacíos."""
+    return [item.strip() for item in os.environ.get(name, default).split(',') if item.strip()]
+
+
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-*^pm7b%^e43^9+r^v7oo8lxlzh7z6n@hx65rypp*cwm$8kf(3r'
+# PSE-40: en producción se toma de SECRET_KEY (.env.production); el valor por defecto es solo para desarrollo.
+SECRET_KEY = os.environ.get('SECRET_KEY', 'django-insecure-*^pm7b%^e43^9+r^v7oo8lxlzh7z6n@hx65rypp*cwm$8kf(3r')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = env_bool('DEBUG', default=True)
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = env_list('ALLOWED_HOSTS')
+
+# Orígenes HTTPS confiables para formularios detrás del proxy (ej: https://globalexchange.duckdns.org)
+CSRF_TRUSTED_ORIGINS = env_list('CSRF_TRUSTED_ORIGINS')
+
+# Detrás de Caddy (proxy inverso con HTTPS) Django debe confiar en X-Forwarded-Proto.
+if env_bool('USE_X_FORWARDED_PROTO', default=False):
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+    USE_X_FORWARDED_HOST = True
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
 
 
 # Application definition
@@ -62,6 +86,7 @@ KEYCLOAK_REDIRECT_URI = os.environ.get('KEYCLOAK_REDIRECT_URI', 'http://localhos
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -148,6 +173,8 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/6.1/howto/static-files/
 
 STATIC_URL = 'static/'
+# PSE-40: destino de collectstatic; WhiteNoise sirve estos archivos en producción.
+STATIC_ROOT = BASE_DIR / 'staticfiles'
 
 
 # Email

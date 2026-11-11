@@ -1,0 +1,13 @@
+# Proxy inverso con HTTPS automático (Let's Encrypt) - PSE-40.
+# APP_DOMAIN  -> Django (ej: globalexchange.duckdns.org)
+# AUTH_DOMAIN -> Keycloak (ej: auth.globalexchange.duckdns.org)
+# Caddy envía X-Forwarded-For/Proto/Host, que Django y Keycloak usan para generar URLs https.
+
+{$APP_DOMAIN} {
+	encode gzip
+	reverse_proxy web:8000
+}
+
+{$AUTH_DOMAIN} {
+	reverse_proxy keycloak:8080
+}

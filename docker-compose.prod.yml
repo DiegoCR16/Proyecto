@@ -1,11 +1,24 @@
+# Override de producción (PSE-40). Se usa junto con docker-compose.yml:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml --env-file .env.production up -d --build
+# o simplemente: ./deploy.sh prod
+#
+# Solo Caddy publica puertos (80/443). Django, Keycloak, PostgreSQL y Mailpit quedan
+# accesibles únicamente dentro de la red interna de Docker.
+# `!reset` es necesario porque Compose concatena las listas `ports` del archivo base.
+
 services:
   db:
     restart: always
-    ports: [] # Do not expose DB port publicly in production
+    ports: !reset []
     environment:
       POSTGRES_DB: ${DB_NAME:-globalexchange}
       POSTGRES_USER: ${DB_USER:-postgres}
-      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Definir DB_PASSWORD en .env.production}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres} -d ${DB_NAME:-globalexchange}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
     logging:
       driver: "json-file"
       options:
@@ -14,14 +27,21 @@ services:
 
   keycloak:
     restart: always
+    ports: !reset []
     environment:
-      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN}
-      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:?Definir KEYCLOAK_ADMIN en .env.production}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?Definir KEYCLOAK_ADMIN_PASSWORD en .env.production}
       KC_DB: postgres
       KC_DB_URL: jdbc:postgresql://db:5432/${DB_NAME:-globalexchange}
       KC_DB_USERNAME: ${DB_USER:-postgres}
       KC_DB_PASSWORD: ${DB_PASSWORD}
-    command: start --hostname-strict=false --optimized
+      KC_HEALTH_ENABLED: "true"
+    # HTTP interno + cabeceras X-Forwarded de Caddy (el HTTPS lo termina Caddy).
+    # --import-realm importa docker/global-exchange-realm-realm.json solo si el realm no existe.
+    command: start --import-realm --http-enabled=true --proxy-headers=xforwarded --hostname-strict=false
+    depends_on:
+      db:
+        condition: service_healthy
     logging:
       driver: "json-file"
       options:
@@ -30,9 +50,8 @@ services:
 
   mailpit:
     restart: always
-    ports:
-      - "127.0.0.1:1025:1025"
-      - "127.0.0.1:8025:8025" # Bind to localhost in prod for security
+    ports: !reset
+      - "127.0.0.1:8025:8025" # Panel web solo accesible desde el servidor (túnel SSH)
     logging:
       driver: "json-file"
       options:
@@ -45,12 +64,14 @@ services:
       target: production
     restart: always
     command: ./entrypoint-prod.sh
-    volumes:
+    volumes: !reset
       - static_volume:/app/staticfiles
-    ports:
-      - "8000:8000"
-    env_file:
+    ports: !reset []
+    expose:
+      - "8000"
+    env_file: !reset
       - .env.production
+    environment: !reset []
     depends_on:
       db:
         condition: service_healthy
@@ -62,5 +83,29 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  caddy:
+    image: caddy:2.8-alpine
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      APP_DOMAIN: ${APP_DOMAIN:?Definir APP_DOMAIN en .env.production}
+      AUTH_DOMAIN: ${AUTH_DOMAIN:?Definir AUTH_DOMAIN en .env.production}
+    volumes:
+      - ./docker/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - web
+      - keycloak
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
 volumes:
   static_volume:
+  caddy_data:
+  caddy_config:
