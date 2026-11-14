@@ -322,6 +322,60 @@
                 </div>
             </div>
 
+            {% if cliente_encontrado %}
+            <!-- Facturas de ventanilla del cliente: anulación a pedido del cliente en la sucursal -->
+            <div class="mt-8 bg-white rounded-2xl shadow-lg border border-slate-200 p-6">
+                <h3 class="text-lg font-bold text-slate-900">Facturas de {{ cliente_encontrado.nombre_o_razon_social }} en ventanilla</h3>
+                <p class="text-xs text-slate-500 mt-1 mb-4">Si el cliente pide anular una factura, envíe la solicitud al Administrador. Solo se anula la factura en SIFEN: los saldos no cambian; si devuelve efectivo, regístrelo como movimiento de efectivo del turno.</p>
+                {% if facturas_cliente %}
+                    <div class="overflow-x-auto">
+                        <table class="min-w-full divide-y divide-slate-200 text-sm">
+                            <thead class="bg-slate-100">
+                                <tr>
+                                    <th class="px-4 py-3 text-left font-semibold text-slate-700">Operación</th>
+                                    <th class="px-4 py-3 text-left font-semibold text-slate-700">Fecha</th>
+                                    <th class="px-4 py-3 text-left font-semibold text-slate-700">Monto</th>
+                                    <th class="px-4 py-3 text-left font-semibold text-slate-700">Factura SIFEN</th>
+                                    <th class="px-4 py-3 text-left font-semibold text-slate-700">Anulación</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-slate-200">
+                                {% for tx in facturas_cliente %}
+                                    <tr class="align-top">
+                                        <td class="px-4 py-3 font-medium">{% if tx.tipo == 'VENTA' %}Venta{% else %}Compra{% endif %} #{{ tx.pk }}</td>
+                                        <td class="px-4 py-3 text-slate-500 text-xs">{{ tx.timestamp|date:"d/m/Y H:i" }}</td>
+                                        <td class="px-4 py-3">{{ tx.amount }} {{ tx.from_currency }} &rarr; {{ tx.to_currency }}</td>
+                                        <td class="px-4 py-3">{% include "caja/_factura_sifen.html" with tx=tx %}</td>
+                                        <td class="px-4 py-3">
+                                            {% if tx.anulacion %}
+                                                <span class="text-xs font-semibold text-slate-600">{{ tx.anulacion.get_tipo_display }} &middot; {{ tx.anulacion.get_estado_display }}</span>
+                                            {% elif tx.solicitud %}
+                                                <span class="text-xs font-semibold text-amber-700">Solicitud pendiente del Administrador</span>
+                                            {% elif tx.anulable %}
+                                                <form method="POST" action="{% url 'caja:solicitar_anulacion_factura' %}" class="flex flex-col gap-2 min-w-[14rem]">
+                                                    {% csrf_token %}
+                                                    <input type="hidden" name="tipo" value="{{ tx.tipo }}">
+                                                    <input type="hidden" name="id" value="{{ tx.pk }}">
+                                                    <input type="hidden" name="documento_busqueda" value="{{ doc_busqueda }}">
+                                                    <input type="text" name="motivo" required minlength="5" maxlength="500" placeholder="Motivo indicado por el cliente" class="px-3 py-1.5 border border-slate-300 rounded-lg text-xs">
+                                                    <button type="submit" class="bg-red-600 hover:bg-red-700 text-white rounded-lg px-3 py-1.5 text-xs font-semibold"
+                                                            onclick="return confirm('¿Enviar al Administrador la solicitud para anular esta factura?')">Solicitar anulación</button>
+                                                </form>
+                                            {% else %}
+                                                <span class="text-xs text-slate-400">No disponible</span>
+                                            {% endif %}
+                                        </td>
+                                    </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                {% else %}
+                    <p class="text-sm text-slate-500">El cliente no tiene operaciones de ventanilla facturadas.</p>
+                {% endif %}
+            </div>
+            {% endif %}
+
             <!-- Operaciones Recientes en Ventanilla -->
             <div class="mt-8 bg-white rounded-2xl shadow-lg border border-slate-200 p-6">
                 <h3 class="text-lg font-bold text-slate-900 mb-4">Operaciones Recientes en Ventanilla (Turno Actual)</h3>

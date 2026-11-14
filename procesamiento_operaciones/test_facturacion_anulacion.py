@@ -273,6 +273,18 @@ class CancelacionTests(BaseFacturacionTest):
             facturacion.cancelar_factura(self.compra(), "  ", self.admin)
 
 
+class RangoNotaCreditoTests(TestCase):
+    """Numeracion de notas de credito dentro del rango asignado por Factura Segura."""
+
+    def test_rango_por_defecto_es_el_asignado(self):
+        """El rango de notas de credito es 49-60 (establecimiento 001, punto 003)."""
+        self.assertEqual(views._rango_numeracion(views.SIFEN_TIDE_NOTA_CREDITO), (49, 60))
+
+    def test_primera_nota_de_credito_usa_el_numero_inicial(self):
+        """Sin secuencia previa, la primera nota de credito reserva el 49 y no el 1."""
+        self.assertEqual(views._reservar_numero_documento(views.SIFEN_TIDE_NOTA_CREDITO), 49)
+
+
 class NotaCreditoTests(BaseFacturacionTest):
     """Nota de crédito electrónica (fuera del plazo de cancelación)."""
 

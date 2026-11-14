@@ -7,6 +7,8 @@ from django.contrib import messages
 from django.utils import timezone
 from django.core.exceptions import ValidationError
 from django.http import HttpResponse
+from django.urls import reverse
+from urllib.parse import urlencode
 from decimal import Decimal
 import csv
 
@@ -20,6 +22,9 @@ from authentication.permisos import requiere_permiso, tiene_permiso, denegar_acc
 from gestion_clientes.views import get_user_interface_context
 from procesamiento_operaciones.models import CurrencyPurchaseTransaction, CurrencySaleTransaction
 from procesamiento_operaciones.views import _generar_factura_sifen_async, _sincronizar_facturas_sifen
+from procesamiento_operaciones import facturacion
+from procesamiento_operaciones.facturacion import FacturacionError
+from procesamiento_operaciones.views_facturacion import _auditar
 from tasas_cambio.models import ExchangeRate, ClientBenefitRule
 from tasas_cambio.views import ensure_default_benefit_rules
 
@@ -459,6 +464,64 @@ def detalle_turno_operaciones_view(request, turno_id):
     return render(request, 'caja/detalle_turno_operaciones.html', context)
 
 
+def _facturas_ventanilla_del_cliente(cliente, limite=10):
+    """
+    Últimas operaciones de ventanilla facturadas de un cliente, con el estado de su anulación,
+    para que el cajero pueda pedir la anulación cuando el cliente está en la sucursal.
+
+    Args:
+        cliente (Cliente): Cliente identificado en la ventanilla.
+        limite (int): Cantidad máxima de operaciones a mostrar.
+
+    Returns:
+        list: Transacciones (más recientes primero) con los atributos ``tipo``, ``anulacion``,
+        ``solicitud`` y ``anulable`` para la plantilla.
+    """
+    # El CDC se guarda en el desglose de la transacción (sifen_cdc es una propiedad)
+    filtro = {
+        'cliente': cliente, 'payment_method_type': 'EFECTIVO_VENTANILLA',
+        'transparent_breakdown__contains': 'SIFEN CDC:',
+    }
+    compras = CurrencyPurchaseTransaction.objects.filter(**filtro).order_by('-timestamp')[:limite]
+    ventas = CurrencySaleTransaction.objects.filter(**filtro).order_by('-timestamp')[:limite]
+    operaciones = sorted(list(compras) + list(ventas), key=lambda tx: tx.timestamp, reverse=True)[:limite]
+    for tx in operaciones:
+        tx.tipo = tx.tipo_operacion
+        tx.anulacion = facturacion.anulacion_vigente(tx)
+        tx.solicitud = facturacion.solicitud_pendiente(tx)
+        tx.anulable = tx.sifen_estado == 'Aprobada' and tx.anulacion is None and tx.solicitud is None
+    return operaciones
+
+
+@login_required
+@requiere_permiso('can_operate_cashier')
+def solicitar_anulacion_factura_caja_view(request):
+    """
+    El cajero pide al Administrador la anulación de la factura de una operación de ventanilla
+    cuando el cliente lo solicita en la sucursal. Solo se anula la factura (sin devolución
+    automática de fondos); el Administrador la aprueba o la rechaza desde el panel de facturación.
+    """
+    documento = request.POST.get('documento_busqueda', '').strip()
+    destino = redirect(f"{reverse('caja:ventanilla_pos')}?{urlencode({'documento_busqueda': documento})}"
+                       if documento else 'caja:ventanilla_pos')
+    if request.method != 'POST':
+        return destino
+    modelo = facturacion.modelo_de(request.POST.get('tipo', ''))
+    tx = get_object_or_404(modelo, pk=request.POST.get('id'))
+    try:
+        solicitud = facturacion.solicitar_anulacion_en_caja(tx, request.user, request.POST.get('motivo', ''))
+    except FacturacionError as exc:
+        messages.error(request, str(exc))
+        return destino
+    _auditar(request, 'SOLICITUD_ANULACION_FACTURA',
+             f"{solicitud.descripcion_operacion} (CDC {solicitud.cdc}), pedida en ventanilla: {solicitud.motivo}")
+    messages.success(
+        request,
+        f"Solicitud de anulación de la factura de la {solicitud.descripcion_operacion} enviada al Administrador.",
+    )
+    return destino
+
+
 @login_required
 @requiere_permiso('can_operate_cashier')
 def ventanilla_pos_view(request):
@@ -518,6 +581,8 @@ def ventanilla_pos_view(request):
     for op in operaciones_recientes:
         op.factura = _transaccion_de_operacion(op)
 
+    facturas_cliente = _facturas_ventanilla_del_cliente(cliente_encontrado) if cliente_encontrado else []
+
     context = {
         'turno_activo': turno_activo,
         'tasas': tasas,
@@ -527,6 +592,7 @@ def ventanilla_pos_view(request):
         'category_name': category_name,
         'doc_busqueda': doc_busqueda,
         'operaciones_recientes': operaciones_recientes,
+        'facturas_cliente': facturas_cliente,
         'is_admin': is_admin,
     }
     return render(request, 'caja/ventanilla_pos.html', context)

@@ -7,8 +7,10 @@ from django.core import mail
 from django.test import SimpleTestCase
 
 from globalexchange.email_config import (
-    CONSOLE_BACKEND, SMTP_BACKEND, SMTP_TIMEOUT_SEGUNDOS, configurar_mailers,
+    CONSOLE_BACKEND, SMTP_BACKEND, SMTP_TIMEOUT_SEGUNDOS, configurar_mailers, settings_email_clasicos,
 )
+
+import django
 
 
 class ConfigurarMailersTests(SimpleTestCase):
@@ -57,6 +59,37 @@ class ConfigurarMailersTests(SimpleTestCase):
         """EMAIL_PORT se convierte a entero."""
         opciones = configurar_mailers({'EMAIL_HOST': 'smtp.x.com', 'EMAIL_PORT': '2525'})['default']['OPTIONS']
         self.assertEqual(opciones['port'], 2525)
+
+
+class SettingsEmailClasicosTests(SimpleTestCase):
+    """Pruebas de settings_email_clasicos() (compatibilidad con Django 5.x)."""
+
+    def test_smtp_se_traduce_a_email_host(self):
+        """Con Gmail configurado genera EMAIL_HOST, puerto, usuario, contraseña, TLS y timeout."""
+        mailers = configurar_mailers({
+            'EMAIL_HOST': 'smtp.gmail.com', 'EMAIL_HOST_USER': 'grupo@gmail.com', 'EMAIL_HOST_PASSWORD': 'clave',
+        })
+        self.assertEqual(settings_email_clasicos(mailers), {
+            'EMAIL_BACKEND': SMTP_BACKEND,
+            'EMAIL_HOST': 'smtp.gmail.com',
+            'EMAIL_PORT': 587,
+            'EMAIL_HOST_USER': 'grupo@gmail.com',
+            'EMAIL_HOST_PASSWORD': 'clave',
+            'EMAIL_USE_TLS': True,
+            'EMAIL_TIMEOUT': SMTP_TIMEOUT_SEGUNDOS,
+        })
+
+    def test_consola_solo_define_el_backend(self):
+        """Sin EMAIL_HOST solo se define el backend de consola."""
+        self.assertEqual(settings_email_clasicos(configurar_mailers({})), {'EMAIL_BACKEND': CONSOLE_BACKEND})
+
+    def test_settings_aplica_config_segun_version_de_django(self):
+        """En Django < 6.1 settings.py define EMAIL_BACKEND igual al de MAILERS (no queda localhost:25 por defecto)."""
+        if django.VERSION >= (6, 1):
+            self.skipTest('Django 6.1+ usa MAILERS directamente.')
+        # Se lee el módulo (el test runner reemplaza EMAIL_BACKEND en django.conf.settings por locmem).
+        from globalexchange import settings as modulo_settings
+        self.assertEqual(modulo_settings.EMAIL_BACKEND, modulo_settings.MAILERS['default']['BACKEND'])
 
 
 class EnvioCorreoEnPruebasTests(SimpleTestCase):

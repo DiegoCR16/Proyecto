@@ -76,8 +76,8 @@ def _rango_numeracion(tide=SIFEN_TIDE):
     """
     if tide == SIFEN_TIDE_NOTA_CREDITO:
         return (
-            int(getattr(settings, "FACTURASEGURA_NC_NUMERO_INICIAL", 1)),
-            int(getattr(settings, "FACTURASEGURA_NC_NUMERO_FINAL", 9999999)),
+            int(getattr(settings, "FACTURASEGURA_NC_NUMERO_INICIAL", 49)),
+            int(getattr(settings, "FACTURASEGURA_NC_NUMERO_FINAL", 60)),
         )
     return int(settings.FACTURASEGURA_NUMERO_INICIAL), int(settings.FACTURASEGURA_NUMERO_FINAL)
 

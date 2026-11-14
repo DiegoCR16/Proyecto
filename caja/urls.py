@@ -13,4 +13,5 @@ urlpatterns = [
     path('turno/<int:turno_id>/operaciones/', views.detalle_turno_operaciones_view, name='detalle_turno_operaciones'),
     path('ventanilla/', views.ventanilla_pos_view, name='ventanilla_pos'),
     path('ventanilla/procesar/', views.procesar_ventanilla_view, name='procesar_ventanilla'),
+    path('ventanilla/solicitar-anulacion/', views.solicitar_anulacion_factura_caja_view, name='solicitar_anulacion_factura'),
 ]

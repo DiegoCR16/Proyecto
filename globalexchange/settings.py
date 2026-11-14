@@ -14,7 +14,8 @@ from pathlib import Path
 import os
 from dotenv import load_dotenv
 
-from globalexchange.email_config import configurar_mailers
+import django
+from globalexchange.email_config import configurar_mailers, settings_email_clasicos
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / '.env')
@@ -193,6 +194,9 @@ LOGOUT_REDIRECT_URL = '/auth/login/'
 # Sin EMAIL_HOST en el .env, los correos se muestran por consola (desarrollo).
 DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL', 'no-reply@globalexchange.com')
 MAILERS = configurar_mailers(os.environ)
+if django.VERSION < (6, 1):
+    # Django 5.x (imagen Docker con Python 3.11) no conoce MAILERS: usa EMAIL_HOST, EMAIL_PORT, etc.
+    globals().update(settings_email_clasicos(MAILERS))
 
 # SIFEN (Factura Segura) Configuration
 SIFEN_API_EMAIL = os.environ.get('SIFEN_API_EMAIL', 'test@facturasegura.com.py')
@@ -202,8 +206,9 @@ FACTURASEGURA_NUMERO_INICIAL = 138
 FACTURASEGURA_NUMERO_FINAL = 147
 
 # Notas de crédito electrónicas (iTiDE = 5): numeración propia, independiente de las facturas.
-FACTURASEGURA_NC_NUMERO_INICIAL = int(os.environ.get('FACTURASEGURA_NC_NUMERO_INICIAL', 1))
-FACTURASEGURA_NC_NUMERO_FINAL = int(os.environ.get('FACTURASEGURA_NC_NUMERO_FINAL', 9999999))
+# Rango asignado por Factura Segura al establecimiento 001, punto de expedición 003.
+FACTURASEGURA_NC_NUMERO_INICIAL = int(os.environ.get('FACTURASEGURA_NC_NUMERO_INICIAL', 49))
+FACTURASEGURA_NC_NUMERO_FINAL = int(os.environ.get('FACTURASEGURA_NC_NUMERO_FINAL', 60))
 
 # Plazo de SIFEN para cancelar una factura aprobada; pasado este plazo se anula con nota de crédito.
 SIFEN_PLAZO_CANCELACION_HORAS = int(os.environ.get('SIFEN_PLAZO_CANCELACION_HORAS', 48))

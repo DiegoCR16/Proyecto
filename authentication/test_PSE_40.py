@@ -212,6 +212,8 @@ class KeycloakAdminTests(SimpleTestCase):
     KEYCLOAK_SERVER_URL='http://keycloak:8080', KEYCLOAK_REALM='realm',
     KEYCLOAK_CLIENT_ID='client', KEYCLOAK_CLIENT_SECRET='secret',
     KEYCLOAK_REDIRECT_URI='https://ge.duckdns.org/auth/callback/',
+    # Sin SMTP por defecto: las pruebas no dependen del .env del entorno (Gmail) ni llaman a Keycloak real.
+    MAILERS={'default': {'BACKEND': 'django.core.mail.backends.console.EmailBackend'}},
 )
 class KeycloakBootstrapCommandTests(SimpleTestCase):
     """Pruebas del comando keycloak_bootstrap."""

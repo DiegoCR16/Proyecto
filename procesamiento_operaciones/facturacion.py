@@ -761,18 +761,54 @@ def solicitar_anulacion(tx, usuario, motivo):
             pendiente, es de ventanilla o los fondos ya no pueden devolverse.
     """
     motivo = _validar_motivo(motivo)
-    if tx.sifen_estado != "Aprobada" or not tx.sifen_cdc:
-        raise FacturacionError(f"Solo puede pedir la anulación de facturas aprobadas (esta está {tx.sifen_estado}).")
-    if anulacion_vigente(tx):
-        raise FacturacionError("La factura ya tiene una anulación en curso o realizada.")
-    if solicitud_pendiente(tx):
-        raise FacturacionError("Ya existe una solicitud de anulación pendiente para esta factura.")
+    _verificar_solicitable(tx)
     if es_operacion_de_ventanilla(tx):
         raise FacturacionError("Las operaciones realizadas en ventanilla se anulan y devuelven en la sucursal.")
     verificar_devolucion_posible(tx)
     return SolicitudAnulacionFactura.objects.create(
         cdc=tx.sifen_cdc, solicitante=usuario, cliente=tx.cliente, motivo=motivo, **_filtro_operacion(tx),
     )
+
+
+def solicitar_anulacion_en_caja(tx, cajero, motivo):
+    """
+    Registra el pedido del cajero para anular la factura de una operación de ventanilla, cuando
+    el cliente lo pide en la sucursal. Solo se anula la factura: los saldos no se modifican y,
+    si corresponde devolver efectivo, el cajero lo registra como movimiento de su turno.
+
+    Args:
+        tx: Transacción de compra o venta hecha en ventanilla.
+        cajero (User): Cajero que registra el pedido.
+        motivo (str): Motivo indicado por el cliente.
+
+    Returns:
+        SolicitudAnulacionFactura: Solicitud pendiente, sin devolución de fondos.
+
+    Raises:
+        FacturacionError: Si la operación no es de ventanilla, la factura no está aprobada,
+            ya fue anulada o ya hay un pedido pendiente.
+    """
+    motivo = _validar_motivo(motivo)
+    if not es_operacion_de_ventanilla(tx):
+        raise FacturacionError(
+            "Desde la caja solo se anulan facturas de operaciones de ventanilla; "
+            "las operaciones en línea las solicita el cliente desde su historial."
+        )
+    _verificar_solicitable(tx)
+    return SolicitudAnulacionFactura.objects.create(
+        cdc=tx.sifen_cdc, solicitante=cajero, cliente=tx.cliente, motivo=motivo, con_devolucion=False,
+        **_filtro_operacion(tx),
+    )
+
+
+def _verificar_solicitable(tx):
+    """La factura debe estar aprobada, sin anulación en curso y sin otro pedido pendiente."""
+    if tx.sifen_estado != "Aprobada" or not tx.sifen_cdc:
+        raise FacturacionError(f"Solo puede pedir la anulación de facturas aprobadas (esta está {tx.sifen_estado}).")
+    if anulacion_vigente(tx):
+        raise FacturacionError("La factura ya tiene una anulación en curso o realizada.")
+    if solicitud_pendiente(tx):
+        raise FacturacionError("Ya existe una solicitud de anulación pendiente para esta factura.")
 
 
 def aprobar_solicitud(solicitud, administrador, metodo="auto"):
@@ -788,15 +824,19 @@ def aprobar_solicitud(solicitud, administrador, metodo="auto"):
     tx = solicitud.transaccion
     if tx is None:
         raise FacturacionError("La operación de la solicitud ya no existe.")
-    # La solicitud del cliente es un pedido de devolución: se anula la factura y se devuelven los fondos
-    anulacion = anular_factura(tx, solicitud.motivo, administrador, solicitud, metodo, devolucion=True)
+    # El pedido del cliente devuelve los fondos; el del cajero (ventanilla) solo anula la factura
+    devolucion = solicitud.con_devolucion
+    anulacion = anular_factura(tx, solicitud.motivo, administrador, solicitud, metodo, devolucion=devolucion)
     solicitud.estado = SolicitudAnulacionFactura.APROBADA
-    solicitud.respuesta = (
-        "Se solicitó la cancelación de la factura a SIFEN. Los fondos se devolverán cuando SIFEN la confirme."
-        if anulacion.tipo == AnulacionFactura.CANCELACION
-        else f"Se emitió la nota de crédito {anulacion.cdc_nota_credito}. Cuando SIFEN la apruebe se devolverán "
-             "los fondos y se la enviaremos por correo."
-    )
+    if anulacion.tipo == AnulacionFactura.CANCELACION:
+        solicitud.respuesta = "Se solicitó la cancelación de la factura a SIFEN." + (
+            " Los fondos se devolverán cuando SIFEN la confirme." if devolucion else ""
+        )
+    else:
+        solicitud.respuesta = f"Se emitió la nota de crédito {anulacion.cdc_nota_credito}. Cuando SIFEN la apruebe " + (
+            "se devolverán los fondos y se la enviaremos por correo." if devolucion
+            else "la factura quedará anulada y se enviará la nota por correo."
+        )
     solicitud.resuelta_por = administrador
     solicitud.resuelta_en = timezone.now()
     solicitud.save()

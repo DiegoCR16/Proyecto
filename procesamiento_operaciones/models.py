@@ -302,7 +302,8 @@ class _OperacionFacturadaMixin:
 
 class SolicitudAnulacionFactura(_OperacionFacturadaMixin, models.Model):
     """
-    Pedido de un cliente para anular la factura electrónica de una de sus operaciones.
+    Pedido para anular la factura electrónica de una operación. Lo hace el cliente desde su
+    historial, o el cajero en la ventanilla cuando el cliente está en la sucursal.
     El Administrador la aprueba (y el sistema cancela la factura o emite una nota de crédito)
     o la rechaza indicando el motivo.
 
@@ -312,6 +313,9 @@ class SolicitudAnulacionFactura(_OperacionFacturadaMixin, models.Model):
         solicitante (ForeignKey): Usuario que hizo el pedido.
         cliente (ForeignKey): Cliente de la operación.
         motivo (TextField): Motivo indicado por el cliente.
+        con_devolucion (BooleanField): True si al aprobarse se devuelven los fondos (pedido del
+            cliente desde la web); False si solo se anula la factura (pedido del cajero para una
+            operación de ventanilla, cuyo efectivo se maneja en la caja).
         estado (CharField): PENDIENTE, APROBADA o RECHAZADA.
         respuesta (TextField): Resultado o motivo del rechazo informado por el Administrador.
         resuelta_por (ForeignKey): Administrador que resolvió la solicitud.
@@ -327,6 +331,7 @@ class SolicitudAnulacionFactura(_OperacionFacturadaMixin, models.Model):
     solicitante = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='solicitudes_anulacion', verbose_name="Solicitante")
     cliente = models.ForeignKey(Cliente, on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Cliente")
     motivo = models.TextField(verbose_name="Motivo")
+    con_devolucion = models.BooleanField(default=True, verbose_name="Con Devolución de Fondos")
     estado = models.CharField(max_length=20, choices=ESTADOS, default=PENDIENTE, verbose_name="Estado")
     respuesta = models.TextField(blank=True, default="", verbose_name="Respuesta")
     resuelta_por = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='solicitudes_anulacion_resueltas', verbose_name="Resuelta por")
