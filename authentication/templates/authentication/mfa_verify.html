@@ -20,6 +20,10 @@
             </div>
             <h1 class="text-2xl font-bold text-slate-900">Verificación iToken / MFA</h1>
             <p class="text-sm text-slate-600 mt-1">Su rol o clasificación requiere validación de doble factor de seguridad.</p>
+            {% if email_enmascarado %}
+                <p class="text-sm text-slate-700 mt-3">Enviamos un código de 6 dígitos a <strong>{{ email_enmascarado }}</strong>.</p>
+                <p class="text-xs text-slate-500 mt-1">Vence en 5 minutos y solo puede usarse una vez.</p>
+            {% endif %}
         </div>
 
         {% if error %}
@@ -27,20 +31,33 @@
                 {{ error }}
             </div>
         {% endif %}
+        {% if info %}
+            <div class="mb-4 p-3 bg-green-50 border border-green-200 text-green-700 rounded-lg text-sm text-center font-medium">
+                {{ info }}
+            </div>
+        {% endif %}
 
         <form method="post" class="space-y-5">
             {% csrf_token %}
             <div>
                 <label class="block text-sm font-medium text-slate-700 mb-1">Código iToken (6 dígitos):</label>
-                <input type="text" name="itoken_code" required maxlength="6" placeholder="Ej: 123456"
+                <input type="text" name="itoken_code" required maxlength="6" inputmode="numeric" pattern="[0-9]{6}" autocomplete="one-time-code" autofocus placeholder="______"
                        class="w-full px-4 py-2.5 border border-slate-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-800 focus:border-blue-800 text-center tracking-widest text-lg font-semibold">
-                <p class="text-xs text-slate-500 mt-1 text-center">Para pruebas, ingrese: <strong>123456</strong></p>
             </div>
             <button type="submit" 
                     class="w-full py-2.5 px-4 bg-blue-800 text-white font-semibold rounded-lg shadow hover:bg-blue-900 transition duration-200">
                 Verificar iToken
             </button>
         </form>
+
+        <form method="post" class="mt-4 text-center">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="reenviar">
+            <button type="submit" class="text-sm font-medium text-blue-800 hover:underline">¿No recibió el código? Reenviar</button>
+        </form>
+        <div class="mt-3 text-center">
+            <a href="{% url 'logout' %}" class="text-xs text-slate-500 hover:underline">Cancelar y cerrar sesión</a>
+        </div>
     </div>
 </body>
 </html>

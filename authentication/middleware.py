@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
-"""Middleware que convierte los errores inesperados del administrador en notificaciones."""
+"""Middlewares: notificación de errores del administrador y bloqueo por iToken (MFA) pendiente."""
 import logging
 
+from django.conf import settings
 from django.contrib import messages
 from django.shortcuts import redirect
 from django.urls import reverse
@@ -95,3 +96,30 @@ class NotificarErroresAdminMiddleware:
             f"No se pudo completar la operación en {request.path}. Detalle: {describir_error(exc)}",
         )
         return redirect(destino)
+
+
+class MFAPendienteMiddleware:
+    """
+    Bloquea el sistema mientras la verificación en dos pasos (iToken por correo) esté pendiente.
+
+    Tras el login SSO de un usuario que requiere MFA, solo se permite acceder a la pantalla
+    del iToken, al cierre de sesión, al login y a los archivos estáticos; cualquier otra URL
+    redirige a la verificación. Así el código no se puede saltear escribiendo otra dirección.
+    """
+
+    RUTAS_PERMITIDAS = ('mfa_verify', 'logout', 'login', 'keycloak_login', 'keycloak_callback')
+
+    def __init__(self, get_response):
+        """Guarda el siguiente manejador de la cadena de middleware."""
+        self.get_response = get_response
+
+    def __call__(self, request):
+        """Redirige a la verificación si la sesión tiene el iToken pendiente."""
+        from authentication.mfa import verificacion_pendiente
+
+        if request.user.is_authenticated and verificacion_pendiente(request):
+            permitidas = {reverse(nombre) for nombre in self.RUTAS_PERMITIDAS}
+            static_url = '/' + str(getattr(settings, 'STATIC_URL', 'static/')).lstrip('/')
+            if request.path not in permitidas and not request.path.startswith(static_url):
+                return redirect('mfa_verify')
+        return self.get_response(request)

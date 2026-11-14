@@ -96,6 +96,7 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     'authentication.middleware.NotificarErroresAdminMiddleware',
+    'authentication.middleware.MFAPendienteMiddleware',
 ]
 
 ROOT_URLCONF = 'globalexchange.urls'

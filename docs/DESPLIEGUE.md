@@ -38,10 +38,20 @@ Solo crea lo que falta: no duplica registros ni pisa datos modificados por el ad
 
 | Usuario | Rol | Contraseña |
 |---|---|---|
-| `adminuser` | Admin (pide iToken `123456`) | `password123` |
+| `adminuser` | Admin (pide iToken por correo*) | `password123` |
 | `cajero` | Cajero (asignado a caja C01) | `password123` |
 | `analista` | Analista | `password123` |
 | `cliente` | Cliente | `password123` |
+
+\* Los correos de los usuarios de prueba (`@globalexchange.com`) no existen: en desarrollo el código iToken
+aparece en la consola (`bash deploy.sh logs dev`). En producción se recomienda desplegar `--sin-usuarios-prueba`.
+
+## Verificación en dos pasos (iToken por correo)
+
+Los usuarios que requieren MFA (Admin y clientes corporativos) reciben **en cada inicio de sesión** un código
+aleatorio de 6 dígitos en su correo. Vence a los 5 minutos, es de un solo uso, se bloquea tras 5 intentos fallidos
+y se puede reenviar una vez por minuto. Mientras no se verifica, el sistema solo permite la pantalla del iToken y
+cerrar sesión. Requiere el correo SMTP (Gmail) configurado.
 
 ## Desarrollo
 
@@ -58,12 +68,20 @@ bash deploy.sh dev
 Un solo comando desde la PC (en Windows: WSL o Git Bash):
 
 ```bash
-# Primer despliegue (el servidor todavía no tiene .env.production)
-bash deploy-remoto.sh ubuntu@16.58.240.129 --clave ~/.ssh/oracle_ge --dominio globalexchange-g05.duckdns.org
+# Primer despliegue (el servidor todavía no tiene .env.production), sin usuarios ni clientes de prueba
+bash deploy-remoto.sh ubuntu@16.58.240.129 --clave ~/.ssh/oracle_ge \
+  --dominio globalexchange-g05.duckdns.org --sin-usuarios-prueba
 
 # Despliegues siguientes
 bash deploy-remoto.sh ubuntu@16.58.240.129 --clave ~/.ssh/oracle_ge
 ```
+
+Solo en el **primer despliegue** el script pide la contraseña del administrador de Keycloak (usuario `admin`),
+dos veces y sin mostrarla: mínimo 12 caracteres, letras, números y `!%&*+,-./:;<=>?@^_~`
+(sin espacios, comillas, `$` ni `#`). Viaja al servidor por SSH y queda solo en su `.env.production`.
+Keycloak la usa al crear el admin la primera vez; para cambiarla después se usa la consola de Keycloak.
+`--sin-usuarios-prueba` deja `SEED_TEST_USERS=false`: se cargan divisas, métodos de pago, comisiones, roles y cajas,
+pero ningún usuario ni cliente.
 
 Pasos que ejecuta:
 
@@ -72,7 +90,8 @@ Pasos que ejecuta:
 3. Respalda la base de datos de producción en `~/backups/` (conserva los 5 últimos).
 4. Sube el **código fuente del último commit** (`git archive HEAD`). Los cambios sin commitear no se despliegan.
 5. Conserva el `.env.production` del servidor; la primera vez lo genera con `scripts/generar_env_produccion.py`
-   (dominios, `SECRET_KEY` y contraseñas aleatorias, secreto del cliente de Keycloak).
+   (dominios, `SECRET_KEY` y contraseña de base de datos aleatorias, contraseña elegida del admin de Keycloak,
+   secreto del cliente de Keycloak).
 6. Ejecuta `deploy.sh prod`: PostgreSQL + Keycloak + Django + Caddy, migraciones y población de datos.
 7. Espera a que `https://<dominio>/auth/login/` responda 200. Si falla, muestra los logs; la versión anterior
    queda en `~/globalexchange.old`.
@@ -98,8 +117,18 @@ Después aplicar con `bash deploy-remoto.sh ...` (o en el servidor: `cd ~/global
 ### Accesos
 
 - Sistema: https://globalexchange-g05.duckdns.org
-- Keycloak: https://auth.globalexchange-g05.duckdns.org (usuario `admin`, contraseña `KEYCLOAK_ADMIN_PASSWORD` del `.env.production`)
+- Keycloak: https://auth.globalexchange-g05.duckdns.org (usuario `admin`, la contraseña elegida en el primer despliegue)
 - Webhook Stripe: `https://globalexchange-g05.duckdns.org/integracion/webhook/stripe/`
+
+### Arranque sin usuarios: crear el primer administrador
+
+1. Cargar el Gmail del grupo en `.env.production` (sin correo no llegan la verificación de Keycloak ni el iToken).
+2. Registrarse en https://globalexchange-g05.duckdns.org (botón de registro de Keycloak) y verificar el correo.
+3. En la consola de Keycloak: cambiar el realm de **master** a **global-exchange-realm** → **Users** → el usuario →
+   **Role mapping** → **Assign role** → filtrar por realm roles → **Admin**.
+4. Cerrar sesión y volver a ingresar: el sistema lee los roles de Keycloak en cada inicio de sesión y pide el iToken por correo.
+
+Los roles de cualquier usuario (Admin, Cajero, Analista, Cliente) se cambian de la misma forma y se aplican en su próximo inicio de sesión.
 
 ### Comandos útiles en el servidor
 

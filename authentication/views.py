@@ -20,6 +20,7 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated, BasePermission
+from . import mfa
 from .facturacion_service import FacturaSeguraService
 from .usuarios import obtener_o_crear_usuario_keycloak
 from .permisos import (
@@ -303,7 +304,11 @@ def keycloak_callback_view(request):
             details=f"Inicio de sesión SSO exitoso. Roles Keycloak: {all_roles}, Grupos: {[g.get('name') for g in kc_groups]}"
         )
 
-        if profile.requires_mfa() and not profile.itoken_verified:
+        if profile.requires_mfa():
+            # iToken por correo: código nuevo en cada inicio de sesión.
+            profile.itoken_verified = False
+            profile.save(update_fields=['itoken_verified'])
+            mfa.iniciar_verificacion(request, user)
             return redirect('mfa_verify')
         return redirect('dashboard_redirect')
 
@@ -313,41 +318,62 @@ def keycloak_callback_view(request):
 @ensure_csrf_cookie
 def mfa_verify_view(request):
     """
-    Vista para la verificación de iToken / MFA obligatorio para administrativos y corporativos.
-    
+    Verificación en dos pasos (iToken) con código enviado por correo.
+
+    El código de 6 dígitos se genera y envía al iniciar sesión (ver authentication.mfa);
+    vence a los 5 minutos, es de uso único y se bloquea tras 5 intentos fallidos.
+    Con action=reenviar se envía un código nuevo (como máximo uno por minuto).
+
     Args:
         request (HttpRequest): Objeto de petición HTTP de Django.
-        
+
     Returns:
         HttpResponse: Renderiza la verificación MFA o redirige al panel.
     """
     ip = get_client_ip(request)
     if not request.user.is_authenticated:
         return redirect('login')
+    if not mfa.verificacion_pendiente(request):
+        return redirect('dashboard_redirect')
 
-    if request.method == 'POST':
-        itoken_code = request.POST.get('itoken_code')
-        if itoken_code == '123456':
-            profile, _ = UserProfile.objects.get_or_create(user=request.user)
-            profile.itoken_verified = True
-            profile.save()
-            AuditLog.objects.create(
-                user=request.user,
-                action="MFA_SUCCESS",
-                ip_address=ip,
-                details="Verificación de iToken/MFA exitosa."
-            )
-            return redirect('dashboard_redirect')
+    user = request.user
+    contexto = {'email_enmascarado': mfa.enmascarar_email(user.email)}
+
+    if request.method == 'POST' and request.POST.get('action') == 'reenviar':
+        espera = mfa.segundos_para_reenviar(request)
+        if espera:
+            contexto['error'] = f'Espere {espera} segundos para solicitar un nuevo código.'
+        elif mfa.enviar_codigo(request, user):
+            contexto['info'] = 'Enviamos un nuevo código a su correo.'
+            AuditLog.objects.create(user=user, action="MFA_CODE_RESENT", ip_address=ip,
+                                    details="Reenvío del código iToken por correo.")
         else:
-            AuditLog.objects.create(
-                user=request.user,
-                action="MFA_FAILED",
-                ip_address=ip,
-                details="Código iToken/MFA incorrecto."
-            )
-            return render(request, 'authentication/mfa_verify.html', {'error': 'iToken inválido. Use 123456 para pruebas.'})
+            contexto['error'] = 'No se pudo enviar el código. Verifique su correo o contacte al administrador.'
 
-    return render(request, 'authentication/mfa_verify.html')
+    elif request.method == 'POST':
+        resultado = mfa.verificar_codigo(request, user, request.POST.get('itoken_code'))
+        if resultado == mfa.VALIDO:
+            profile, _ = UserProfile.objects.get_or_create(user=user)
+            profile.itoken_verified = True
+            profile.save(update_fields=['itoken_verified'])
+            AuditLog.objects.create(user=user, action="MFA_SUCCESS", ip_address=ip,
+                                    details="Verificación de iToken por correo exitosa.")
+            return redirect('dashboard_redirect')
+
+        mensajes = {
+            mfa.INVALIDO: f'iToken inválido. Le quedan {mfa.intentos_restantes(request)} intentos.',
+            mfa.EXPIRADO: 'El código venció. Solicite uno nuevo.',
+            mfa.BLOQUEADO: 'Demasiados intentos fallidos. Solicite un nuevo código.',
+            mfa.SIN_CODIGO: 'No hay un código vigente. Solicite uno nuevo.',
+        }
+        contexto['error'] = mensajes[resultado]
+        AuditLog.objects.create(user=user, action="MFA_FAILED", ip_address=ip,
+                                details=f"Código iToken incorrecto ({resultado}).")
+
+    elif not user.email:
+        contexto['error'] = 'Su usuario no tiene correo registrado. Contacte al administrador.'
+
+    return render(request, 'authentication/mfa_verify.html', contexto)
 
 @login_required
 def dashboard_redirect_view(request):

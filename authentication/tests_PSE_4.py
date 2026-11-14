@@ -2,6 +2,20 @@ from django.test import TestCase, Client
 from django.contrib.auth.models import User
 from authentication.models import Role, UserProfile, AuditLog
 from unittest.mock import patch
+import time
+
+from authentication import mfa
+
+
+def preparar_codigo_mfa(client, user, codigo='482913'):
+    """Deja en la sesión del cliente de pruebas un código iToken pendiente (como tras el login SSO)."""
+    session = client.session
+    session[mfa.SESION_PENDIENTE] = True
+    session[mfa.SESION_HASH] = mfa._hash_codigo(codigo, user.pk)
+    session[mfa.SESION_EXPIRA] = time.time() + mfa.CODIGO_VIGENCIA_SEGUNDOS
+    session[mfa.SESION_INTENTOS] = 0
+    session.save()
+    return codigo
 
 class AuthenticationPSE4Tests(TestCase):
     """
@@ -41,9 +55,10 @@ class AuthenticationPSE4Tests(TestCase):
         self.assertIn('protocol/openid-connect/auth', response.url)
 
     def test_mfa_verification_success(self):
-        """Verifica éxito al introducir el iToken correcto."""
+        """Verifica éxito al introducir el iToken enviado por correo."""
         self.client.login(username='adminuser', password='password123')
-        response = self.client.post('/auth/mfa/', {'itoken_code': '123456'})
+        codigo = preparar_codigo_mfa(self.client, self.admin_user)
+        response = self.client.post('/auth/mfa/', {'itoken_code': codigo})
         self.assertRedirects(response, '/auth/dashboard/', fetch_redirect_response=False)
         self.admin_profile.refresh_from_db()
         self.assertTrue(self.admin_profile.itoken_verified)
@@ -51,6 +66,7 @@ class AuthenticationPSE4Tests(TestCase):
     def test_mfa_verification_failure(self):
         """Verifica error al introducir un iToken incorrecto."""
         self.client.login(username='adminuser', password='password123')
+        preparar_codigo_mfa(self.client, self.admin_user, codigo='482913')
         response = self.client.post('/auth/mfa/', {'itoken_code': '999999'})
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "iToken inválido")

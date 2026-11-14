@@ -12,13 +12,15 @@
 #   7. Comprueba que el sistema responda por HTTPS.
 #
 # Uso:
-#   bash deploy-remoto.sh <usuario@servidor> [--clave ~/.ssh/clave] [--dominio mi.dominio.org]
+#   bash deploy-remoto.sh <usuario@servidor> [--clave ~/.ssh/clave] [--dominio mi.dominio.org] [--sin-usuarios-prueba]
 #
-# Ejemplo (primer despliegue):
-#   bash deploy-remoto.sh ubuntu@16.58.240.129 --clave ~/.ssh/oracle_ge --dominio globalexchange-g05.duckdns.org
+# Ejemplo (primer despliegue, sin usuarios ni clientes de prueba):
+#   bash deploy-remoto.sh ubuntu@16.58.240.129 --clave ~/.ssh/oracle_ge --dominio globalexchange-g05.duckdns.org --sin-usuarios-prueba
 #
-# --dominio solo es obligatorio la primera vez (cuando el servidor no tiene .env.production).
-# También se pueden usar las variables DEPLOY_HOST, DEPLOY_SSH_KEY y DEPLOY_DOMAIN.
+# Solo en el primer despliegue (el servidor no tiene .env.production):
+#   --dominio es obligatorio, se pide la contraseña del admin de Keycloak (usuario "admin")
+#   y --sin-usuarios-prueba deja SEED_TEST_USERS=false. Después se conserva la configuración.
+# Variables opcionales: DEPLOY_HOST, DEPLOY_SSH_KEY, DEPLOY_DOMAIN, DEPLOY_KEYCLOAK_ADMIN_PASSWORD.
 # Desde Windows ejecutarlo en WSL o Git Bash.
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -30,7 +32,12 @@ APP_DIR="globalexchange"          # carpeta en el home del servidor (también no
 COMPOSE="docker compose -f docker-compose.yml -f docker-compose.prod.yml --env-file .env.production"
 ESPERA_MAXIMA=600                 # segundos para que responda HTTPS (build + certificado + Keycloak)
 
-uso() { sed -n '2,22p' "$0"; exit 1; }
+SIN_USUARIOS_PRUEBA=0
+PASSWORD_ADMIN="${DEPLOY_KEYCLOAK_ADMIN_PASSWORD:-}"
+# Misma regla que scripts/generar_env_produccion.py (sin espacios, comillas, $ ni #).
+REGEX_PASSWORD='^[A-Za-z0-9!%&*+,./:;<=>?@^_~-]{12,128}$'
+
+uso() { sed -n '2,24p' "$0"; exit 1; }
 paso() { echo; echo "==> $*"; }
 error() { echo "ERROR: $*" >&2; exit 1; }
 
@@ -38,6 +45,7 @@ while [ $# -gt 0 ]; do
     case "$1" in
         --clave) CLAVE="${2:-}"; shift 2 ;;
         --dominio) DOMINIO="${2:-}"; shift 2 ;;
+        --sin-usuarios-prueba) SIN_USUARIOS_PRUEBA=1; shift ;;
         -h|--help) uso ;;
         -*) error "opción desconocida: $1" ;;
         *) DESTINO="$1"; shift ;;
@@ -61,6 +69,32 @@ fi
 # --- 1. Conexión ----------------------------------------------------------------
 paso "1/7 Verificando conexión SSH con ${DESTINO}"
 remoto true || error "no se pudo conectar por SSH a ${DESTINO}."
+
+PRIMERA_VEZ=1
+remoto "test -f ${APP_DIR}/.env.production" && PRIMERA_VEZ=0
+if [ "$PRIMERA_VEZ" = 1 ]; then
+    echo "Primer despliegue: se generará .env.production en el servidor."
+    [ -n "$DOMINIO" ] || error "primer despliegue: indicar --dominio (ej. --dominio globalexchange-g05.duckdns.org)."
+    if [ -z "$PASSWORD_ADMIN" ] && [ -t 0 ]; then
+        echo "Contraseña para el administrador de Keycloak (usuario: admin)."
+        echo "Mínimo 12 caracteres: letras, números y !%&*+,-./:;<=>?@^_~ (sin espacios, comillas, \$ ni #)."
+        while true; do
+            read -r -s -p "Contraseña: " PASSWORD_ADMIN; echo
+            read -r -s -p "Repetir contraseña: " repetida; echo
+            if [ "$PASSWORD_ADMIN" != "$repetida" ]; then echo "No coinciden, intente de nuevo."
+            elif [[ ! "$PASSWORD_ADMIN" =~ $REGEX_PASSWORD ]]; then echo "No cumple los requisitos, intente de nuevo."
+            else break; fi
+        done
+    fi
+    if [ -n "$PASSWORD_ADMIN" ]; then
+        [[ "$PASSWORD_ADMIN" =~ $REGEX_PASSWORD ]] || error "la contraseña de Keycloak no cumple los requisitos."
+    else
+        echo "Sin terminal interactiva: la contraseña del admin de Keycloak se generará al azar."
+    fi
+    if [ "$SIN_USUARIOS_PRUEBA" = 1 ]; then echo "Sin usuarios ni clientes de prueba (SEED_TEST_USERS=false)."; fi
+elif [ "$SIN_USUARIOS_PRUEBA" = 1 ] || [ -n "$DOMINIO" ]; then
+    echo "AVISO: el servidor ya tiene .env.production; --dominio y --sin-usuarios-prueba solo aplican al primer despliegue."
+fi
 
 # --- 2. Preparar servidor (idempotente) -----------------------------------------
 paso "2/7 Preparando servidor (swap y Docker)"
@@ -112,8 +146,13 @@ git archive --format=tar HEAD | remoto "rm -rf ${APP_DIR}.new && mkdir ${APP_DIR
 
 # --- 5. Configuración (.env.production) -------------------------------------------
 paso "5/7 Configuración de producción (.env.production)"
-remoto "APP_DIR=${APP_DIR} DOMINIO='${DOMINIO}' COMMIT=${COMMIT} RAMA='${RAMA}' bash -s" <<'CONFIG'
+if [ "$PRIMERA_VEZ" = 1 ] && [ -n "$PASSWORD_ADMIN" ]; then
+    # La contraseña viaja por la conexión SSH (stdin), nunca como argumento de un comando.
+    printf '%s' "$PASSWORD_ADMIN" | remoto "umask 077 && cat > .kc_admin_password"
+fi
+remoto "APP_DIR=${APP_DIR} DOMINIO='${DOMINIO}' SIN_USUARIOS_PRUEBA=${SIN_USUARIOS_PRUEBA} COMMIT=${COMMIT} RAMA='${RAMA}' bash -s" <<'CONFIG'
 set -euo pipefail
+trap 'rm -f "$HOME/.kc_admin_password"' EXIT
 nuevo="$APP_DIR.new"
 rm -f "$nuevo/.env.production"            # nunca se usa el .env.production del repositorio
 if [ -f "$APP_DIR/.env.production" ]; then
@@ -121,7 +160,10 @@ if [ -f "$APP_DIR/.env.production" ]; then
     echo "Se conserva el .env.production existente del servidor."
 else
     [ -n "$DOMINIO" ] || { echo "ERROR: primer despliegue: indicar --dominio." >&2; exit 1; }
-    (cd "$nuevo" && python3 scripts/generar_env_produccion.py --dominio "$DOMINIO")
+    opciones=(--dominio "$DOMINIO")
+    [ "$SIN_USUARIOS_PRUEBA" = 1 ] && opciones+=(--sin-usuarios-prueba)
+    [ -f "$HOME/.kc_admin_password" ] && opciones+=(--keycloak-admin-password-file "$HOME/.kc_admin_password")
+    (cd "$nuevo" && python3 scripts/generar_env_produccion.py "${opciones[@]}")
     echo "Completar luego SIFEN, Stripe y Gmail con: nano ~/$APP_DIR/.env.production"
 fi
 rm -rf "$APP_DIR.old"

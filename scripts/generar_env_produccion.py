@@ -5,8 +5,10 @@ Genera el archivo .env.production del servidor a partir de .env.production.examp
 
 Completa automáticamente:
   - dominios (APP_DOMAIN, AUTH_DOMAIN, ALLOWED_HOSTS, CSRF_TRUSTED_ORIGINS, URLs de Keycloak),
-  - SECRET_KEY, DB_PASSWORD y KEYCLOAK_ADMIN_PASSWORD aleatorios,
-  - KEYCLOAK_CLIENT_SECRET leído del realm que importa Keycloak.
+  - SECRET_KEY y DB_PASSWORD aleatorios,
+  - KEYCLOAK_ADMIN_PASSWORD elegida por el usuario (archivo) o aleatoria,
+  - KEYCLOAK_CLIENT_SECRET leído del realm que importa Keycloak,
+  - SEED_TEST_USERS=false con --sin-usuarios-prueba (sin usuarios ni clientes de prueba).
 
 Las claves de SIFEN, Stripe y Gmail quedan vacías para cargarlas a mano en el servidor.
 Solo usa la biblioteca estándar: se ejecuta en el servidor sin instalar nada.
@@ -22,6 +24,8 @@ import secrets
 import sys
 
 REGEX_DOMINIO = re.compile(r'^(?=.{4,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$')
+# Sin espacios, comillas, $, #, ni barra invertida: romperían el archivo .env de Docker Compose.
+REGEX_PASSWORD = re.compile(r'^[A-Za-z0-9!%&*+,\-./:;<=>?@^_~]{12,128}$')
 
 
 def validar_dominio(dominio):
@@ -30,6 +34,22 @@ def validar_dominio(dominio):
     if not REGEX_DOMINIO.match(dominio):
         raise ValueError(f'Dominio inválido: {dominio!r}')
     return dominio
+
+
+def validar_password_admin(password):
+    """
+    Valida la contraseña del administrador de Keycloak elegida por el usuario.
+
+    Debe tener entre 12 y 128 caracteres: letras, números y !%&*+,-./:;<=>?@^_~
+    (sin espacios, comillas, $ ni #, que romperían el archivo .env).
+    """
+    password = (password or '').strip()
+    if not REGEX_PASSWORD.match(password):
+        raise ValueError(
+            'La contraseña de Keycloak debe tener al menos 12 caracteres: letras, números y '
+            '!%&*+,-./:;<=>?@^_~ (sin espacios, comillas, $ ni #).'
+        )
+    return password
 
 
 def leer_secreto_cliente(ruta_realm, client_id):
@@ -42,7 +62,8 @@ def leer_secreto_cliente(ruta_realm, client_id):
     raise ValueError(f'El realm no tiene secreto para el cliente {client_id!r}')
 
 
-def valores_produccion(dominio, client_secret, generar_token=secrets.token_urlsafe):
+def valores_produccion(dominio, client_secret, generar_token=secrets.token_urlsafe,
+                       keycloak_admin_password=None, sin_usuarios_prueba=False):
     """
     Calcula los valores que se escriben en .env.production.
 
@@ -50,13 +71,18 @@ def valores_produccion(dominio, client_secret, generar_token=secrets.token_urlsa
         dominio (str): dominio público del sistema (ej. globalexchange-g05.duckdns.org).
         client_secret (str): secreto del cliente OIDC de Keycloak.
         generar_token (callable): generador de secretos (inyectable para pruebas).
+        keycloak_admin_password (str | None): contraseña elegida para el admin de Keycloak;
+            si es None se genera una aleatoria.
+        sin_usuarios_prueba (bool): si es True, SEED_TEST_USERS=false (sin usuarios ni clientes de prueba).
 
     Returns:
         dict: variable -> valor.
     """
     dominio = validar_dominio(dominio)
     auth = f'auth.{dominio}'
-    return {
+    if keycloak_admin_password is not None:
+        keycloak_admin_password = validar_password_admin(keycloak_admin_password)
+    valores = {
         'APP_DOMAIN': dominio,
         'AUTH_DOMAIN': auth,
         'ALLOWED_HOSTS': f'{dominio},localhost,127.0.0.1,web',
@@ -66,8 +92,11 @@ def valores_produccion(dominio, client_secret, generar_token=secrets.token_urlsa
         'KEYCLOAK_CLIENT_SECRET': client_secret,
         'SECRET_KEY': generar_token(50),
         'DB_PASSWORD': generar_token(24),
-        'KEYCLOAK_ADMIN_PASSWORD': generar_token(18),
+        'KEYCLOAK_ADMIN_PASSWORD': keycloak_admin_password or generar_token(18),
     }
+    if sin_usuarios_prueba:
+        valores['SEED_TEST_USERS'] = 'false'
+    return valores
 
 
 def aplicar_valores(plantilla, valores):
@@ -91,13 +120,24 @@ def main(argv=None):
     parser.add_argument('--realm', default='docker/global-exchange-realm-realm.json')
     parser.add_argument('--client-id', default='global-exchange-client')
     parser.add_argument('--salida', default='.env.production')
+    parser.add_argument('--sin-usuarios-prueba', action='store_true',
+                        help='No cargar usuarios ni clientes de prueba (SEED_TEST_USERS=false).')
+    parser.add_argument('--keycloak-admin-password-file',
+                        help='Archivo con la contraseña elegida para el admin de Keycloak (se lee y no se modifica).')
     args = parser.parse_args(argv)
 
     if os.path.exists(args.salida):
         print(f'{args.salida} ya existe: no se sobrescribe.', file=sys.stderr)
         return 1
+    password_admin = None
+    if args.keycloak_admin_password_file:
+        with open(args.keycloak_admin_password_file, encoding='utf-8') as archivo:
+            password_admin = archivo.read().strip()
     try:
-        valores = valores_produccion(args.dominio, leer_secreto_cliente(args.realm, args.client_id))
+        valores = valores_produccion(
+            args.dominio, leer_secreto_cliente(args.realm, args.client_id),
+            keycloak_admin_password=password_admin, sin_usuarios_prueba=args.sin_usuarios_prueba,
+        )
     except ValueError as exc:
         print(f'ERROR: {exc}', file=sys.stderr)
         return 1

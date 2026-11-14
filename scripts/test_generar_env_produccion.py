@@ -10,7 +10,7 @@ from io import StringIO
 from unittest import TestCase
 
 from scripts.generar_env_produccion import (
-    aplicar_valores, leer_secreto_cliente, main, validar_dominio, valores_produccion,
+    aplicar_valores, leer_secreto_cliente, main, validar_dominio, validar_password_admin, valores_produccion,
 )
 
 DOMINIO = 'globalexchange-g05.duckdns.org'
@@ -63,6 +63,38 @@ class ValoresProduccionTests(TestCase):
         plantilla = '# comentario\nSECRET_KEY=cambiar\n# SECRET_KEY=no-tocar\nSIFEN_API_EMAIL=\nDEBUG=False\n'
         resultado = aplicar_valores(plantilla, {'SECRET_KEY': 'nuevo'})
         self.assertEqual(resultado, '# comentario\nSECRET_KEY=nuevo\n# SECRET_KEY=no-tocar\nSIFEN_API_EMAIL=\nDEBUG=False\n')
+
+
+class OpcionesPrimerDespliegueTests(TestCase):
+    """Contraseña elegida para Keycloak y opción sin usuarios de prueba (C0)."""
+
+    def test_usa_la_password_elegida(self):
+        """Si se indica contraseña de Keycloak, se usa en lugar de una aleatoria."""
+        valores = valores_produccion(DOMINIO, 's', generar_token=_token_fijo, keycloak_admin_password='GlobalExch2026!')
+        self.assertEqual(valores['KEYCLOAK_ADMIN_PASSWORD'], 'GlobalExch2026!')
+
+    def test_sin_password_genera_una_aleatoria(self):
+        """Sin contraseña elegida se genera una aleatoria."""
+        self.assertEqual(valores_produccion(DOMINIO, 's', generar_token=_token_fijo)['KEYCLOAK_ADMIN_PASSWORD'], 'tok18')
+
+    def test_password_invalida(self):
+        """Rechaza contraseñas cortas o con caracteres que rompen el archivo .env."""
+        for invalida in ('corta1!', 'con espacio 1234', 'tiene$dolar1234', 'tiene#numeral12', 'comilla"12345678'):
+            with self.subTest(invalida=invalida), self.assertRaises(ValueError):
+                validar_password_admin(invalida)
+        self.assertEqual(validar_password_admin('  Valida-con.puntos_9 '), 'Valida-con.puntos_9')
+
+    def test_sin_usuarios_prueba(self):
+        """--sin-usuarios-prueba deja SEED_TEST_USERS=false; por defecto no se modifica."""
+        self.assertEqual(valores_produccion(DOMINIO, 's', sin_usuarios_prueba=True)['SEED_TEST_USERS'], 'false')
+        self.assertNotIn('SEED_TEST_USERS', valores_produccion(DOMINIO, 's'))
+
+    def test_plantilla_real_con_opciones(self):
+        """Aplicado a .env.production.example, SEED_TEST_USERS queda en false."""
+        with open('.env.production.example', encoding='utf-8') as f:
+            contenido = aplicar_valores(f.read(), valores_produccion(DOMINIO, 's', sin_usuarios_prueba=True))
+        self.assertIn('\nSEED_TEST_USERS=false\n', contenido)
+        self.assertIn('\nSEED_DATA=true\n', contenido)
 
 
 class LeerSecretoClienteTests(TestCase):
@@ -118,6 +150,27 @@ class MainTests(TestCase):
         self.assertEqual(self._main(), 1)
         with open(self.salida, encoding='utf-8') as f:
             self.assertEqual(f.read(), 'ORIGINAL=1\n')
+
+    def test_password_desde_archivo_y_sin_usuarios(self):
+        """Lee la contraseña de Keycloak desde archivo y aplica --sin-usuarios-prueba."""
+        with open(self.plantilla, 'a', encoding='utf-8') as f:
+            f.write('KEYCLOAK_ADMIN_PASSWORD=x\nSEED_TEST_USERS=true\n')
+        archivo_password = os.path.join(self.tmp.name, 'pw')
+        with open(archivo_password, 'w', encoding='utf-8') as f:
+            f.write('GlobalExch2026!\n')
+        self.assertEqual(self._main('--keycloak-admin-password-file', archivo_password, '--sin-usuarios-prueba'), 0)
+        with open(self.salida, encoding='utf-8') as f:
+            contenido = f.read()
+        self.assertIn('KEYCLOAK_ADMIN_PASSWORD=GlobalExch2026!\n', contenido)
+        self.assertIn('SEED_TEST_USERS=false\n', contenido)
+
+    def test_password_invalida_no_genera_archivo(self):
+        """Una contraseña inválida en el archivo termina con error sin crear .env.production."""
+        archivo_password = os.path.join(self.tmp.name, 'pw')
+        with open(archivo_password, 'w', encoding='utf-8') as f:
+            f.write('corta')
+        self.assertEqual(self._main('--keycloak-admin-password-file', archivo_password), 1)
+        self.assertFalse(os.path.exists(self.salida))
 
     def test_dominio_invalido_no_genera_archivo(self):
         """Con un dominio inválido termina con error y no crea el archivo."""
