@@ -2,7 +2,7 @@
 #   docker compose -f docker-compose.yml -f docker-compose.prod.yml --env-file .env.production up -d --build
 # o simplemente: ./deploy.sh prod
 #
-# Solo Caddy publica puertos (80/443). Django, Keycloak, PostgreSQL y Mailpit quedan
+# Solo Caddy publica puertos (80/443). Django, Keycloak y PostgreSQL quedan
 # accesibles únicamente dentro de la red interna de Docker.
 # `!reset` es necesario porque Compose concatena las listas `ports` del archivo base.
 
@@ -36,22 +36,14 @@ services:
       KC_DB_USERNAME: ${DB_USER:-postgres}
       KC_DB_PASSWORD: ${DB_PASSWORD}
       KC_HEALTH_ENABLED: "true"
+      # Límite de memoria de la JVM (el servidor de producción tiene 2 GB de RAM).
+      JAVA_OPTS_APPEND: ${KEYCLOAK_JAVA_OPTS:--Xms128m -Xmx512m}
     # HTTP interno + cabeceras X-Forwarded de Caddy (el HTTPS lo termina Caddy).
     # --import-realm importa docker/global-exchange-realm-realm.json solo si el realm no existe.
     command: start --import-realm --http-enabled=true --proxy-headers=xforwarded --hostname-strict=false
     depends_on:
       db:
         condition: service_healthy
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-
-  mailpit:
-    restart: always
-    ports: !reset
-      - "127.0.0.1:8025:8025" # Panel web solo accesible desde el servidor (túnel SSH)
     logging:
       driver: "json-file"
       options:

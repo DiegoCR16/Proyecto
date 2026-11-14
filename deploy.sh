@@ -47,7 +47,7 @@ verificar_prod() {
 case "$ACCION" in
     dev)
         compose up -d --build
-        echo "Desarrollo levantado: http://localhost:8000  (Keycloak: http://localhost:8080, Mailpit: http://localhost:8025)"
+        echo "Desarrollo levantado: http://localhost:8000  (Keycloak: http://localhost:8080)"
         ;;
     prod)
         verificar_prod

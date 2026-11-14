@@ -7,6 +7,8 @@ Usa la cuenta de servicio del cliente OIDC (rol realm-admin) para:
      (necesario cuando se despliega en un dominio distinto de localhost).
   2. Crear en Keycloak los usuarios de prueba de seed_data con su rol de realm,
      ya que el inicio de sesión del sistema se hace exclusivamente vía Keycloak.
+  3. Configurar el servidor SMTP del realm (correos de verificación y recuperación de
+     contraseña) con el mismo correo que usa Django (EMAIL_HOST, Gmail), si está definido.
 
 Uso:
     python manage.py keycloak_bootstrap                 # URLs + usuarios de prueba
@@ -17,6 +19,7 @@ Nunca resetea contraseñas de usuarios existentes. Si Keycloak no responde dentr
 timeout, termina con una advertencia sin interrumpir el arranque del contenedor.
 """
 import time
+from email.utils import parseaddr
 from urllib.parse import urlsplit
 
 import requests
@@ -26,6 +29,36 @@ from django.core.management.base import BaseCommand
 from authentication.management.commands.seed_data import PASSWORD_PRUEBA, USUARIOS_PRUEBA
 
 REQUEST_TIMEOUT = 5
+
+
+def smtp_realm_desde_settings(mailers, default_from_email):
+    """
+    Traduce la configuración SMTP de Django (MAILERS) al formato smtpServer de Keycloak.
+
+    Args:
+        mailers (dict): setting MAILERS de Django.
+        default_from_email (str): remitente, ej. 'Global Exchange <grupo@gmail.com>'.
+
+    Returns:
+        dict | None: representación smtpServer, o None si Django no usa SMTP (consola).
+    """
+    default = mailers.get('default', {})
+    if not default.get('BACKEND', '').endswith('smtp.EmailBackend'):
+        return None
+    opciones = default.get('OPTIONS', {})
+    nombre, direccion = parseaddr(default_from_email or '')
+    direccion = direccion or opciones.get('username', '')
+    return {
+        'host': opciones['host'],
+        'port': str(opciones.get('port', 587)),
+        'from': direccion,
+        'fromDisplayName': nombre or 'Global Exchange',
+        'auth': 'true' if opciones.get('username') else 'false',
+        'user': opciones.get('username', ''),
+        'password': opciones.get('password', ''),
+        'starttls': 'true' if opciones.get('use_tls') else 'false',
+        'ssl': 'false',
+    }
 
 
 class KeycloakAdmin:
@@ -139,6 +172,20 @@ class KeycloakAdmin:
         return True
 
 
+    def ensure_smtp(self, smtp_server):
+        """
+        Aplica la configuración SMTP al realm (PUT parcial de la representación del realm).
+
+        Se aplica siempre que haya configuración, porque Keycloak oculta la contraseña
+        guardada y no se puede comparar para saber si cambió.
+        """
+        resp = requests.put(
+            self.admin_url, headers=self.headers,
+            json={'smtpServer': smtp_server}, timeout=REQUEST_TIMEOUT,
+        )
+        resp.raise_for_status()
+
+
 class Command(BaseCommand):
     """Comando `manage.py keycloak_bootstrap`: configura URLs del cliente y usuarios de prueba en Keycloak."""
 
@@ -174,6 +221,10 @@ class Command(BaseCommand):
         try:
             if kc.ensure_client_urls(settings.KEYCLOAK_REDIRECT_URI):
                 self.stdout.write(f'Cliente OIDC actualizado con {settings.KEYCLOAK_REDIRECT_URI}')
+            smtp_server = smtp_realm_desde_settings(settings.MAILERS, settings.DEFAULT_FROM_EMAIL)
+            if smtp_server:
+                kc.ensure_smtp(smtp_server)
+                self.stdout.write(f"Correo de Keycloak configurado: {smtp_server['host']} ({smtp_server['from']})")
             if not options['sin_usuarios']:
                 for data in USUARIOS_PRUEBA:
                     if kc.ensure_user(data['username'], data['email'], PASSWORD_PRUEBA, data['role']):

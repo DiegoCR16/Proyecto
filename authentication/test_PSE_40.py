@@ -19,7 +19,7 @@ from django.core.management import call_command
 from django.test import SimpleTestCase, TestCase, override_settings
 
 from authentication.management.commands import keycloak_bootstrap
-from authentication.management.commands.keycloak_bootstrap import KeycloakAdmin
+from authentication.management.commands.keycloak_bootstrap import KeycloakAdmin, smtp_realm_desde_settings
 from authentication.management.commands.seed_data import (
     DIVISAS_DEFAULT, PASSWORD_PRUEBA, USUARIOS_PRUEBA, seed_all,
 )
@@ -261,3 +261,73 @@ class SettingsEnvTests(SimpleTestCase):
             self.assertEqual(env_list('X_LIST'), ['a.com', 'b.com'])
         with mock.patch.dict(os.environ, {}, clear=True):
             self.assertEqual(env_list('X_LIST'), [])
+
+
+SMTP_GMAIL = {
+    'default': {
+        'BACKEND': 'django.core.mail.backends.smtp.EmailBackend',
+        'OPTIONS': {
+            'host': 'smtp.gmail.com', 'port': 587, 'username': 'grupo@gmail.com',
+            'password': 'clave-app', 'use_tls': True, 'timeout': 10,
+        },
+    },
+}
+
+
+class SmtpKeycloakTests(SimpleTestCase):
+    """Pruebas de la configuración del correo de Keycloak a partir del correo de Django."""
+
+    def test_traduce_smtp_de_django_a_keycloak(self):
+        """Los datos de MAILERS y DEFAULT_FROM_EMAIL se pasan al formato smtpServer del realm."""
+        smtp = smtp_realm_desde_settings(SMTP_GMAIL, 'Global Exchange <grupo@gmail.com>')
+        self.assertEqual(smtp, {
+            'host': 'smtp.gmail.com', 'port': '587', 'from': 'grupo@gmail.com',
+            'fromDisplayName': 'Global Exchange', 'auth': 'true', 'user': 'grupo@gmail.com',
+            'password': 'clave-app', 'starttls': 'true', 'ssl': 'false',
+        })
+
+    def test_sin_remitente_usa_la_cuenta_smtp(self):
+        """Si DEFAULT_FROM_EMAIL está vacío, el remitente es la cuenta SMTP."""
+        smtp = smtp_realm_desde_settings(SMTP_GMAIL, '')
+        self.assertEqual(smtp['from'], 'grupo@gmail.com')
+        self.assertEqual(smtp['fromDisplayName'], 'Global Exchange')
+
+    def test_correo_por_consola_no_configura_keycloak(self):
+        """Con el backend de consola (desarrollo) no se toca el SMTP de Keycloak."""
+        consola = {'default': {'BACKEND': 'django.core.mail.backends.console.EmailBackend'}}
+        self.assertIsNone(smtp_realm_desde_settings(consola, 'x@x.com'))
+
+    @mock.patch.object(keycloak_bootstrap.requests, 'put')
+    def test_ensure_smtp_actualiza_el_realm(self, put):
+        """ensure_smtp hace un PUT parcial del realm solo con smtpServer."""
+        put.return_value = _resp()
+        kc = KeycloakAdmin('http://keycloak:8080', 'realm', 'client', 'secret')
+        kc.headers = {'Authorization': 'Bearer t'}
+        kc.ensure_smtp({'host': 'smtp.gmail.com'})
+        self.assertEqual(put.call_args.args[0], 'http://keycloak:8080/admin/realms/realm')
+        self.assertEqual(put.call_args.kwargs['json'], {'smtpServer': {'host': 'smtp.gmail.com'}})
+
+    @override_settings(
+        KEYCLOAK_REDIRECT_URI='https://ge.duckdns.org/auth/callback/',
+        MAILERS=SMTP_GMAIL, DEFAULT_FROM_EMAIL='Global Exchange <grupo@gmail.com>',
+    )
+    @mock.patch.object(KeycloakAdmin, 'ensure_smtp')
+    @mock.patch.object(KeycloakAdmin, 'ensure_client_urls', return_value=False)
+    @mock.patch.object(KeycloakAdmin, 'authenticate')
+    def test_comando_configura_smtp_si_hay_correo_real(self, _auth, _urls, smtp):
+        """El comando keycloak_bootstrap aplica el SMTP cuando Django usa SMTP."""
+        out = StringIO()
+        call_command('keycloak_bootstrap', '--sin-usuarios', stdout=out)
+        smtp.assert_called_once()
+        self.assertEqual(smtp.call_args.args[0]['host'], 'smtp.gmail.com')
+        self.assertIn('Correo de Keycloak configurado', out.getvalue())
+
+
+class ComposeSinMailpitTests(SimpleTestCase):
+    """Los archivos de Docker Compose ya no deben incluir Mailpit."""
+
+    def test_compose_no_define_mailpit(self):
+        """Ni desarrollo ni producción levantan el servicio mailpit."""
+        for archivo in ('docker-compose.yml', 'docker-compose.prod.yml'):
+            with open(archivo, encoding='utf-8') as f:
+                self.assertNotIn('mailpit', f.read().lower(), archivo)
