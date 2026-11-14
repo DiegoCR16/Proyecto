@@ -14,6 +14,8 @@ from pathlib import Path
 import os
 from dotenv import load_dotenv
 
+from globalexchange.email_config import configurar_mailers
+
 BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / '.env')
 
@@ -68,6 +70,7 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'authentication.middleware.NotificarErroresAdminMiddleware',
 ]
 
 ROOT_URLCONF = 'globalexchange.urls'
@@ -82,6 +85,7 @@ TEMPLATES = [
                 'django.template.context_processors.request',
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
+                'authentication.permisos.contexto_permisos',
             ],
         },
     },
@@ -157,18 +161,10 @@ LOGIN_URL = '/auth/login/'
 LOGIN_REDIRECT_URL = '/auth/dashboard/'
 LOGOUT_REDIRECT_URL = '/auth/login/'
 
-# EMAIL_BACKEND = os.environ.get('EMAIL_BACKEND', 'django.core.mail.backends.smtp.EmailBackend')
-# EMAIL_HOST = os.environ.get('EMAIL_HOST', 'mailpit')
-# EMAIL_PORT = int(os.environ.get('EMAIL_PORT', 1025))
-# EMAIL_USE_TLS = False
-# EMAIL_USE_SSL = False
+# Correo (SMTP real, ej. Gmail con contraseña de aplicación).
+# Sin EMAIL_HOST en el .env, los correos se muestran por consola (desarrollo).
 DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL', 'no-reply@globalexchange.com')
-
-MAILERS = {
-    'default': {
-        'BACKEND': 'django.core.mail.backends.console.EmailBackend',
-    },
-}
+MAILERS = configurar_mailers(os.environ)
 
 # SIFEN (Factura Segura) Configuration
 SIFEN_API_EMAIL = os.environ.get('SIFEN_API_EMAIL', 'test@facturasegura.com.py')
@@ -176,6 +172,13 @@ SIFEN_API_PASSWORD = os.environ.get('SIFEN_API_PASSWORD', 'testpassword')
 SIFEN_API_BASE_URL = os.environ.get('SIFEN_API_BASE_URL', 'https://apitest.facturasegura.com.py')
 FACTURASEGURA_NUMERO_INICIAL = 138
 FACTURASEGURA_NUMERO_FINAL = 147
+
+# Notas de crédito electrónicas (iTiDE = 5): numeración propia, independiente de las facturas.
+FACTURASEGURA_NC_NUMERO_INICIAL = int(os.environ.get('FACTURASEGURA_NC_NUMERO_INICIAL', 1))
+FACTURASEGURA_NC_NUMERO_FINAL = int(os.environ.get('FACTURASEGURA_NC_NUMERO_FINAL', 9999999))
+
+# Plazo de SIFEN para cancelar una factura aprobada; pasado este plazo se anula con nota de crédito.
+SIFEN_PLAZO_CANCELACION_HORAS = int(os.environ.get('SIFEN_PLAZO_CANCELACION_HORAS', 48))
 
 FACTURASEGURA_EMISOR_ACTIVIDADES_ECONOMICAS = [
     {

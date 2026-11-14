@@ -56,19 +56,11 @@
             </div>
         </div>
 
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-            <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-                <h3 class="text-lg font-semibold text-slate-800 mb-2">Monitoreo de Operaciones</h3>
-                <p class="text-sm text-slate-600 mb-4">Revisión de transacciones en tiempo real y validación de volúmenes de clientes.</p>
-                <a href="#" class="text-purple-800 font-semibold text-sm hover:underline">Ver Reportes &rarr;</a>
-            </div>
-            <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-                <h3 class="text-lg font-semibold text-slate-800 mb-2">Auditoría y Logs</h3>
-                <p class="text-sm text-slate-600 mb-4">Consulta de eventos y registros de seguridad del sistema Global Exchange.</p>
-                <a href="{% url 'admin_audit_logs' %}" class="text-purple-800 font-semibold text-sm hover:underline">Consultar Auditoría &rarr;</a>
-            </div>
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
+            {% include "authentication/_accesos_por_permiso.html" %}
         </div>
 
+        {% if 'can_view_rates' in permisos %}
         <!-- Banner to Visualizar Tasas / Gráfico de Evolución (Image 2 format) -->
         <div class="mb-8 bg-gradient-to-r from-blue-900 to-slate-900 text-white p-6 rounded-2xl shadow-sm flex flex-col sm:flex-row items-center justify-between gap-4">
             <div class="flex items-center space-x-4">
@@ -110,6 +102,7 @@
                 </table>
             </div>
         </div>
+        {% endif %}
     </main>
 
     <footer class="bg-white border-t border-slate-200 py-6 text-center text-xs text-slate-500 mt-10">

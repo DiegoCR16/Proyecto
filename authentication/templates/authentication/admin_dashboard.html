@@ -75,6 +75,7 @@
 
     <!-- Main Content -->
     <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {% include "authentication/_notificaciones.html" %}
         <div class="mb-8">
             <h1 class="text-3xl font-bold text-slate-900">Panel de Control Administrativo</h1>
             <p class="text-slate-600 mt-1">Gestión centralizada de operaciones de cambio, usuarios y seguridad.</p>
@@ -102,11 +103,6 @@
                 <a href="{% url 'admin_audit_logs' %}" class="text-blue-800 font-semibold text-sm hover:underline">Ver Registros &rarr;</a>
             </div>
             <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-                <h3 class="text-lg font-semibold text-slate-800 mb-2">Simulación de Tasas</h3>
-                <p class="text-sm text-slate-600 mb-4">Simule compra y venta de divisas con cotizaciones en tiempo real.</p>
-                <a href="{% url 'tasas_cambio:simulator' %}" class="text-blue-800 font-semibold text-sm hover:underline">Acceder &rarr;</a>
-            </div>
-            <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
                 <h3 class="text-lg font-semibold text-slate-800 mb-2">Comisiones y Beneficios</h3>
                 <p class="text-sm text-slate-600 mb-4">Parametrice umbrales y porcentajes de beneficio por categoría de cliente.</p>
                 <a href="{% url 'tasas_cambio:client_benefit_config' %}" class="text-blue-800 font-semibold text-sm hover:underline">Configurar &rarr;</a>
@@ -121,8 +117,18 @@
                 <p class="text-sm text-slate-600 mb-4">Actualice tasas en tiempo real y gestione el historial y trazabilidad.</p>
                 <a href="{% url 'tasas_cambio:rates_manager' %}" class="text-blue-800 font-semibold text-sm hover:underline">Gestionar &rarr;</a>
             </div>
+            {% if 'can_manage_invoices' in permisos %}
             <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-                <h3 class="text-lg font-semibold text-slate-800 mb-2">Turnos y Cajas (PSE-20)</h3>
+                <div class="flex items-center justify-between mb-2">
+                    <h3 class="text-lg font-semibold text-slate-800">Facturación Electrónica</h3>
+                    {% if solicitudes_anulacion_pendientes %}<span class="bg-red-100 text-red-700 text-xs px-2 py-0.5 rounded-full font-semibold">{{ solicitudes_anulacion_pendientes }} solicitud(es)</span>{% endif %}
+                </div>
+                <p class="text-sm text-slate-600 mb-4">Reintentar facturas fallidas, anular facturas (cancelación o nota de crédito) y atender pedidos de anulación.</p>
+                <a href="{% url 'procesamiento_operaciones:admin_facturacion' %}" class="text-blue-800 font-semibold text-sm hover:underline">Gestionar &rarr;</a>
+            </div>
+            {% endif %}
+            <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                <h3 class="text-lg font-semibold text-slate-800 mb-2">Turnos y Cajas</h3>
                 <p class="text-sm text-slate-600 mb-4">Supervise y gestione la apertura y cierre de turnos de caja y saldos por divisa.</p>
                 <a href="{% url 'caja:gestion_caja' %}" class="text-blue-800 font-semibold text-sm hover:underline">Gestionar Turnos &rarr;</a>
             </div>

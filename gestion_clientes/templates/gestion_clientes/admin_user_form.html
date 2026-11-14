@@ -18,11 +18,7 @@
             <p class="text-sm text-slate-600 mt-1">Gestión de cuentas y asignación de roles en Global Exchange</p>
         </div>
 
-        {% if error %}
-            <div class="mb-6 p-4 bg-red-50 border-l-4 border-red-600 text-red-700 rounded-r-lg text-sm shadow-sm" role="alert">
-                <span class="font-semibold">Atención:</span> {{ error }}
-            </div>
-        {% endif %}
+        {% include "authentication/_notificaciones.html" %}
 
         <form method="POST" class="space-y-5">
             {% csrf_token %}

@@ -47,26 +47,7 @@
         </div>
 
         <!-- Success Message -->
-        {% if success_message %}
-        <div class="bg-green-50 border-l-4 border-green-600 p-4 rounded-xl shadow-sm flex items-start space-x-3">
-            <div class="flex-shrink-0 text-green-600 font-bold text-lg">✅</div>
-            <div>
-                <h3 class="text-sm font-bold text-green-800">Operación Exitosa</h3>
-                <p class="text-xs text-green-700 mt-1">{{ success_message }}</p>
-            </div>
-        </div>
-        {% endif %}
-
-        <!-- Error Message -->
-        {% if error_message %}
-        <div class="bg-red-50 border-l-4 border-red-600 p-4 rounded-xl shadow-sm flex items-start space-x-3">
-            <div class="flex-shrink-0 text-red-600 font-bold text-lg">⚠️</div>
-            <div>
-                <h3 class="text-sm font-bold text-red-800">Error de Validación</h3>
-                <p class="text-xs text-red-700 mt-1">{{ error_message }}</p>
-            </div>
-        </div>
-        {% endif %}
+        {% include "authentication/_notificaciones.html" %}
 
         <!-- ================= SECTION 1: CURRENCIES CRUD ================= -->
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">

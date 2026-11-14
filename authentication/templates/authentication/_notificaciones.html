@@ -1,0 +1,47 @@
+{% comment %}
+Notificaciones flotantes de la interfaz de administración.
+
+Muestra en un solo lugar:
+  - los mensajes de django.contrib.messages (los que sobreviven a una redirección),
+  - las variables de contexto error / error_message / success / success_message.
+
+Los errores y avisos quedan visibles hasta que se cierran; las confirmaciones se ocultan solas.
+Uso: {% include "authentication/_notificaciones.html" %}
+{% endcomment %}
+{% if messages or error or error_message or success or success_message %}
+<div id="gx-notificaciones" class="fixed top-4 right-4 left-4 sm:left-auto sm:w-[26rem] z-50 space-y-3" aria-live="polite">
+    {% if error %}{% include "authentication/_notificacion.html" with nivel="error" texto=error %}{% endif %}
+    {% if error_message %}{% include "authentication/_notificacion.html" with nivel="error" texto=error_message %}{% endif %}
+    {% for message in messages %}
+        {% if message.level_tag == "error" %}
+            {% include "authentication/_notificacion.html" with nivel="error" texto=message %}
+        {% elif message.level_tag == "warning" %}
+            {% include "authentication/_notificacion.html" with nivel="warning" texto=message %}
+        {% elif message.level_tag == "info" %}
+            {% include "authentication/_notificacion.html" with nivel="info" texto=message %}
+        {% else %}
+            {% include "authentication/_notificacion.html" with nivel="success" texto=message %}
+        {% endif %}
+    {% endfor %}
+    {% if success %}{% include "authentication/_notificacion.html" with nivel="success" texto=success %}{% endif %}
+    {% if success_message %}{% include "authentication/_notificacion.html" with nivel="success" texto=success_message %}{% endif %}
+</div>
+<script>
+    (function () {
+        var contenedor = document.getElementById('gx-notificaciones');
+        if (!contenedor) return;
+        function cerrar(nota) {
+            nota.style.transition = 'opacity .3s';
+            nota.style.opacity = '0';
+            setTimeout(function () { nota.remove(); }, 300);
+        }
+        contenedor.querySelectorAll('[data-cerrar]').forEach(function (boton) {
+            boton.addEventListener('click', function () { cerrar(boton.closest('[data-notificacion]')); });
+        });
+        // Solo las confirmaciones se ocultan solas; los errores esperan a que el usuario los lea.
+        contenedor.querySelectorAll('[data-notificacion="success"]').forEach(function (nota) {
+            setTimeout(function () { cerrar(nota); }, 6000);
+        });
+    })();
+</script>
+{% endif %}

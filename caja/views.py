@@ -16,13 +16,68 @@ from .models import (
     verificar_turno_activo, inicializar_denominaciones_default, procesar_arqueo_cierre
 )
 from authentication.models import UserProfile, Cliente
+from authentication.permisos import requiere_permiso, tiene_permiso, denegar_acceso
 from gestion_clientes.views import get_user_interface_context
 from procesamiento_operaciones.models import CurrencyPurchaseTransaction, CurrencySaleTransaction
+from procesamiento_operaciones.views import _generar_factura_sifen_async, _sincronizar_facturas_sifen
 from tasas_cambio.models import ExchangeRate, ClientBenefitRule
 from tasas_cambio.views import ensure_default_benefit_rules
 
+MARCA_COMPROBANTE_VENTANILLA = "Ventanilla Comprobante:"
+
+
+def _marca_comprobante(comprobante_numero):
+    """
+    Devuelve la marca que vincula una transacción con su comprobante de ventanilla.
+
+    Args:
+        comprobante_numero (str): Número del comprobante emitido por la ventanilla.
+
+    Returns:
+        str: Texto que se guarda en el desglose transparente de la transacción.
+    """
+    return f"{MARCA_COMPROBANTE_VENTANILLA} {comprobante_numero}"
+
+
+def _transaccion_de_operacion(operacion):
+    """
+    Busca la transacción de compra o venta generada por una operación de ventanilla,
+    que es la que lleva la factura electrónica SIFEN.
+
+    Args:
+        operacion (OperacionVentanilla): Operación registrada por el cajero.
+
+    Returns:
+        CurrencyPurchaseTransaction | CurrencySaleTransaction | None: Transacción asociada, si existe.
+    """
+    modelo = CurrencyPurchaseTransaction if operacion.tipo_operacion == 'COMPRA' else CurrencySaleTransaction
+    return modelo.objects.filter(
+        transparent_breakdown__contains=_marca_comprobante(operacion.comprobante_numero)
+    ).first()
+
+
+def _mensaje_factura(transaccion):
+    """
+    Resume para el cajero el resultado de la emisión de la factura electrónica.
+
+    Args:
+        transaccion: Transacción de compra o venta recién facturada.
+
+    Returns:
+        str: Texto breve con el estado de la factura SIFEN.
+    """
+    estado = transaccion.sifen_estado
+    if estado == 'Error':
+        return f"No se pudo emitir la factura electrónica: {transaccion.sifen_error}"
+    if estado == 'En cola':
+        return "Factura electrónica en cola: se emitirá cuando SIFEN responda la anterior."
+    if transaccion.sifen_cdc:
+        return f"Factura electrónica {estado} (CDC {transaccion.sifen_cdc})."
+    return ""
+
 
 @login_required
+@requiere_permiso('can_operate_cashier')
 def gestion_caja_view(request):
     """
     Vista web para la gestión de apertura y cierre de turnos de caja física
@@ -101,6 +156,7 @@ def gestion_caja_view(request):
 
 
 @login_required
+@requiere_permiso('can_operate_cashier')
 def abrir_turno_view(request, caja_id):
     """
     Procesa la apertura de un turno de caja asociando el usuario cajero,
@@ -145,6 +201,7 @@ def abrir_turno_view(request, caja_id):
 
 
 @login_required
+@requiere_permiso('can_operate_cashier')
 def cerrar_turno_view(request, turno_id):
     """
     Procesa el cierre de turno de caja ingresando los saldos finales físicos,
@@ -174,6 +231,7 @@ def cerrar_turno_view(request, turno_id):
 
 
 @login_required
+@requiere_permiso('can_operate_cashier')
 def registrar_movimiento_efectivo_view(request, turno_id):
     """
     Procesa un ingreso o salida física de efectivo en un turno activo,
@@ -224,6 +282,7 @@ def registrar_movimiento_efectivo_view(request, turno_id):
 
 
 @login_required
+@requiere_permiso('can_manage_cashboxes')
 def gestion_cajas_admin_view(request):
     """
     Vista de administración para el CRUD de Cajas Físicas y asignación de cajeros.
@@ -231,9 +290,6 @@ def gestion_cajas_admin_view(request):
     """
     profile, _ = UserProfile.objects.get_or_create(user=request.user)
     interface_ctx = get_user_interface_context(request, profile)
-    if not interface_ctx.get('is_admin', False) and not request.user.is_superuser:
-        messages.error(request, "Acceso no autorizado.")
-        return redirect('dashboard_redirect')
 
     cajeros_list = User.objects.filter(
         Q(profile__role__name__icontains='cajero') |
@@ -288,6 +344,7 @@ def gestion_cajas_admin_view(request):
 
 
 @login_required
+@requiere_permiso('can_operate_cashier')
 def detalle_turno_operaciones_view(request, turno_id):
     """
     Vista web para consultar el detalle transaccional de todas las operaciones procesadas
@@ -311,6 +368,9 @@ def detalle_turno_operaciones_view(request, turno_id):
     if turno.fecha_cierre:
         purchases_qs = purchases_qs.filter(timestamp__lte=turno.fecha_cierre)
         sales_qs = sales_qs.filter(timestamp__lte=turno.fecha_cierre)
+
+    # Actualiza el estado SIFEN de las facturas del turno antes de mostrarlas
+    _sincronizar_facturas_sifen(purchases_qs, sales_qs)
 
     purchases = []
     if tx_type_filter in ['', 'COMPRA']:
@@ -399,6 +459,8 @@ def detalle_turno_operaciones_view(request, turno_id):
     return render(request, 'caja/detalle_turno_operaciones.html', context)
 
 
+@login_required
+@requiere_permiso('can_operate_cashier')
 def ventanilla_pos_view(request):
     """
     Vista web para el procesamiento operativo en ventanilla (POS) (PSE-38).
@@ -445,7 +507,16 @@ def ventanilla_pos_view(request):
                 benefit_percentage = Decimal('4.00')
                 category_name = 'Corporativo'
 
-    operaciones_recientes = OperacionVentanilla.objects.filter(cajero=request.user).order_by('-fecha')[:10]
+    operaciones_recientes = list(
+        OperacionVentanilla.objects.filter(cajero=request.user).order_by('-fecha')[:10]
+    )
+    # Actualiza el estado SIFEN de las facturas del cajero antes de mostrarlas
+    _sincronizar_facturas_sifen(
+        CurrencyPurchaseTransaction.objects.filter(user=request.user, payment_method_type='EFECTIVO_VENTANILLA'),
+        CurrencySaleTransaction.objects.filter(user=request.user, payment_method_type='EFECTIVO_VENTANILLA'),
+    )
+    for op in operaciones_recientes:
+        op.factura = _transaccion_de_operacion(op)
 
     context = {
         'turno_activo': turno_activo,
@@ -462,6 +533,7 @@ def ventanilla_pos_view(request):
 
 
 @login_required
+@requiere_permiso('can_operate_cashier')
 def procesar_ventanilla_view(request):
     """
     Procesa la operación presencial de compra o venta de divisas en ventanilla (PSE-38),
@@ -592,7 +664,7 @@ def procesar_ventanilla_view(request):
         )
 
         if tipo_operacion == 'COMPRA':
-            CurrencyPurchaseTransaction.objects.create(
+            transaccion = CurrencyPurchaseTransaction.objects.create(
                 user=request.user,
                 cliente=cliente,
                 turno=turno_activo,
@@ -605,7 +677,9 @@ def procesar_ventanilla_view(request):
                 commission_amount=comision,
                 total_pyg=total_a_cobrar_entregar if moneda_destino == 'PYG' else (monto_origen * tasa),
                 status='SUCCESS',
-                payment_method_type='EFECTIVO_VENTANILLA'
+                payment_method_type='EFECTIVO_VENTANILLA',
+                monto_moneda_local=valor_pyg,
+                transparent_breakdown=_marca_comprobante(comprobante_num),
             )
             DesgloseEfectivoCaja.objects.create(
                 turno=turno_activo,
@@ -622,7 +696,7 @@ def procesar_ventanilla_view(request):
                 observacion=f"Ventanilla Compra Pago Net #{comprobante_num} - Cliente {cliente.nombre_o_razon_social}"
             )
         else:
-            CurrencySaleTransaction.objects.create(
+            transaccion = CurrencySaleTransaction.objects.create(
                 user=request.user,
                 cliente=cliente,
                 turno=turno_activo,
@@ -635,7 +709,9 @@ def procesar_ventanilla_view(request):
                 commission_amount=comision,
                 total_pyg=total_a_cobrar_entregar if moneda_origen == 'PYG' else (monto_origen * tasa),
                 status='SUCCESS',
-                payment_method_type='EFECTIVO_VENTANILLA'
+                payment_method_type='EFECTIVO_VENTANILLA',
+                monto_moneda_local=valor_pyg,
+                transparent_breakdown=_marca_comprobante(comprobante_num),
             )
             DesgloseEfectivoCaja.objects.create(
                 turno=turno_activo,
@@ -657,7 +733,17 @@ def procesar_ventanilla_view(request):
             cliente.transaction_volume = Decimal(str(cliente.transaction_volume or 0)) + Decimal(str(vol_add))
             cliente.save()
 
+        # Factura electrónica SIFEN, igual que en las operaciones del cliente.
+        # Una falla queda registrada en la transacción y no revierte la operación ya cobrada.
+        _generar_factura_sifen_async(transaccion)
+        transaccion.refresh_from_db()
+        mensaje_factura = _mensaje_factura(transaccion)
+
         messages.success(request, f"¡Operación procesada con éxito! Comprobante N° {comprobante_num} emitido. Saldo de caja actualizado en tiempo real.")
+        if transaccion.sifen_estado == 'Error':
+            messages.error(request, mensaje_factura)
+        elif mensaje_factura:
+            messages.success(request, mensaje_factura)
         return redirect('caja:ventanilla_pos')
 
     except Exception as e:

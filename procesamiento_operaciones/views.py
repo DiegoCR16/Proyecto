@@ -13,13 +13,14 @@ import json
 import sys
 from django.conf import settings
 from authentication.models import UserProfile, Cliente, UsuarioClienteRelacion, ClientAccreditationMethod
+from authentication.permisos import requiere_permiso, tiene_permiso, denegar_acceso
 from tasas_cambio.models import ExchangeRate, ClientBenefitRule, PaymentMethod
 from tasas_cambio.views import (
     ensure_default_payment_methods, ensure_default_benefit_rules,
     SimuladorConversionService, get_user_effective_category, get_active_client,
     LIMITE_MINIMO_OPERACION_PYG, LIMITE_MAXIMO_OPERACION_PYG
 )
-from .models import CurrencyPurchaseTransaction, CurrencySaleTransaction, SifenSecuencia
+from .models import CurrencyPurchaseTransaction, CurrencySaleTransaction, SifenSecuencia, MovimientoSaldoOperacion
 from integracion.services import PaymentGatewaySimulator
 from integracion.gateways import PaymentGatewayFactory, StripeGateway, BancardGateway, TigoMoneyGateway, SIPAPGateway
 from integracion.models import PaymentGatewayLog
@@ -39,11 +40,14 @@ logger = logging.getLogger(__name__)
 SIFEN_EST = "001"
 SIFEN_PUNTO_EXP = "003"
 SIFEN_TIDE = "1"  # Factura electronica
+SIFEN_TIDE_NOTA_CREDITO = "5"  # Nota de credito electronica
 SIFEN_RUC_EMISOR = "2595733"
 SIFEN_LARGO_CDC = 44
 SIFEN_LIMITE_SINCRONIZACION = 5
 SIFEN_VENCIMIENTO_RESERVA = timedelta(minutes=5)
 EMAIL_FALLBACK = "soporte@facturasegura.com.py"
+# generar_de no respondio (timeout o corte): Factura Segura pudo haber creado el documento
+MARCA_SIN_CONFIRMAR = "Sin confirmar:"
 
 ACTIVIDADES_DEFAULT = [
     {"cActEco": "62010", "dDesActEco": "Actividades de programación informática"},
@@ -58,26 +62,43 @@ class SifenRangoAgotado(Exception):
     """Ya se aprobaron todos los numeros de documento permitidos."""
 
 
-def _clave_secuencia():
+def _clave_secuencia(tide=SIFEN_TIDE):
     """Devuelve la clave de numeracion del establecimiento, punto y tipo de documento."""
-    return f"{SIFEN_EST}-{SIFEN_PUNTO_EXP}-{SIFEN_TIDE}"
+    return f"{SIFEN_EST}-{SIFEN_PUNTO_EXP}-{tide}"
 
 
-def _reservar_numero_documento():
+def _rango_numeracion(tide=SIFEN_TIDE):
+    """
+    Rango de dNumDoc autorizado para el tipo de documento.
+
+    Returns:
+        tuple[int, int]: Numero inicial y final.
+    """
+    if tide == SIFEN_TIDE_NOTA_CREDITO:
+        return (
+            int(getattr(settings, "FACTURASEGURA_NC_NUMERO_INICIAL", 1)),
+            int(getattr(settings, "FACTURASEGURA_NC_NUMERO_FINAL", 9999999)),
+        )
+    return int(settings.FACTURASEGURA_NUMERO_INICIAL), int(settings.FACTURASEGURA_NUMERO_FINAL)
+
+
+def _reservar_numero_documento(tide=SIFEN_TIDE):
     """
     Reserva el proximo dNumDoc sin avanzar la numeracion, que solo cambia al aprobarse.
+
+    Args:
+        tide (str): Tipo de documento (1 = factura, 5 = nota de credito).
 
     Returns:
         int: Numero reservado, o None si otro documento aun espera el resultado de SIFEN.
 
     Raises:
-        SifenRangoAgotado: Si el proximo numero supera FACTURASEGURA_NUMERO_FINAL.
+        SifenRangoAgotado: Si el proximo numero supera el final del rango autorizado.
     """
-    inicial = int(settings.FACTURASEGURA_NUMERO_INICIAL)
-    final = int(settings.FACTURASEGURA_NUMERO_FINAL)
+    inicial, final = _rango_numeracion(tide)
     with db_transaction.atomic():
         sec, _ = SifenSecuencia.objects.select_for_update().get_or_create(
-            clave=_clave_secuencia(), defaults={"ultimo_numero": inicial - 1}
+            clave=_clave_secuencia(tide), defaults={"ultimo_numero": inicial - 1}
         )
         if sec.numero_en_proceso is not None:
             return None
@@ -91,15 +112,15 @@ def _reservar_numero_documento():
         return numero
 
 
-def _guardar_cdc_en_proceso(numero, cdc):
+def _guardar_cdc_en_proceso(numero, cdc, tide=SIFEN_TIDE):
     """Asocia el CDC recibido al numero reservado para poder consultar su resultado."""
-    SifenSecuencia.objects.filter(clave=_clave_secuencia(), numero_en_proceso=numero).update(cdc_en_proceso=cdc)
+    SifenSecuencia.objects.filter(clave=_clave_secuencia(tide), numero_en_proceso=numero).update(cdc_en_proceso=cdc)
 
 
-def _liberar_numero(numero, aprobado=False):
+def _liberar_numero(numero, aprobado=False, tide=SIFEN_TIDE):
     """Libera la reserva; la numeracion solo avanza si SIFEN aprobo el documento."""
     with db_transaction.atomic():
-        sec = SifenSecuencia.objects.select_for_update().filter(clave=_clave_secuencia()).first()
+        sec = SifenSecuencia.objects.select_for_update().filter(clave=_clave_secuencia(tide)).first()
         if sec is None or sec.numero_en_proceso != numero:
             return
         if aprobado:
@@ -110,23 +131,24 @@ def _liberar_numero(numero, aprobado=False):
         sec.save()
 
 
-def _resolver_numero_en_proceso(token):
+def _resolver_numero_en_proceso(token, tide=SIFEN_TIDE):
     """
     Consulta el documento que espera resultado y libera su numero si ya es definitivo.
 
     Args:
         token (str): Token de autenticacion activo.
+        tide (str): Tipo de documento de la numeracion a revisar.
 
     Returns:
         bool: True si se puede emitir otro documento.
     """
-    sec = SifenSecuencia.objects.filter(clave=_clave_secuencia()).first()
+    sec = SifenSecuencia.objects.filter(clave=_clave_secuencia(tide)).first()
     if sec is None or sec.numero_en_proceso is None:
         return True
     if not sec.cdc_en_proceso:
         # Reserva sin CDC: otra emision en curso, o una que se interrumpio
         if sec.reservado_en and timezone.now() - sec.reservado_en > SIFEN_VENCIMIENTO_RESERVA:
-            _liberar_numero(sec.numero_en_proceso)
+            _liberar_numero(sec.numero_en_proceso, tide=tide)
             return True
         return False
     res = FacturaSeguraService.get_estado_sifen(token, sec.cdc_en_proceso, SIFEN_RUC_EMISOR) or {}
@@ -137,23 +159,45 @@ def _resolver_numero_en_proceso(token):
     estado = _mapear_estado_sifen(resultados[0].get("estado_sifen"))
     if estado == "Pendiente":
         return False
-    _liberar_numero(sec.numero_en_proceso, aprobado=estado == "Aprobada")
+    _liberar_numero(sec.numero_en_proceso, aprobado=estado == "Aprobada", tide=tide)
     return True
+
+
+def _operaciones_en_cola():
+    """Operaciones cuyo intento de facturacion actual espera un numero de documento."""
+    en_cola = []
+    for modelo in (CurrencyPurchaseTransaction, CurrencySaleTransaction):
+        filas = modelo.objects.filter(transparent_breakdown__contains="SIFEN Estado: En cola").order_by("timestamp")
+        en_cola += [tx for tx in filas if tx.sifen_estado == "En cola"]
+    return sorted(en_cola, key=lambda tx: tx.timestamp)
 
 
 def _emitir_siguiente_en_cola():
     """Emite la operacion mas antigua que espera un numero de documento."""
-    candidatas = [
-        modelo.objects.filter(transparent_breakdown__contains="SIFEN Estado: En cola")
-        .exclude(transparent_breakdown__contains="SIFEN CDC:")
-        .exclude(transparent_breakdown__contains="SIFEN Estado: Error")
-        .order_by("timestamp")
-        .first()
-        for modelo in (CurrencyPurchaseTransaction, CurrencySaleTransaction)
-    ]
-    candidatas = [tx for tx in candidatas if tx]
+    candidatas = _operaciones_en_cola()
     if candidatas:
-        _generar_factura_sifen_async(min(candidatas, key=lambda tx: tx.timestamp))
+        _generar_factura_sifen_async(candidatas[0])
+
+
+def _mov(tipo, monto, moneda="PYG", cuenta_cliente=None, metodo_pago=None, cliente=None):
+    """Describe un movimiento de saldo para registrarlo con _registrar_movimientos."""
+    return {
+        "tipo": tipo, "monto": monto, "moneda": moneda,
+        "cuenta_cliente": cuenta_cliente, "metodo_pago": metodo_pago, "cliente": cliente,
+    }
+
+
+def _registrar_movimientos(transaction, movimientos):
+    """
+    Guarda los movimientos de saldo de una operacion exitosa con el monto exacto movido,
+    para poder devolverlos si la operacion se anula.
+    """
+    if not movimientos or transaction.status != "SUCCESS":
+        return
+    clave = "venta" if isinstance(transaction, CurrencySaleTransaction) else "compra"
+    MovimientoSaldoOperacion.objects.bulk_create([
+        MovimientoSaldoOperacion(**{clave: transaction}, **m) for m in movimientos if m["monto"]
+    ])
 
 
 def _remove_accents(text):
@@ -193,9 +237,13 @@ def _datos_receptor(cliente, email):
       - documento con guion (RUC-DV) -> contribuyente (iNatRec=1, B2B)
       - documento sin guion (cedula)  -> no contribuyente (iNatRec=2, B2C)
       - sin cliente / sin documento   -> innominado
+      - cliente ocasional de ventanilla (documento "OCASIONAL-...") -> innominado
     """
     doc = (getattr(cliente, "documento_identidad", "") or "").strip() if cliente else ""
     nombre = (getattr(cliente, "nombre_o_razon_social", "") or "").strip() if cliente else ""
+    if doc.upper().startswith("OCASIONAL"):
+        # Codigo interno de la ventanilla, no es un documento real del cliente
+        doc = ""
 
     if "-" in doc:
         ruc = re.sub(r"\D", "", doc.split("-", 1)[0])
@@ -448,8 +496,8 @@ def _generar_factura_sifen_async(transaction):
     if "test" in sys.argv or getattr(settings, "TESTING", False):
         return
 
-    # Idempotencia: no emitir dos veces la misma operacion
-    if "SIFEN CDC:" in (transaction.transparent_breakdown or ""):
+    # Idempotencia: no emitir dos veces la misma operacion en el mismo intento
+    if transaction.sifen_cdc:
         return
 
     try:
@@ -462,7 +510,7 @@ def _generar_factura_sifen_async(transaction):
         numero = _reservar_numero_documento() if _resolver_numero_en_proceso(token) else None
         if numero is None:
             # Otro documento espera resultado: se emitira cuando se conozca
-            if "SIFEN Estado: En cola" not in (transaction.transparent_breakdown or ""):
+            if transaction.sifen_estado != "En cola" or not transaction.sifen_tiene_registro:
                 _registrar_estado_sifen(transaction, "SIFEN Estado: En cola")
             return
 
@@ -482,10 +530,18 @@ def _generar_factura_sifen_async(transaction):
             else:
                 desc = str(res.get("description") or res.get("error") or "Sin respuesta")[:150]
                 logger.error("generar_de rechazo la factura (tx %s): %s", transaction.pk, res)
-                _registrar_estado_sifen(
-                    transaction,
-                    f"SIFEN Estado: Error ({res.get('code')}): {desc.replace('|', '/')}",
-                )
+                if res.get("code") == -1:
+                    # Corte de red o timeout: segun la API ESI el servidor pudo haber procesado
+                    # la solicitud, asi que el resultado queda sin confirmar
+                    _registrar_estado_sifen(
+                        transaction,
+                        f"SIFEN Estado: Error: {MARCA_SIN_CONFIRMAR} {desc.replace('|', '/')}",
+                    )
+                else:
+                    _registrar_estado_sifen(
+                        transaction,
+                        f"SIFEN Estado: Error ({res.get('code')}): {desc.replace('|', '/')}",
+                    )
         finally:
             if not emitida:
                 _liberar_numero(numero)
@@ -503,12 +559,21 @@ def _mapear_estado_sifen(estado_sifen):
     Args:
         estado_sifen (str): Valor recibido, por ejemplo "SOL.APROBACION".
 
+    Segun la API ESI de Factura Segura:
+        SOL.APROBACION, ENVIADO_A_SIFEN, REINTENTAR_LOTE -> todavia sin resultado.
+        Aprobado / Aprobado con observacion -> aprobado.
+        Rechazado / Reingresado (el numero se volvio a usar con otro CDC) -> rechazado.
+        ERROR_SIFEN, ERROR_ENVIO_LOTE, ERROR_CONSULTA_LOTE -> "Error SIFEN (Apr.)": el
+        documento no avanzara solo y hay que revisarlo y reintentarlo.
+
     Returns:
-        str: "Aprobada", "Rechazada" o "Pendiente" si aun no hay resultado final.
+        str: "Aprobada", "Rechazada", "Error" o "Pendiente" si aun no hay resultado final.
     """
     estado = str(estado_sifen or "").upper()
-    if estado.startswith("SOL"):
+    if estado.startswith("SOL") or estado.startswith("ENVIADO") or estado.startswith("REINTENTAR"):
         return "Pendiente"
+    if estado.startswith("ERROR"):
+        return "Error"
     if "RECH" in estado or "REINGRES" in estado:
         return "Rechazada"
     if "APROB" in estado:
@@ -530,25 +595,17 @@ def _sincronizar_facturas_sifen(*querysets, limite=SIFEN_LIMITE_SINCRONIZACION):
     try:
         pendientes = []
         for queryset in querysets:
-            filas = (
-                queryset.filter(transparent_breakdown__contains="SIFEN CDC:")
-                .exclude(transparent_breakdown__contains="SIFEN Estado: Aprobada")
-                .exclude(transparent_breakdown__contains="SIFEN Estado: Rechazada")
-                .order_by("-timestamp")
-            )
+            filas = queryset.filter(transparent_breakdown__contains="SIFEN CDC:").order_by("-timestamp")
             # Los CDC con otro largo son registros antiguos que SIFEN no reconoce
-            pendientes += [tx for tx in filas if len(tx.sifen_cdc or "") == SIFEN_LARGO_CDC]
+            pendientes += [
+                tx for tx in filas
+                if tx.sifen_estado in ("Emitida", "Pendiente") and len(tx.sifen_cdc or "") == SIFEN_LARGO_CDC
+            ]
         pendientes = sorted(pendientes, key=lambda tx: tx.timestamp, reverse=True)[:limite]
         en_proceso = SifenSecuencia.objects.filter(
             clave=_clave_secuencia(), numero_en_proceso__isnull=False
         ).exists()
-        en_cola = any(
-            modelo.objects.filter(transparent_breakdown__contains="SIFEN Estado: En cola")
-            .exclude(transparent_breakdown__contains="SIFEN CDC:")
-            .exclude(transparent_breakdown__contains="SIFEN Estado: Error")
-            .exists()
-            for modelo in (CurrencyPurchaseTransaction, CurrencySaleTransaction)
-        )
+        en_cola = bool(_operaciones_en_cola())
         if not (pendientes or en_proceso or en_cola):
             return
 
@@ -565,7 +622,13 @@ def _sincronizar_facturas_sifen(*querysets, limite=SIFEN_LIMITE_SINCRONIZACION):
                 logger.error("No se pudo consultar el CDC %s: %s", tx.sifen_cdc, res)
                 continue
             estado = _mapear_estado_sifen(resultados[0].get("estado_sifen"))
-            if estado != "Pendiente":
+            if estado == "Error":
+                detalle = " - ".join(
+                    str(resultados[0].get(c) or "") for c in ("estado_sifen", "desc_sifen", "error_sifen")
+                    if resultados[0].get(c)
+                ).replace("|", "/")[:150]
+                _registrar_estado_sifen(tx, f"SIFEN Estado: Error: Error SIFEN ({detalle})")
+            elif estado != "Pendiente":
                 detalle = str(resultados[0].get("desc_sifen") or "").replace("|", "/")[:150]
                 sufijo = f" ({detalle})" if detalle else ""
                 _registrar_estado_sifen(tx, f"SIFEN Estado: {estado}{sufijo}")
@@ -921,6 +984,11 @@ class CurrencySaleService:
         cliente, origin_method, destination_method = _resolve_client_and_methods(user, request, origin_method_id, destination_method_id, from_currency=from_currency, to_currency=to_currency)
         pm_type, gateway_ref, gateway_status, tx_status = _process_financial_instrument(linked_account, total_pyg, 'PYG', origin_method)
 
+        # El negocio paga los guaranies de la venta: debe tener fondos en la cuenta vinculada
+        if linked_account.balance < total_pyg:
+            raise ValidationError(f"La caja del negocio no tiene fondos suficientes en '{linked_account.name}' para pagar la venta. Seleccione otra cuenta.")
+
+        movs = []
         # Descontar de la cuenta origen
         if origin_method:
             required_debit = _convert_amount(amount_dec, from_currency, origin_method.moneda)
@@ -928,16 +996,19 @@ class CurrencySaleService:
                 raise ValidationError(f"Fondos insuficientes en la cuenta origen '{origin_method.entidad_financiera}'. Saldo disponible: {origin_method.balance:,.2f} {origin_method.moneda}, requerido: {required_debit:,.2f} {origin_method.moneda}.")
             origin_method.balance -= required_debit
             origin_method.save()
+            movs.append(_mov(MovimientoSaldoOperacion.CUENTA_CLIENTE, -required_debit, origin_method.moneda, cuenta_cliente=origin_method))
 
         # Acreditar en la cuenta destino
         if destination_method:
             required_credit = _convert_amount(total_pyg, 'PYG', destination_method.moneda)
             destination_method.balance += required_credit
             destination_method.save()
+            movs.append(_mov(MovimientoSaldoOperacion.CUENTA_CLIENTE, required_credit, destination_method.moneda, cuenta_cliente=destination_method))
 
-        # Acreditar fondos en la cuenta bancaria / billetera digital vinculada del sistema
-        linked_account.balance += total_pyg
+        # El negocio entrega los guaranies al cliente: se descuentan de su cuenta vinculada
+        linked_account.balance -= total_pyg
         linked_account.save()
+        movs.append(_mov(MovimientoSaldoOperacion.CAJA_NEGOCIO, -total_pyg, metodo_pago=linked_account))
 
         # Ejecutar pasarela de pago (PSE-18 Server-to-Server)
         try:
@@ -958,6 +1029,7 @@ class CurrencySaleService:
         c_vol = cliente.transaction_volume if isinstance(cliente.transaction_volume, Decimal) else Decimal(str(cliente.transaction_volume or 0))
         cliente.transaction_volume = c_vol + eval_amount_pyg
         cliente.save()
+        movs.append(_mov(MovimientoSaldoOperacion.VOLUMEN_CLIENTE, eval_amount_pyg, cliente=cliente))
 
         # Registrar transacción de venta
         transaction = CurrencySaleTransaction.objects.create(
@@ -994,6 +1066,7 @@ class CurrencySaleService:
             total_origen=total_origen,
         )
 
+        _registrar_movimientos(transaction, movs)
         if transaction.status == 'SUCCESS':
             _generar_factura_sifen_async(transaction)
 
@@ -1158,7 +1231,14 @@ class CurrencySaleService:
             transaction.save()
             raise ValidationError("La cuenta o billetera vinculada se encuentra inactiva al confirmar la operación.")
 
+        if linked_account.balance < transaction.total_pyg:
+            transaction.status = 'FAILED'
+            transaction.transparent_breakdown += " | Falló por fondos insuficientes en la caja del negocio al confirmar."
+            transaction.save()
+            raise ValidationError(f"La caja del negocio no tiene fondos suficientes en '{linked_account.name}' para pagar la venta.")
+
         start_time = time.time()
+        movs = []
         origin_method = transaction.origin_acreditation_method
         destination_method = transaction.destination_acreditation_method
 
@@ -1171,14 +1251,18 @@ class CurrencySaleService:
                 raise ValidationError(f"Fondos insuficientes en la cuenta origen '{origin_method.entidad_financiera}'. Saldo disponible: {origin_method.balance:,.2f} {origin_method.moneda}, requerido: {required_debit:,.2f} {origin_method.moneda}.")
             origin_method.balance -= required_debit
             origin_method.save()
+            movs.append(_mov(MovimientoSaldoOperacion.CUENTA_CLIENTE, -required_debit, origin_method.moneda, cuenta_cliente=origin_method))
 
         if destination_method:
             required_credit = _convert_amount(transaction.total_pyg, 'PYG', destination_method.moneda)
             destination_method.balance += required_credit
             destination_method.save()
+            movs.append(_mov(MovimientoSaldoOperacion.CUENTA_CLIENTE, required_credit, destination_method.moneda, cuenta_cliente=destination_method))
 
-        linked_account.balance += transaction.total_pyg
+        # El negocio entrega los guaranies al cliente
+        linked_account.balance -= transaction.total_pyg
         linked_account.save()
+        movs.append(_mov(MovimientoSaldoOperacion.CAJA_NEGOCIO, -transaction.total_pyg, metodo_pago=linked_account))
 
         cliente = transaction.cliente
         if cliente:
@@ -1186,6 +1270,7 @@ class CurrencySaleService:
             eval_amount_pyg = transaction.amount * transaction.applied_rate if transaction.from_currency != 'PYG' else transaction.amount
             cliente.transaction_volume = c_vol + eval_amount_pyg
             cliente.save()
+            movs.append(_mov(MovimientoSaldoOperacion.VOLUMEN_CLIENTE, eval_amount_pyg, cliente=cliente))
 
         elapsed_time = time.time() - start_time
         processing_time_ms = int(elapsed_time * 1000)
@@ -1197,6 +1282,7 @@ class CurrencySaleService:
         transaction.processing_time_ms = processing_time_ms
         transaction.transparent_breakdown += f" | Venta confirmada exitosamente. Tiempo: {processing_time_ms}ms"
         transaction.save()
+        _registrar_movimientos(transaction, movs)
         _generar_factura_sifen_async(transaction)
         transaction.refresh_from_db()
 
@@ -1225,6 +1311,7 @@ class CurrencySaleService:
 
 
 @login_required
+@requiere_permiso('can_perform_exchange')
 def currency_sale_view(request):
     """
     Vista web para la Operación de Venta de Divisas (PROCESAMIENTO DE OPERACIONES / PSE-14 y PSE-31).
@@ -1373,6 +1460,7 @@ def currency_sale_view(request):
 
 
 @login_required
+@requiere_permiso('can_view_history')
 def currency_sale_history_view(request):
     """
     Vista web para consultar el historial de operaciones de venta de divisas
@@ -1402,6 +1490,7 @@ def currency_sale_history_view(request):
 
 
 @login_required
+@requiere_permiso('can_view_history')
 def currency_transactions_history_view(request):
     """
     Vista web para consultar el historial unificado y detallado de operaciones (compras y ventas de divisas)
@@ -1690,11 +1779,12 @@ class CurrencyPurchaseService:
             total_cost_pyg = total_pyg
 
         if payment_method.balance < total_cost_pyg:
-            raise ValidationError(f"Fondos insuficientes en el método de pago '{payment_method.name}'. Saldo disponible: ₲ {payment_method.balance:,.2f}, requerido: ₲ {total_cost_pyg:,.2f}.")
+            raise ValidationError(f"Fondos insuficientes en el método de pago '{payment_method.name}'. Seleccione otro método de pago.")
 
         cliente, origin_method, destination_method = _resolve_client_and_methods(user, request, origin_method_id, destination_method_id, from_currency=from_currency, to_currency=to_currency)
         pm_type, gateway_ref, gateway_status, tx_status = _process_financial_instrument(payment_method, total_cost_pyg, 'PYG', origin_method)
 
+        movs = []
         # Descontar de la cuenta origen del cliente
         if origin_method:
             required_debit = _convert_amount(total_origen, from_currency, origin_method.moneda)
@@ -1702,16 +1792,19 @@ class CurrencyPurchaseService:
                 raise ValidationError(f"Fondos insuficientes en la cuenta origen '{origin_method.entidad_financiera}'. Saldo disponible: {origin_method.balance:,.2f} {origin_method.moneda}, requerido: {required_debit:,.2f} {origin_method.moneda}.")
             origin_method.balance -= required_debit
             origin_method.save()
+            movs.append(_mov(MovimientoSaldoOperacion.CUENTA_CLIENTE, -required_debit, origin_method.moneda, cuenta_cliente=origin_method))
 
         # Acreditar en la cuenta destino del cliente
         if destination_method:
             required_credit = _convert_amount(sim_result['converted_amount'], to_currency, destination_method.moneda)
             destination_method.balance += required_credit
             destination_method.save()
+            movs.append(_mov(MovimientoSaldoOperacion.CUENTA_CLIENTE, required_credit, destination_method.moneda, cuenta_cliente=destination_method))
 
         # Acreditar fondos en el método de pago del sistema (Caja del Negocio)
         payment_method.balance += total_cost_pyg
         payment_method.save()
+        movs.append(_mov(MovimientoSaldoOperacion.CAJA_NEGOCIO, total_cost_pyg, metodo_pago=payment_method))
 
         # Ejecutar pasarela de pago (PSE-18 Server-to-Server)
         try:
@@ -1732,6 +1825,7 @@ class CurrencyPurchaseService:
         c_vol = cliente.transaction_volume if isinstance(cliente.transaction_volume, Decimal) else Decimal(str(cliente.transaction_volume or 0))
         cliente.transaction_volume = c_vol + eval_amount_pyg
         cliente.save()
+        movs.append(_mov(MovimientoSaldoOperacion.VOLUMEN_CLIENTE, eval_amount_pyg, cliente=cliente))
 
         # Registrar transacción
         transaction = CurrencyPurchaseTransaction.objects.create(
@@ -1767,6 +1861,7 @@ class CurrencyPurchaseService:
             total_origen=total_origen,
         )
 
+        _registrar_movimientos(transaction, movs)
         if transaction.status == 'SUCCESS':
             _generar_factura_sifen_async(transaction)
 
@@ -1855,7 +1950,7 @@ class CurrencyPurchaseService:
         total_cost_pyg = eval_amount_pyg + commission_amount + tax_amount
 
         if payment_method.balance < total_cost_pyg:
-            raise ValidationError(f"Fondos insuficientes en el método de pago '{payment_method.name}'. Saldo disponible: ₲ {payment_method.balance:,.2f}, requerido: ₲ {total_cost_pyg:,.2f}.")
+            raise ValidationError(f"Fondos insuficientes en el método de pago '{payment_method.name}'. Seleccione otro método de pago.")
 
         cliente = get_active_client(user, request)
         if not cliente and user and user.is_authenticated:
@@ -1886,7 +1981,7 @@ class CurrencyPurchaseService:
             total_cost_pyg = total_pyg
 
         if payment_method.balance < total_cost_pyg:
-            raise ValidationError(f"Fondos insuficientes en el método de pago '{payment_method.name}'. Saldo disponible: ₲ {payment_method.balance:,.2f}, requerido: ₲ {total_cost_pyg:,.2f}.")
+            raise ValidationError(f"Fondos insuficientes en el método de pago '{payment_method.name}'. Seleccione otro método de pago.")
 
         cliente, origin_method, destination_method = _resolve_client_and_methods(user, request, origin_method_id, destination_method_id, from_currency=from_currency, to_currency=to_currency)
         pm_type, gateway_ref, gateway_status, tx_status = _process_financial_instrument(payment_method, total_cost_pyg, 'PYG', origin_method, initial_status='PENDING')
@@ -1974,6 +2069,7 @@ class CurrencyPurchaseService:
             raise ValidationError("Fondos insuficientes o método de pago inactivo al confirmar el pago.")
 
         start_time = time.time()
+        movs = []
         origin_method = transaction.origin_acreditation_method
         destination_method = transaction.destination_acreditation_method
 
@@ -1986,20 +2082,25 @@ class CurrencyPurchaseService:
                 raise ValidationError(f"Fondos insuficientes en la cuenta origen '{origin_method.entidad_financiera}'. Saldo disponible: {origin_method.balance:,.2f} {origin_method.moneda}, requerido: {required_debit:,.2f} {origin_method.moneda}.")
             origin_method.balance -= required_debit
             origin_method.save()
+            movs.append(_mov(MovimientoSaldoOperacion.CUENTA_CLIENTE, -required_debit, origin_method.moneda, cuenta_cliente=origin_method))
 
         if destination_method:
             required_credit = _convert_amount(transaction.converted_amount, transaction.to_currency, destination_method.moneda)
             destination_method.balance += required_credit
             destination_method.save()
+            movs.append(_mov(MovimientoSaldoOperacion.CUENTA_CLIENTE, required_credit, destination_method.moneda, cuenta_cliente=destination_method))
 
         pm.balance += transaction.total_pyg
         pm.save()
+        movs.append(_mov(MovimientoSaldoOperacion.CAJA_NEGOCIO, transaction.total_pyg, metodo_pago=pm))
 
         cliente = transaction.cliente
         if cliente:
             c_vol = cliente.transaction_volume if isinstance(cliente.transaction_volume, Decimal) else Decimal(str(cliente.transaction_volume or 0))
-            cliente.transaction_volume = c_vol + (transaction.amount if transaction.from_currency == 'PYG' else transaction.amount * transaction.applied_rate)
+            volumen = transaction.amount if transaction.from_currency == 'PYG' else transaction.amount * transaction.applied_rate
+            cliente.transaction_volume = c_vol + volumen
             cliente.save()
+            movs.append(_mov(MovimientoSaldoOperacion.VOLUMEN_CLIENTE, volumen, cliente=cliente))
 
         elapsed_time = time.time() - start_time
         processing_time_ms = int(elapsed_time * 1000)
@@ -2011,6 +2112,7 @@ class CurrencyPurchaseService:
         transaction.processing_time_ms = processing_time_ms
         transaction.transparent_breakdown += f" | Pago confirmado exitosamente. Tiempo: {processing_time_ms}ms"
         transaction.save()
+        _registrar_movimientos(transaction, movs)
         _generar_factura_sifen_async(transaction)
         transaction.refresh_from_db()
 
@@ -2051,6 +2153,7 @@ class CurrencyPurchaseService:
 
 
 @login_required
+@requiere_permiso('can_perform_exchange')
 def currency_purchase_view(request):
     """
     Vista web para la Operación de Compra de Divisas (PROCESAMIENTO DE OPERACIONES / PSE-13 y PSE-31).
@@ -2217,6 +2320,7 @@ def currency_purchase_view(request):
 
 
 @login_required
+@requiere_permiso('can_view_history')
 def currency_purchase_history_view(request):
     """
     Vista web para consultar el historial de operaciones de compra de divisas

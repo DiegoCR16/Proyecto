@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>Global Exchange - POS de Ventanilla (PSE-38)</title>
+    <title>Global Exchange - POS de Ventanilla</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>body { font-family: 'Inter', sans-serif; }</style>
@@ -150,7 +150,7 @@
 
         <div class="mb-8 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
             <div>
-                <h1 class="text-3xl font-extrabold text-slate-900">Procesamiento Operativo en Ventanilla (POS - PSE-38)</h1>
+                <h1 class="text-3xl font-extrabold text-slate-900">Procesamiento Operativo en Ventanilla (POS)</h1>
                 <p class="text-slate-600 mt-1">Atención presencial, identificación de clientes, cálculo de cotización, comisiones, vuelto y emisión de comprobantes con saldo en tiempo real.</p>
             </div>
             <div>
@@ -338,6 +338,7 @@
                                     <th class="px-4 py-3 text-left font-semibold text-slate-700">Total Neto</th>
                                     <th class="px-4 py-3 text-left font-semibold text-slate-700">Vuelto</th>
                                     <th class="px-4 py-3 text-left font-semibold text-slate-700">Fecha</th>
+                                    <th class="px-4 py-3 text-left font-semibold text-slate-700">Factura SIFEN</th>
                                 </tr>
                             </thead>
                             <tbody class="divide-y divide-slate-200">
@@ -355,6 +356,7 @@
                                         <td class="px-4 py-3 font-semibold text-green-700">{{ op.total_a_cobrar_entregar|floatformat:2 }}</td>
                                         <td class="px-4 py-3 font-semibold text-slate-700">{{ op.vuelto|floatformat:2 }}</td>
                                         <td class="px-4 py-3 text-slate-500 text-xs">{{ op.fecha|date:"d/m/Y H:i" }}</td>
+                                        <td class="px-4 py-3">{% include "caja/_factura_sifen.html" with tx=op.factura %}</td>
                                     </tr>
                                 {% endfor %}
                             </tbody>

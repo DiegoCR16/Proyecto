@@ -60,6 +60,7 @@
             </div>
         </div>
 
+        {% if 'can_operate_cashier' in permisos %}
         <!-- Tarjetas de Acceso Operativo Directo -->
         <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
             <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200 flex flex-col justify-between">
@@ -69,20 +70,20 @@
                 </div>
                 <div class="space-y-2">
                     <a href="{% url 'caja:ventanilla_pos' %}" class="block text-center bg-emerald-700 hover:bg-emerald-800 text-white font-bold py-3 px-3 rounded-lg text-sm transition shadow">
-                        💷 POS Ventanilla Presencial (PSE-38) &rarr;
+                        💷 POS Ventanilla Presencial &rarr;
                     </a>
                 </div>
             </div>
 
             <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200 flex flex-col justify-between">
                 <div>
-                    <h3 class="text-lg font-semibold text-slate-800 mb-2">Auditoría y Clientes (PSE-37)</h3>
+                    <h3 class="text-lg font-semibold text-slate-800 mb-2">Auditoría y Clientes</h3>
                     <p class="text-sm text-slate-600 mb-4">Consultar detalle transaccional, clientes atendidos (RUC/CI), consolidado y planilla de cierre.</p>
                 </div>
                 <div>
                     {% if active_turn_cajero %}
                         <a href="{% url 'caja:detalle_turno_operaciones' active_turn_cajero.id %}" class="block text-center bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 px-3 rounded-lg text-xs transition shadow">
-                            🔍 Consultar Operaciones del Turno (PSE-37)
+                            🔍 Consultar Operaciones del Turno
                         </a>
                     {% else %}
                         <p class="text-xs text-slate-500 italic text-center py-2">Abra un turno para consultar la planilla y operaciones.</p>
@@ -93,7 +94,7 @@
             <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200 flex flex-col justify-between">
                 <div>
                     <h3 class="text-lg font-semibold text-slate-800 mb-2">Arqueo, Apertura y Cierre</h3>
-                    <p class="text-sm text-slate-600 mb-4">Control de saldos, desglose de billetes y apertura o cierre de turno de caja (PSE-20/21/22).</p>
+                    <p class="text-sm text-slate-600 mb-4">Control de saldos, desglose de billetes y apertura o cierre de turno de caja.</p>
                 </div>
                 <div>
                     <a href="{% url 'caja:gestion_caja' %}" class="block text-center bg-slate-900 hover:bg-slate-800 text-white font-bold py-2.5 px-3 rounded-lg text-xs transition shadow">
@@ -102,7 +103,13 @@
                 </div>
             </div>
         </div>
+        {% endif %}
 
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+            {% include "authentication/_accesos_por_permiso.html" with excluir_caja=True %}
+        </div>
+
+        {% if 'can_view_rates' in permisos %}
         <!-- Banner to Visualizar Tasas / Gráfico de Evolución (Image 2 format) -->
         <div class="mb-8 bg-gradient-to-r from-blue-900 to-slate-900 text-white p-6 rounded-2xl shadow-sm flex flex-col sm:flex-row items-center justify-between gap-4">
             <div class="flex items-center space-x-4">
@@ -144,6 +151,7 @@
                 </table>
             </div>
         </div>
+        {% endif %}
     </main>
 
     <footer class="bg-white border-t border-slate-200 py-6 text-center text-xs text-slate-500 mt-10">

@@ -219,6 +219,7 @@ class NotificationLog(models.Model):
     TYPES = [
         ('ALERTA_TASA', 'Alerta de Tasa Objetivo'),
         ('VARIACION_ABRUPTA', 'Variación Abrupta de Mercado'),
+        ('FACTURACION', 'Facturación Electrónica'),
     ]
     CHANNELS = [
         ('EMAIL', 'Email'),

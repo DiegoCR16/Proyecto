@@ -30,11 +30,14 @@ class Role(models.Model):
         description (TextField): Descripción detallada del rol y sus privilegios.
         is_active (BooleanField): Indica si el rol está activo en la plataforma.
         permissions (ManyToManyField): Permisos granulares asignados al rol.
+        permisos_configurados (BooleanField): True cuando el administrador ya guardó los permisos
+            del rol; mientras sea False se aplican los permisos por defecto (authentication.permisos).
     """
     name = models.CharField(max_length=50, unique=True, verbose_name="Nombre del Rol")
     description = models.TextField(blank=True, null=True, verbose_name="Descripción")
     is_active = models.BooleanField(default=True, verbose_name="Rol Activo")
     permissions = models.ManyToManyField(Permission, blank=True, related_name='roles', verbose_name="Permisos Asignados")
+    permisos_configurados = models.BooleanField(default=False, verbose_name="Permisos Configurados por el Administrador")
 
     def __str__(self):
         """Devuelve el nombre del rol como representación en cadena."""

@@ -41,21 +41,7 @@
             </a>
         </div>
 
-        {% if error %}
-        <div class="mb-6 bg-red-50 border-l-4 border-red-500 p-4 rounded-r-lg shadow-sm">
-            <div class="flex">
-                <div class="text-red-700 text-sm font-medium">{{ error }}</div>
-            </div>
-        </div>
-        {% endif %}
-
-        {% if success %}
-        <div class="mb-6 bg-green-50 border-l-4 border-green-500 p-4 rounded-r-lg shadow-sm">
-            <div class="flex">
-                <div class="text-green-700 text-sm font-medium">{{ success }}</div>
-            </div>
-        </div>
-        {% endif %}
+        {% include "authentication/_notificaciones.html" %}
 
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <!-- Client Info Card -->

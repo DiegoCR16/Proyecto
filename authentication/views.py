@@ -5,6 +5,7 @@ import re
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth import login, logout, authenticate
 from django.contrib.auth.decorators import login_required
+from django.contrib import messages
 from django.contrib.auth.models import User
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.conf import settings
@@ -20,6 +21,12 @@ from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated, BasePermission
 from .facturacion_service import FacturaSeguraService
+from .usuarios import obtener_o_crear_usuario_keycloak
+from .permisos import (
+    ROL_ADMIN, ROL_ANALISTA, ROL_CLIENTE, ROL_CAJERO, ROL_JEFE, ROL_OPERADOR, ROL_ANALISTA_CORP,
+    ROLES_DE_CLIENTE, PERMISOS_ADMINISTRATIVOS, NOMBRES_PERMISOS, TODOS_LOS_PERMISOS,
+    asegurar_catalogo_permisos, es_rol_admin, permisos_del_rol, rol_efectivo, tiene_permiso, requiere_permiso,
+)
 
 def get_client_ip(request):
     """
@@ -236,7 +243,9 @@ def keycloak_callback_view(request):
 
         all_roles_lower = [r.lower() for r in all_roles]
 
-        user, created = User.objects.get_or_create(username=username, defaults={'email': email})
+        # Keycloak guarda el username en minúsculas: se busca sin distinguir mayúsculas
+        # para no duplicar usuarios creados desde la administración (ej. "Diego" / "diego").
+        user, created = obtener_o_crear_usuario_keycloak(username, kc_id=kc_id, defaults={'email': email})
         if email and not user.email:
             user.email = email
             user.save()
@@ -447,19 +456,16 @@ def dashboard_redirect_view(request):
 
     try:
         from tasas_cambio.models import CurrencyAlert, NotificationLog
-        from integracion.models import PaymentGatewayLog
         active_client = interface_ctx.get('active_client')
         active_alerts_count = CurrencyAlert.objects.filter(cliente=active_client, is_active=True).count() if active_client else 0
         from tasas_cambio.views import notificaciones_visibles_q
         unread_qs = NotificationLog.objects.filter(notificaciones_visibles_q(request.user, active_client), is_read=False)
         unread_notifications = unread_qs.order_by('-created_at')[:5]
         unread_notifications_count = unread_qs.count()
-        recent_gateway_logs = PaymentGatewayLog.objects.all().order_by('-timestamp')[:10]
     except Exception:
         active_alerts_count = 0
         unread_notifications = []
         unread_notifications_count = 0
-        recent_gateway_logs = []
 
     active_turn_cajero = None
     cajas_cajero = []
@@ -471,8 +477,16 @@ def dashboard_redirect_view(request):
     except Exception:
         pass
 
+    solicitudes_anulacion_pendientes = 0
+    if tiene_permiso(request, 'can_manage_invoices'):
+        from procesamiento_operaciones.models import SolicitudAnulacionFactura
+        solicitudes_anulacion_pendientes = SolicitudAnulacionFactura.objects.filter(
+            estado=SolicitudAnulacionFactura.PENDIENTE
+        ).count()
+
     context = {
         'profile': profile,
+        'solicitudes_anulacion_pendientes': solicitudes_anulacion_pendientes,
         'rates': personalized_rates,
         'benefit_percentage': benefit_percentage,
         'benefit_label': benefit_label,
@@ -480,7 +494,6 @@ def dashboard_redirect_view(request):
         'active_alerts_count': active_alerts_count,
         'unread_notifications': unread_notifications,
         'unread_notifications_count': unread_notifications_count,
-        'recent_gateway_logs': recent_gateway_logs,
         'active_turn_cajero': active_turn_cajero,
         'cajas_cajero': cajas_cajero,
         'now': timezone.now(),
@@ -566,9 +579,7 @@ def admin_roles_view(request):
     Returns:
         HttpResponse: Renderiza la plantilla de gestión de roles y permisos con control RBAC.
     """
-    profile, _ = UserProfile.objects.get_or_create(user=request.user)
-    role_name = profile.role.name.lower() if profile.role else ''
-    if not (request.user.is_superuser or 'admin' in role_name or 'administrador' in role_name):
+    if not tiene_permiso(request, 'can_manage_roles'):
         AuditLog.objects.create(
             user=request.user,
             action="RBAC_ACCESS_DENIED",
@@ -578,32 +589,40 @@ def admin_roles_view(request):
         return render(request, 'authentication/admin_roles.html', {
             'roles': Role.objects.none(),
             'permissions': Permission.objects.none(),
-            'error': 'Acceso denegado: Se requiere rol de Administrador para gestionar roles y permisos.'
+            'error': 'Acceso denegado: Se requiere el permiso «Gestionar Roles y Permisos».'
         })
 
-    role_names = ['Admin', 'Analista', 'Cliente', 'Cajero', 'Jefe (Corporativo)', 'Operador (Corporativo)', 'Analista (Corporativo)']
+    role_names = [ROL_ADMIN, ROL_ANALISTA, ROL_CLIENTE, ROL_CAJERO, ROL_JEFE, ROL_OPERADOR, ROL_ANALISTA_CORP]
     descriptions = {
-        'Admin': 'Administrador General (Acceso Total - Protegido)',
-        'Analista': 'Analista de Operaciones (Permisos Delegados)',
-        'Cliente': 'Cliente de la Plataforma (Física y Jurídica General)',
-        'Cajero': 'Cajero de Sucursal (Operaciones de Caja)',
-        'Jefe (Corporativo)': 'Jefe / Propietario de Grupo Corporativo (Jurídica)',
-        'Operador (Corporativo)': 'Operador dentro del Grupo Corporativo (Jurídica)',
-        'Analista (Corporativo)': 'Analista dentro del Grupo Corporativo (Jurídica)',
+        ROL_ADMIN: 'Administrador General (Acceso Total - Protegido)',
+        ROL_ANALISTA: 'Analista de Operaciones (Permisos Delegados)',
+        ROL_CLIENTE: 'Cliente de la Plataforma (Física y Jurídica General)',
+        ROL_CAJERO: 'Cajero de Sucursal (Operaciones de Caja)',
+        ROL_JEFE: 'Jefe / Propietario de Grupo Corporativo (Jurídica)',
+        ROL_OPERADOR: 'Operador dentro del Grupo Corporativo (Jurídica)',
+        ROL_ANALISTA_CORP: 'Analista dentro del Grupo Corporativo (Jurídica)',
     }
     for rname in role_names:
         Role.objects.get_or_create(name=rname, defaults={'description': descriptions.get(rname, '')})
 
-    default_perms = [
-        ('can_manage_roles', 'Gestionar Roles y Permisos', 'Crear, editar, desactivar roles y asignar permisos (Admin/Analista)'),
-        ('can_manage_clients', 'Gestionar Clientes', 'Crear, editar y asociar cuentas de clientes y grupos corporativos (Admin/Analista)'),
-        ('can_manage_rates', 'Gestionar Tasas de Cambio', 'Actualizar cotizaciones y tasas de cambio en tiempo real (Admin/Analista)'),
-        ('can_view_audit', 'Ver Auditoría', 'Consultar logs de auditoría e incidentes de seguridad (Admin/Analista)'),
-        ('can_perform_exchange', 'Realizar Transacciones', 'Ejecutar compra y venta de divisas en la interfaz de cliente'),
-        ('can_view_rates', 'Ver Pizarra de Tasas', 'Consultar cotizaciones actualizadas en tiempo real'),
-    ]
-    for codename, name, desc in default_perms:
-        Permission.objects.get_or_create(codename=codename, defaults={'name': name, 'description': desc})
+    asegurar_catalogo_permisos()
+
+    # Los roles que el administrador todavía no configuró muestran (y guardan) sus permisos por defecto
+    for role in Role.objects.filter(name__in=role_names, permisos_configurados=False):
+        role.permissions.set(Permission.objects.filter(codename__in=permisos_del_rol(role.name)))
+        role.permisos_configurados = True
+        role.save(update_fields=['permisos_configurados'])
+
+    def pantalla(error=None):
+        """Renderiza la pantalla de roles, opcionalmente con un error."""
+        ctx = {
+            'roles': Role.objects.filter(name__in=role_names).prefetch_related('permissions').order_by('id'),
+            'permissions': Permission.objects.filter(codename__in=TODOS_LOS_PERMISOS).order_by('id'),
+            'now': timezone.now(),
+        }
+        if error:
+            ctx['error'] = error
+        return render(request, 'authentication/admin_roles.html', ctx)
 
     ip = get_client_ip(request)
 
@@ -614,38 +633,30 @@ def admin_roles_view(request):
             role_id = request.POST.get('role_id')
             role = get_object_or_404(Role, id=role_id)
             
-            if role.name.lower() in ['admin', 'administrador']:
-                return render(request, 'authentication/admin_roles.html', {
-                    'roles': Role.objects.filter(name__in=role_names).prefetch_related('permissions'),
-                    'permissions': Permission.objects.all(),
-                    'error': 'El rol Administrador está protegido y no pueden modificarse sus permisos ni descripción.'
-                })
+            if es_rol_admin(role.name):
+                return pantalla('El rol Administrador está protegido y no pueden modificarse sus permisos ni descripción.')
+
+            if rol_efectivo(request) == role.name:
+                return pantalla('No puedes modificar los permisos de tu propio rol. Solicítalo a un Administrador.')
 
             description = request.POST.get('description', '').strip()
             permission_ids = request.POST.getlist('permissions')
+            selected_perms = Permission.objects.filter(id__in=permission_ids)
+            selected_codes = set(selected_perms.values_list('codename', flat=True))
 
-            if role.name.lower() == 'cliente':
-                admin_codenames = ['can_manage_roles', 'can_manage_clients', 'can_manage_rates', 'can_view_audit']
-                selected_perms = Permission.objects.filter(id__in=permission_ids)
-                if selected_perms.filter(codename__in=admin_codenames).exists():
-                    return render(request, 'authentication/admin_roles.html', {
-                        'roles': Role.objects.filter(name__in=role_names).prefetch_related('permissions'),
-                        'permissions': Permission.objects.all(),
-                        'error': 'Error de validación: El rol Cliente no puede tener asignados permisos administrativos.'
-                    })
+            if role.name in ROLES_DE_CLIENTE or role.name.lower() == 'cliente':
+                administrativos = selected_codes & PERMISOS_ADMINISTRATIVOS
+                if administrativos:
+                    nombres = ', '.join(sorted(NOMBRES_PERMISOS.get(c, c) for c in administrativos))
+                    return pantalla(f'Error de validación: El rol {role.name} no puede tener asignados permisos administrativos ({nombres}).')
 
-            if role.name.lower() == 'analista':
-                selected_perms = Permission.objects.filter(id__in=permission_ids)
-                if selected_perms.filter(codename='can_perform_exchange').exists():
-                    return render(request, 'authentication/admin_roles.html', {
-                        'roles': Role.objects.filter(name__in=role_names).prefetch_related('permissions'),
-                        'permissions': Permission.objects.all(),
-                        'error': 'Error de validación: El rol Analista no realiza transacciones de cliente.'
-                    })
+            if role.name.lower() == 'analista' and 'can_perform_exchange' in selected_codes:
+                return pantalla('Error de validación: El rol Analista no realiza transacciones de cliente.')
 
             role.description = description
+            role.permisos_configurados = True
             role.save()
-            role.permissions.set(Permission.objects.filter(id__in=permission_ids))
+            role.permissions.set(selected_perms)
 
             try:
                 token_url = f"{settings.KEYCLOAK_SERVER_URL}/realms/{settings.KEYCLOAK_REALM}/protocol/openid-connect/token"
@@ -660,45 +671,27 @@ def admin_roles_view(request):
                     kc_role_url = f"{settings.KEYCLOAK_SERVER_URL}/admin/realms/{settings.KEYCLOAK_REALM}/roles/{role.name}"
                     headers = {'Authorization': f'Bearer {admin_token}', 'Content-Type': 'application/json'}
                     requests.put(kc_role_url, json={'name': role.name, 'description': description}, headers=headers, timeout=3)
-            except Exception as e:
+            except Exception:
                 pass
 
             AuditLog.objects.create(
                 user=request.user,
                 action="ROLE_UPDATE",
                 ip_address=ip,
-                details=f"Modificación del rol fijo {role.name}."
+                details=f"Modificación del rol fijo {role.name}: permisos {', '.join(sorted(selected_codes)) or 'ninguno'}."
             )
+            messages.success(request, f"Permisos del rol {role.name} actualizados.")
             return redirect('admin_roles')
 
-    roles = Role.objects.filter(name__in=role_names).prefetch_related('permissions').order_by('id')
-    permissions = Permission.objects.all()
-
-    context = {
-        'roles': roles,
-        'permissions': permissions,
-        'now': timezone.now(),
-    }
-    return render(request, 'authentication/admin_roles.html', context)
+    return pantalla()
 
 @login_required
+@requiere_permiso('can_view_audit')
 def admin_audit_logs_view(request):
     """
-    Vista de administración para consultar el registro de auditoría del sistema (PSE-26).
+    Vista para consultar el registro de auditoría del sistema (PSE-26).
+    Requiere el permiso «Ver Auditoría» (por defecto: Admin y Analista).
     """
-    profile, _ = UserProfile.objects.get_or_create(user=request.user)
-    role_name = profile.role.name.lower() if profile.role else ''
-    if not (request.user.is_superuser or 'admin' in role_name or 'administrador' in role_name):
-        AuditLog.objects.create(
-            user=request.user,
-            action="RBAC_ACCESS_DENIED",
-            ip_address=get_client_ip(request),
-            details="Intento de acceso no autorizado al módulo de auditoría."
-        )
-        return render(request, 'authentication/admin_dashboard.html', {
-            'error': 'Acceso denegado: Se requiere rol de Administrador.'
-        })
-
     logs = AuditLog.objects.all().order_by('-timestamp')
     context = {
         'logs': logs,

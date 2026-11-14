@@ -1,0 +1,21 @@
+{% comment %}
+Estado de la factura electrónica SIFEN de una transacción, con descarga de XML y KuDE.
+Uso: {% include "caja/_factura_sifen.html" with tx=transaccion %}
+{% endcomment %}
+{% if tx.sifen_cdc %}
+    <span class="bg-purple-100 text-purple-800 px-2 py-1 rounded font-bold block text-xs" title="{{ tx.sifen_cdc }}">
+        {{ tx.sifen_estado }}: {{ tx.sifen_cdc|slice:":14" }}...
+    </span>
+    {% if tx.sifen_estado == 'Aprobada' %}
+        <div class="flex gap-2 mt-1">
+            <a href="/auth/sifen/xml/{{ tx.sifen_cdc }}/" target="_blank" class="text-blue-600 hover:underline text-[10px] font-semibold">XML</a>
+            <a href="/auth/sifen/kude/{{ tx.sifen_cdc }}/" target="_blank" class="text-blue-600 hover:underline text-[10px] font-semibold">KuDE (PDF)</a>
+        </div>
+    {% endif %}
+{% elif tx.sifen_estado == 'Error' %}
+    <span class="text-red-600 text-xs font-semibold" title="{{ tx.sifen_error }}">Error al facturar</span>
+{% elif tx.sifen_estado == 'En cola' %}
+    <span class="text-amber-600 text-xs font-semibold">En cola</span>
+{% else %}
+    <span class="text-slate-400 text-xs">Sin factura</span>
+{% endif %}

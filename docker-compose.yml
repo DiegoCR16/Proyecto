@@ -29,13 +29,6 @@ services:
       - ./docker:/opt/keycloak/data/import
     command: start-dev --import-realm --hostname-strict=false
 
-  mailpit:
-    image: axllent/mailpit:latest
-    container_name: global-exchange-mailpit
-    ports:
-      - "1025:1025"
-      - "8025:8025"
-
   web:
     build:
       context: .
@@ -65,8 +58,6 @@ services:
       - KEYCLOAK_CLIENT_ID=global-exchange-client
       - KEYCLOAK_CLIENT_SECRET=govQPT0CppZDdLm98GLYnrqbLzWcqPLQ
       - KEYCLOAK_REDIRECT_URI=http://localhost:8000/auth/callback/
-      - EMAIL_HOST=mailpit
-      - EMAIL_PORT=1025
     depends_on:
       db:
         condition: service_healthy
