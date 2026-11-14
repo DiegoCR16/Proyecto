@@ -1,0 +1,21 @@
+{% comment %}
+Una notificación. Parámetros: nivel ("error", "warning", "info" o "success") y texto.
+Se usa desde authentication/_notificaciones.html.
+{% endcomment %}
+<div data-notificacion="{{ nivel }}" role="{% if nivel == 'error' %}alert{% else %}status{% endif %}"
+     class="flex items-start gap-3 p-4 rounded-xl shadow-lg border-l-4 text-sm
+            {% if nivel == 'error' %}bg-red-50 border-red-600 text-red-800
+            {% elif nivel == 'warning' %}bg-amber-50 border-amber-500 text-amber-900
+            {% elif nivel == 'info' %}bg-blue-50 border-blue-600 text-blue-900
+            {% else %}bg-green-50 border-green-600 text-green-800{% endif %}">
+    <span class="font-bold text-base leading-5" aria-hidden="true">
+        {% if nivel == 'error' %}&#9888;{% elif nivel == 'warning' %}&#9888;{% elif nivel == 'info' %}&#8505;{% else %}&#10003;{% endif %}
+    </span>
+    <div class="flex-1 min-w-0">
+        <p class="font-bold">
+            {% if nivel == 'error' %}Ocurrió un error{% elif nivel == 'warning' %}Atención{% elif nivel == 'info' %}Información{% else %}Operación exitosa{% endif %}
+        </p>
+        <p class="mt-0.5 break-words">{{ texto }}</p>
+    </div>
+    <button type="button" data-cerrar class="text-lg leading-5 opacity-60 hover:opacity-100" aria-label="Cerrar notificación">&times;</button>
+</div>

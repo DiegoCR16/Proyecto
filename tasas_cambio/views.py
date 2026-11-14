@@ -12,6 +12,7 @@ import time
 from urllib.parse import urlencode
 from django.urls import reverse
 from authentication.models import UserProfile, Cliente, UsuarioClienteRelacion, ClientAccreditationMethod
+from authentication.permisos import requiere_permiso, tiene_permiso, denegar_acceso
 from .models import ExchangeRate, ExchangeRateHistory, ClientBenefitRule, PaymentMethod
 
 LIMITE_MINIMO_OPERACION_PYG = Decimal('50000.00')
@@ -50,6 +51,7 @@ def ensure_default_benefit_rules():
     )
 
 
+@requiere_permiso('can_view_rates', permitir_anonimo=True)
 def public_rates_view(request):
     """
     Vista pública y en tiempo real de las tasas de cambio (PSE-9).
@@ -542,6 +544,7 @@ def construir_propuesta_operacion(simulation_result, operacion, request):
     return propuesta
 
 
+@requiere_permiso('can_simulate', permitir_anonimo=True)
 def currency_simulator_view(request):
     """
     Vista web para el simulador de conversión de divisas (PSE-11).
@@ -711,6 +714,7 @@ def populate_mock_history():
             )
 
 
+@requiere_permiso('can_view_rates', permitir_anonimo=True)
 def rates_evolution_api(request):
     """
     API JSON para obtener el historial de evolución de tasas de cambio (PSE-10).
@@ -782,6 +786,7 @@ def rates_evolution_api(request):
     })
 
 
+@requiere_permiso('can_view_rates', permitir_anonimo=True)
 def rates_evolution_view(request):
     """
     Vista web para el gráfico interactivo de evolución de tasas de cambio (PSE-10).
@@ -807,6 +812,7 @@ def rates_evolution_view(request):
 
 
 @login_required
+@requiere_permiso('can_manage_benefits')
 def client_benefit_config_view(request):
     """
     Vista del panel de administración para configurar dinámicamente los porcentajes de beneficio
@@ -819,8 +825,6 @@ def client_benefit_config_view(request):
         HttpResponse: Página renderizada del panel de configuración de beneficios.
     """
     profile, _ = UserProfile.objects.get_or_create(user=request.user)
-    if not (request.user.is_superuser or (profile.role and profile.role.name.lower() in ['admin', 'administrador'])):
-        return redirect('tasas_cambio:rates_board')
 
     ensure_default_benefit_rules()
     success_message = None
@@ -922,6 +926,7 @@ def ensure_default_payment_methods():
 
 
 @login_required
+@requiere_permiso('can_manage_payment_config')
 def currency_payment_config_view(request):
     """
     Vista de administración con funcionalidad CRUD completa para Divisas y Métodos de Pago (PSE-25),
@@ -934,8 +939,6 @@ def currency_payment_config_view(request):
         HttpResponse: Página renderizada del panel CRUD de divisas y métodos de pago.
     """
     profile, _ = UserProfile.objects.get_or_create(user=request.user)
-    if not (request.user.is_superuser or (profile.role and profile.role.name.lower() in ['admin', 'administrador'])):
-        return redirect('tasas_cambio:rates_board')
 
     ensure_default_payment_methods()
     
@@ -1051,6 +1054,7 @@ def currency_payment_config_view(request):
 
 
 @login_required
+@requiere_permiso('can_manage_rates')
 def rates_manager_view(request):
     """
     Vista de administración y operador para el Gestor y CRUD de Cotizaciones de Divisas (PSE-30).
@@ -1068,8 +1072,6 @@ def rates_manager_view(request):
         HttpResponse: Página renderizada con el panel Gestor de Cotizaciones e Historial.
     """
     profile, _ = UserProfile.objects.get_or_create(user=request.user)
-    if not (request.user.is_superuser or (profile.role and profile.role.name.lower() in ['admin', 'administrador', 'operador', 'cajero'])):
-        return redirect('tasas_cambio:rates_board')
 
     success_message = None
     error_message = None
@@ -1323,6 +1325,7 @@ def check_and_trigger_rate_alerts(currency_code, new_buy_rate, new_sell_rate):
 
 
 @login_required
+@requiere_permiso('can_manage_alerts')
 def currency_alerts_view(request):
     """
     Vista de gestión de alertas de tasa de cambio para clientes (PSE-35).

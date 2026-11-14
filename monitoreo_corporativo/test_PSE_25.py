@@ -101,11 +101,12 @@ class ParametrizacionDivisasMetodosPSE25Tests(TestCase):
 
     def test_admin_permission_restriction(self):
         """
-        Valida que únicamente los usuarios administradores puedan acceder al panel CRUD de parametrización.
+        Valida que únicamente los usuarios con el permiso «Parametrizar Divisas y Métodos de Pago»
+        accedan al panel CRUD; el resto vuelve a su panel con una notificación.
         """
         self.client.force_login(self.client_user)
         response_client = self.client.get(self.config_url)
-        self.assertRedirects(response_client, self.rates_url)
+        self.assertRedirects(response_client, reverse('dashboard_redirect'), fetch_redirect_response=False)
 
         self.client.force_login(self.admin_user)
         response_admin = self.client.get(self.config_url)

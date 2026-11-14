@@ -74,11 +74,14 @@
         </div>
 
         <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+            {% if 'can_simulate' in permisos %}
             <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200 hover:border-blue-500 transition cursor-pointer" onclick="window.location.href='{% url 'tasas_cambio:simulator' %}'">
                 <h3 class="text-lg font-semibold text-slate-800 mb-2">Simular Operación</h3>
                 <p class="text-sm text-slate-600 mb-4">Calcule montos en Guaraníes, Dólares, Euros y otras divisas con tarifas estándar.</p>
                 <a href="{% url 'tasas_cambio:simulator' %}" class="text-blue-800 font-semibold text-sm hover:underline">Nueva Simulación &rarr;</a>
             </div>
+            {% endif %}
+            {% if 'can_manage_alerts' in permisos %}
             <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200 hover:border-blue-500 transition cursor-pointer" onclick="window.location.href='{% url 'tasas_cambio:currency_alerts' %}'">
                 <div class="flex items-center justify-between mb-2">
                     <h3 class="text-lg font-semibold text-slate-800">Alertas de Tasas</h3>
@@ -89,6 +92,7 @@
                 <p class="text-sm text-slate-600 mb-4">Configure alertas de tasa objetivo y reciba notificaciones push o por correo.</p>
                 <a href="{% url 'tasas_cambio:currency_alerts' %}" class="text-blue-800 font-semibold text-sm hover:underline">Gestionar Alertas &rarr;</a>
             </div>
+            {% endif %}
             <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
                 <h3 class="text-lg font-semibold text-slate-800 mb-2">Estado de Cuenta</h3>
                 <p class="text-sm text-slate-600 mb-4">Tipo de Acceso: <strong class="text-slate-900">Usuario Regular (Sin Cliente Asociado)</strong></p>
@@ -96,6 +100,7 @@
             </div>
         </div>
 
+        {% if 'can_view_rates' in permisos %}
         <!-- Banner Rates Evolution -->
         <div class="mb-8 bg-gradient-to-r from-blue-900 to-slate-900 text-white p-6 rounded-2xl shadow-sm flex flex-col sm:flex-row items-center justify-between gap-4">
             <div class="flex items-center space-x-4">
@@ -154,6 +159,7 @@
                 <span>💡 Operas como usuario regular con tarifas estándar de mercado. Solicita ser cliente para obtener beneficios preferenciales.</span>
             </div>
         </div>
+        {% endif %}
     </main>
 
     <!-- Footer -->

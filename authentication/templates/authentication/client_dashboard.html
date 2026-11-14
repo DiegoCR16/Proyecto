@@ -173,7 +173,7 @@
         </div>
 
         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-6 mb-8">
-            {% if client_role_display|lower != 'analista' and profile.role.name|lower != 'analista' %}
+            {% if 'can_perform_exchange' in permisos %}
             <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200 hover:border-blue-500 transition cursor-pointer" onclick="window.location.href='{% url 'procesamiento_operaciones:currency_purchase' %}'">
                 <h3 class="text-lg font-semibold text-slate-800 mb-2">Comprar Divisas</h3>
                 <p class="text-sm text-slate-600 mb-4">Realice la compra digital de divisas con selección de cuentas, método de pago y descuentos automáticos.</p>
@@ -185,11 +185,14 @@
                 <a href="{% url 'procesamiento_operaciones:currency_sale' %}" class="text-blue-800 font-semibold text-sm hover:underline">Iniciar Venta &rarr;</a>
             </div>
             {% endif %}
+            {% if 'can_simulate' in permisos %}
             <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200 hover:border-blue-500 transition cursor-pointer" onclick="window.location.href='{% url 'tasas_cambio:simulator' %}'">
                 <h3 class="text-lg font-semibold text-slate-800 mb-2">Simular Operación</h3>
                 <p class="text-sm text-slate-600 mb-4">Calcule montos en Guaraníes, Dólares, Euros y otras divisas con su tasa personalizada.</p>
                 <a href="{% url 'tasas_cambio:simulator' %}" class="text-blue-800 font-semibold text-sm hover:underline">Nueva Simulación &rarr;</a>
             </div>
+            {% endif %}
+            {% if 'can_manage_alerts' in permisos %}
             <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200 hover:border-blue-500 transition cursor-pointer" onclick="window.location.href='{% url 'tasas_cambio:currency_alerts' %}'">
                 <div class="flex items-center justify-between mb-2">
                     <h3 class="text-lg font-semibold text-slate-800">Alertas de Tasas</h3>
@@ -200,6 +203,8 @@
                 <p class="text-sm text-slate-600 mb-4">Configure alertas de tasa objetivo y reciba notificaciones push o por correo.</p>
                 <a href="{% url 'tasas_cambio:currency_alerts' %}" class="text-blue-800 font-semibold text-sm hover:underline">Gestionar Alertas &rarr;</a>
             </div>
+            {% endif %}
+            {% if 'can_view_history' in permisos %}
             <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
                 <h3 class="text-lg font-semibold text-slate-800 mb-2">Mis Transacciones</h3>
                 <p class="text-sm text-slate-600 mb-4">Volumen Transaccional Acumulado: <strong class="font-mono text-slate-900">₲ {{ active_client.transaction_volume|default:profile.transaction_volume|floatformat:0 }}</strong></p>
@@ -207,7 +212,8 @@
                     <a href="{% url 'procesamiento_operaciones:currency_transactions_history' %}" class="text-blue-800 font-semibold hover:underline">Ver Historial Unificado &rarr;</a>
                 </div>
             </div>
-            {% if client_role_display|lower == 'cliente' or is_group_owner or profile.is_corporate or is_admin %}
+            {% endif %}
+            {% if 'can_manage_accreditation' in permisos %}
             <div class="bg-white p-6 rounded-xl shadow-sm border border-blue-200 bg-blue-50/40 hover:border-blue-500 transition cursor-pointer" onclick="window.location.href='{% url 'client_acreditation_methods' %}'">
                 <h3 class="text-lg font-semibold text-blue-900 mb-2">Medios de Acreditación</h3>
                 <p class="text-sm text-slate-600 mb-4">Gestione sus cuentas bancarias, billeteras electrónicas y alias predeterminados para recibir fondos.</p>
@@ -216,6 +222,7 @@
             {% endif %}
         </div>
 
+        {% if 'can_view_rates' in permisos %}
         <!-- Banner to Visualizar Tasas / Gráfico de Evolución (Image 2 format) -->
         <div class="mb-8 bg-gradient-to-r from-blue-900 to-slate-900 text-white p-6 rounded-2xl shadow-sm flex flex-col sm:flex-row items-center justify-between gap-4">
             <div class="flex items-center space-x-4">
@@ -228,64 +235,6 @@
             <a href="{% url 'tasas_cambio:rates_evolution' %}" class="bg-blue-600 hover:bg-blue-700 text-white px-5 py-3 rounded-xl font-semibold text-sm transition shadow-sm whitespace-nowrap">
                 Ver Gráfico de Evolución &rarr;
             </a>
-        </div>
-
-        <!-- Estado de Pasarelas de Pago y Red Interbancaria SIPAP (PSE-18) -->
-        <div class="mb-8 bg-white shadow-sm rounded-2xl border border-slate-200 overflow-hidden">
-            <div class="px-6 py-4 bg-slate-900 text-white flex justify-between items-center">
-                <h3 class="font-semibold text-base">Estado de Integración de Pasarelas y SIPAP 24/7</h3>
-                <span class="text-xs text-slate-400">Últimas transacciones externas registradas en BD</span>
-            </div>
-            <div class="overflow-x-auto">
-                <table class="min-w-full divide-y divide-slate-200 text-left">
-                    <thead class="bg-slate-50">
-                        <tr>
-                            <th class="px-6 py-3.5 text-xs font-semibold text-slate-600 uppercase tracking-wider">Pasarela / Red</th>
-                            <th class="px-6 py-3.5 text-xs font-semibold text-slate-600 uppercase tracking-wider">Código de Referencia</th>
-                            <th class="px-6 py-3.5 text-xs font-semibold text-slate-600 uppercase tracking-wider">Monto y Divisa</th>
-                            <th class="px-6 py-3.5 text-xs font-semibold text-slate-600 uppercase tracking-wider">Fecha / Hora</th>
-                            <th class="px-6 py-3.5 text-xs font-semibold text-slate-600 uppercase tracking-wider">Estado Pasarela</th>
-                        </tr>
-                    </thead>
-                    <tbody class="divide-y divide-slate-200 bg-white">
-                        {% for log in recent_gateway_logs %}
-                        <tr class="hover:bg-slate-50 transition duration-150">
-                            <td class="px-6 py-4 whitespace-nowrap">
-                                <span class="px-2.5 py-1 rounded-lg text-xs font-bold bg-blue-100 text-blue-800">
-                                    {{ log.gateway_name }}
-                                </span>
-                            </td>
-                            <td class="px-6 py-4 whitespace-nowrap font-mono text-xs text-slate-900 font-bold">
-                                {{ log.reference_code }}
-                            </td>
-                            <td class="px-6 py-4 whitespace-nowrap font-mono text-sm text-slate-700">
-                                {{ log.amount|floatformat:2 }} {{ log.currency }}
-                            </td>
-                            <td class="px-6 py-4 whitespace-nowrap text-xs text-slate-500 font-mono">
-                                {{ log.timestamp|date:"d/m/Y H:i:s" }}
-                            </td>
-                            <td class="px-6 py-4 whitespace-nowrap">
-                                {% if log.status == 'SUCCESS' or log.status == 'APPROVED' %}
-                                <span class="px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800">
-                                    Aprobado / Exitoso
-                                </span>
-                                {% else %}
-                                <span class="px-2.5 py-1 rounded-full text-xs font-bold bg-red-100 text-red-800">
-                                    {{ log.status }}
-                                </span>
-                                {% endif %}
-                            </td>
-                        </tr>
-                        {% empty %}
-                        <tr>
-                            <td colspan="5" class="px-6 py-8 text-center text-slate-500 text-xs">
-                                No hay registros recientes de pasarelas de pago o SIPAP en la base de datos. Realice una compra o venta de divisas para activar la integración.
-                            </td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
         </div>
 
         <!-- Pizarra de Cotizaciones en Tiempo Real (PSE-9) -->
@@ -344,6 +293,7 @@
                 {% endif %}
             </div>
         </div>
+        {% endif %}
     </main>
 
     <!-- Footer -->

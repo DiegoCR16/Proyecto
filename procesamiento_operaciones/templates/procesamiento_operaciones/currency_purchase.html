@@ -58,7 +58,7 @@
                 <div class="w-10 h-10 bg-green-600 text-white rounded-full flex items-center justify-center font-bold text-lg shadow">✓</div>
                 <div>
                     <h3 class="text-lg font-bold text-green-900">¡Transacción de Compra Procesada con Éxito!</h3>
-                    <p class="text-xs text-green-700">Operación N° {{ success_transaction.id }} procesada en {{ success_transaction.processing_time_ms }} ms (Rendimiento óptimo &lt; 5s).</p>
+                    <p class="text-xs text-green-700">Operación N° {{ success_transaction.id }} procesada correctamente.</p>
                 </div>
             </div>
             <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 pt-3 border-t border-green-200 text-xs">
@@ -120,7 +120,7 @@
             <div class="flex items-center space-x-3">
                 <div class="w-10 h-10 bg-amber-600 text-white rounded-full flex items-center justify-center font-bold text-lg shadow">⏳</div>
                 <div>
-                    <h3 class="text-lg font-bold text-amber-900">Pantalla de Pago y Verificación - Estado Pendiente (PSE-31)</h3>
+                    <h3 class="text-lg font-bold text-amber-900">Pantalla de Pago y Verificación - Estado Pendiente</h3>
                     <p class="text-xs text-amber-700">Operación N° {{ pending_transaction.id }} en pausa previo a confirmación de pago. Verificando cotización en tiempo real.</p>
                 </div>
             </div>
@@ -296,7 +296,7 @@
                             class="w-full px-4 py-3 border border-slate-300 rounded-xl text-sm font-medium focus:ring-2 focus:ring-blue-800 focus:outline-none transition bg-white">
                             {% for pm in payment_methods %}
                             <option value="{{ pm.code }}" {% if selected_payment_method == pm.code %}selected{% endif %}>
-                                {{ pm.name }} (Saldo: ₲ {{ pm.balance|floatformat:2 }})
+                                {{ pm.name }}
                             </option>
                             {% endfor %}
                         </select>

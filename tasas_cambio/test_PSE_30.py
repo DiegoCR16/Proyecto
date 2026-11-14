@@ -115,12 +115,12 @@ class RatesManagerPSE30Tests(TestCase):
 
     def test_rates_manager_access_control(self):
         """
-        Valida que usuarios sin privilegios de administrador/operador sean redirigidos,
+        Valida que usuarios sin el permiso «Gestionar Tasas de Cambio» vuelvan a su panel,
         mientras que administradores accedan correctamente al panel Gestor (status 200).
         """
         self.client.force_login(self.client_user)
         resp_client = self.client.get(self.manager_url)
-        self.assertRedirects(resp_client, reverse('tasas_cambio:rates_board'))
+        self.assertRedirects(resp_client, reverse('dashboard_redirect'), fetch_redirect_response=False)
 
         self.client.force_login(self.admin_user)
         resp_admin = self.client.get(self.manager_url)

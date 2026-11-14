@@ -1,0 +1,78 @@
+{% comment %}
+Tarjetas de acceso a los módulos administrativos según los permisos del rol del usuario
+(los que el Administrador asigna en "Gestión de Permisos para Roles").
+Parámetros opcionales: excluir_caja (no mostrar "Turnos y Cajas"), excluir_auditoria.
+{% endcomment %}
+{% if 'can_view_audit' in permisos and not excluir_auditoria %}
+<div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+    <h3 class="text-lg font-semibold text-slate-800 mb-2">Auditoría y Logs</h3>
+    <p class="text-sm text-slate-600 mb-4">Consulta de eventos y registros de seguridad del sistema Global Exchange.</p>
+    <a href="{% url 'admin_audit_logs' %}" class="text-blue-800 font-semibold text-sm hover:underline">Consultar Auditoría &rarr;</a>
+</div>
+{% endif %}
+{% if 'can_manage_users' in permisos %}
+<div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+    <h3 class="text-lg font-semibold text-slate-800 mb-2">Gestión de Usuarios</h3>
+    <p class="text-sm text-slate-600 mb-4">Crear, editar y desactivar usuarios del sistema.</p>
+    <a href="{% url 'admin_user_list' %}" class="text-blue-800 font-semibold text-sm hover:underline">Administrar &rarr;</a>
+</div>
+{% endif %}
+{% if 'can_manage_clients' in permisos %}
+<div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+    <h3 class="text-lg font-semibold text-slate-800 mb-2">Gestión de Clientes</h3>
+    <p class="text-sm text-slate-600 mb-4">Administrar clientes y aprobar solicitudes.</p>
+    <a href="{% url 'admin_client_list' %}" class="text-blue-800 font-semibold text-sm hover:underline">Administrar &rarr;</a>
+</div>
+{% endif %}
+{% if 'can_manage_roles' in permisos %}
+<div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+    <h3 class="text-lg font-semibold text-slate-800 mb-2">Roles y Permisos</h3>
+    <p class="text-sm text-slate-600 mb-4">Asignación de permisos a los roles del sistema.</p>
+    <a href="{% url 'admin_roles' %}" class="text-blue-800 font-semibold text-sm hover:underline">Gestionar &rarr;</a>
+</div>
+{% endif %}
+{% if 'can_manage_rates' in permisos %}
+<div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+    <h3 class="text-lg font-semibold text-slate-800 mb-2">Gestor de Cotizaciones</h3>
+    <p class="text-sm text-slate-600 mb-4">Actualizar tasas y gestionar el historial de cotizaciones.</p>
+    <a href="{% url 'tasas_cambio:rates_manager' %}" class="text-blue-800 font-semibold text-sm hover:underline">Gestionar &rarr;</a>
+</div>
+{% endif %}
+{% if 'can_manage_benefits' in permisos %}
+<div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+    <h3 class="text-lg font-semibold text-slate-800 mb-2">Comisiones y Beneficios</h3>
+    <p class="text-sm text-slate-600 mb-4">Porcentajes de beneficio por categoría de cliente.</p>
+    <a href="{% url 'tasas_cambio:client_benefit_config' %}" class="text-blue-800 font-semibold text-sm hover:underline">Configurar &rarr;</a>
+</div>
+{% endif %}
+{% if 'can_manage_payment_config' in permisos %}
+<div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+    <h3 class="text-lg font-semibold text-slate-800 mb-2">Divisas y Métodos de Pago</h3>
+    <p class="text-sm text-slate-600 mb-4">Divisas habilitadas y métodos de cobro.</p>
+    <a href="{% url 'tasas_cambio:currency_payment_config' %}" class="text-blue-800 font-semibold text-sm hover:underline">Parametrizar &rarr;</a>
+</div>
+{% endif %}
+{% if 'can_operate_cashier' in permisos and not excluir_caja %}
+<div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+    <h3 class="text-lg font-semibold text-slate-800 mb-2">Turnos y Cajas</h3>
+    <p class="text-sm text-slate-600 mb-4">Apertura y cierre de turnos de caja y operaciones de ventanilla.</p>
+    <a href="{% url 'caja:gestion_caja' %}" class="text-blue-800 font-semibold text-sm hover:underline">Gestionar Turnos &rarr;</a>
+</div>
+{% endif %}
+{% if 'can_manage_cashboxes' in permisos %}
+<div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+    <h3 class="text-lg font-semibold text-slate-800 mb-2">Gestión de Cajas</h3>
+    <p class="text-sm text-slate-600 mb-4">Cajas físicas y asignación de cajeros.</p>
+    <a href="{% url 'caja:gestion_cajas_admin' %}" class="text-blue-800 font-semibold text-sm hover:underline">Gestionar Cajas &rarr;</a>
+</div>
+{% endif %}
+{% if 'can_manage_invoices' in permisos %}
+<div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+    <div class="flex items-center justify-between mb-2">
+        <h3 class="text-lg font-semibold text-slate-800">Facturación Electrónica</h3>
+        {% if solicitudes_anulacion_pendientes %}<span class="bg-red-100 text-red-700 text-xs px-2 py-0.5 rounded-full font-semibold">{{ solicitudes_anulacion_pendientes }} solicitud(es)</span>{% endif %}
+    </div>
+    <p class="text-sm text-slate-600 mb-4">Reintentar facturas fallidas, anular facturas (cancelación o nota de crédito) y atender pedidos de anulación.</p>
+    <a href="{% url 'procesamiento_operaciones:admin_facturacion' %}" class="text-blue-800 font-semibold text-sm hover:underline">Gestionar &rarr;</a>
+</div>
+{% endif %}

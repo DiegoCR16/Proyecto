@@ -204,6 +204,42 @@ class FacturaSeguraService:
             return {"code": -1, "error": str(e)}
 
     @classmethod
+    def sol_cancelacion(cls, auth_token, cdc, d_ruc_em="2595733"):
+        """
+        Solicita el evento de cancelación de un Documento Electrónico con estado "Aprobado"
+        (operación ``sol_cancelacion`` de la API ESI de Factura Segura).
+
+        La operación es asíncrona: ``code`` 0 solo confirma que Factura Segura registró la
+        solicitud. El resultado del evento se obtiene después con ``get_estado_sifen``
+        en los campos ``estado_can``, ``desc_can`` y ``error_can`` (se sugiere consultar
+        al menos un minuto después).
+
+        Args:
+            auth_token (str): Token de autenticación activo.
+            cdc (str): CDC del documento aprobado a cancelar.
+            d_ruc_em (str): RUC del emisor (sin DV).
+
+        Returns:
+            dict: Respuesta de la API (``code`` >= 0 si se registró la solicitud) o detalle del error.
+        """
+        esi_url = f"{cls._get_base_url()}/misife00/v1/esi"
+        headers = {
+            'accept': 'application/json',
+            'Content-Type': 'application/json',
+            'Authentication-Token': auth_token
+        }
+        payload = {"operation": "sol_cancelacion", "params": {"CDC": cdc, "dRucEm": d_ruc_em}}
+        try:
+            response = requests.post(esi_url, json=payload, headers=headers, timeout=30)
+            if response.status_code == 200:
+                return response.json()
+            logger.error(f"Error al solicitar la cancelación en SIFEN: {response.status_code} - {response.text}")
+            return cls._respuesta_error(response)
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Excepción de red al solicitar la cancelación en SIFEN: {str(e)}")
+            return {"code": -1, "error": str(e)}
+
+    @classmethod
     def descargar_kude(cls, auth_token, cdc):
         """
         Descarga el KuDE (PDF) oficial correspondiente a un CDC utilizando petición HTTP GET

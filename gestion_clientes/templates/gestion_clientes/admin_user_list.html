@@ -67,13 +67,7 @@
             </div>  
         </div>
 
-        {% if messages %}
-            {% for message in messages %}
-                <div class="mb-6 p-4 rounded-xl text-sm {% if message.tags == 'error' %}bg-red-50 text-red-700 border border-red-200{% else %}bg-green-50 text-green-700 border border-green-200{% endif %}">
-                    {{ message }}
-                </div>
-            {% endfor %}
-        {% endif %}
+        {% include "authentication/_notificaciones.html" %}
 
         <div class="bg-white shadow-sm rounded-2xl border border-slate-200 overflow-hidden">
             <div class="overflow-x-auto">

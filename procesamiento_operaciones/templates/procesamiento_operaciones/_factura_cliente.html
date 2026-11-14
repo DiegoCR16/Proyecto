@@ -1,0 +1,55 @@
+{% comment %}
+Factura electrónica de una operación en los historiales del cliente.
+Muestra el estado, las descargas y la opción de pedir la anulación (permiso «Solicitar Anulación de Factura»).
+Parámetro: tx (CurrencyPurchaseTransaction o CurrencySaleTransaction).
+{% endcomment %}
+{% with estado=tx.sifen_estado ultima=tx.solicitudes_anulacion.all.0 %}
+{% if tx.sifen_cdc %}
+    <span class="px-2 py-1 rounded font-bold block
+        {% if estado == 'Aprobada' %}bg-green-100 text-green-800
+        {% elif estado == 'Rechazada' %}bg-red-100 text-red-800
+        {% elif estado == 'Cancelada' or estado == 'Anulada' %}bg-slate-200 text-slate-700
+        {% elif estado == 'Anulación en proceso' or estado == 'Cancelación en proceso' %}bg-amber-100 text-amber-800
+        {% else %}bg-purple-100 text-purple-800{% endif %}" title="{{ tx.sifen_cdc }}">
+        {{ estado }}: {{ tx.sifen_cdc|slice:":14" }}...
+    </span>
+    {% if estado == 'Aprobada' or estado == 'Cancelada' or estado == 'Cancelación en proceso' or estado == 'Anulación en proceso' or estado == 'Anulada' %}
+    <div class="mt-1 flex space-x-2">
+        <a href="/auth/sifen/xml/{{ tx.sifen_cdc }}/" target="_blank" class="text-blue-600 hover:underline text-[10px] font-semibold">XML</a>
+        <a href="/auth/sifen/kude/{{ tx.sifen_cdc }}/" target="_blank" class="text-blue-600 hover:underline text-[10px] font-semibold">KuDE (PDF)</a>
+    </div>
+    {% elif estado == 'Rechazada' %}
+    <span class="text-red-600 text-[10px] font-semibold block mt-1">Rechazada por SIFEN; el área de facturación la revisará.</span>
+    {% else %}
+    <span class="text-amber-600 text-[10px] font-semibold block mt-1">Esperando aprobación de SIFEN</span>
+    {% endif %}
+{% elif estado == 'Error' %}
+    <span class="text-red-600 text-xs font-semibold" title="{{ tx.sifen_error }}">Factura pendiente de emisión</span>
+{% elif estado == 'En cola' %}
+    <span class="text-slate-500 text-xs font-semibold">En cola de emisión</span>
+{% else %}
+    <span class="text-slate-400 text-xs">Pendiente</span>
+{% endif %}
+
+{% if ultima and ultima.estado == 'PENDIENTE' %}
+    <span class="text-amber-700 text-[10px] font-semibold block mt-1">Anulación solicitada: en revisión</span>
+{% elif ultima and ultima.estado == 'RECHAZADA' and estado == 'Aprobada' %}
+    <span class="text-red-600 text-[10px] block mt-1 whitespace-normal max-w-[14rem]" title="{{ ultima.respuesta }}">Anulación rechazada: {{ ultima.respuesta|truncatechars:60 }}</span>
+{% endif %}
+
+{% if estado == 'Aprobada' and 'can_request_invoice_cancellation' in permisos %}
+{% if not ultima or ultima.estado != 'PENDIENTE' %}
+<details class="mt-1 font-sans">
+    <summary class="text-red-700 hover:underline text-[10px] font-semibold cursor-pointer">Solicitar anulación</summary>
+    <form method="POST" action="{% url 'procesamiento_operaciones:solicitar_anulacion_factura' %}" class="mt-2 space-y-2 w-56 whitespace-normal">
+        {% csrf_token %}
+        <input type="hidden" name="tipo" value="{{ tx.tipo_operacion }}">
+        <input type="hidden" name="id" value="{{ tx.pk }}">
+        <textarea name="motivo" rows="2" required minlength="5" maxlength="500" placeholder="Motivo de la anulación"
+                  class="w-full border border-slate-300 rounded-lg p-2 text-xs"></textarea>
+        <button type="submit" class="w-full bg-red-600 hover:bg-red-700 text-white rounded-lg py-1.5 text-xs font-semibold">Enviar solicitud</button>
+    </form>
+</details>
+{% endif %}
+{% endif %}
+{% endwith %}
