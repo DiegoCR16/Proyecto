@@ -63,7 +63,7 @@
         {% if 'can_operate_cashier' in permisos %}
         <!-- Tarjetas de Acceso Operativo Directo -->
         <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-            <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200 flex flex-col justify-between">
+            <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200 flex flex-col justify-between hover:border-blue-500 transition cursor-pointer" onclick="window.location.href='{% url 'caja:ventanilla_pos' %}'">
                 <div>
                     <h3 class="text-lg font-semibold text-slate-800 mb-2">Operaciones de Ventanilla</h3>
                     <p class="text-sm text-slate-600 mb-4">Ejecutar compras y ventas de divisas digitales o en efectivo asociadas al turno activo.</p>
@@ -75,7 +75,7 @@
                 </div>
             </div>
 
-            <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200 flex flex-col justify-between">
+            <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200 flex flex-col justify-between{% if active_turn_cajero %} hover:border-blue-500 transition cursor-pointer{% endif %}"{% if active_turn_cajero %} onclick="window.location.href='{% url 'caja:detalle_turno_operaciones' active_turn_cajero.id %}'"{% endif %}>
                 <div>
                     <h3 class="text-lg font-semibold text-slate-800 mb-2">Auditoría y Clientes</h3>
                     <p class="text-sm text-slate-600 mb-4">Consultar detalle transaccional, clientes atendidos (RUC/CI), consolidado y planilla de cierre.</p>
@@ -91,7 +91,7 @@
                 </div>
             </div>
 
-            <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200 flex flex-col justify-between">
+            <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200 flex flex-col justify-between hover:border-blue-500 transition cursor-pointer" onclick="window.location.href='{% url 'caja:gestion_caja' %}'">
                 <div>
                     <h3 class="text-lg font-semibold text-slate-800 mb-2">Arqueo, Apertura y Cierre</h3>
                     <p class="text-sm text-slate-600 mb-4">Control de saldos, desglose de billetes y apertura o cierre de turno de caja.</p>

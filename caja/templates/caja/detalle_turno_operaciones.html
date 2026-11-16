@@ -61,28 +61,40 @@
             </div>
         </div>
 
-        <!-- Tarjetas de Resumen Consolidado (Criterio 3) -->
-        <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-            <div class="bg-white p-6 rounded-xl shadow-md border border-slate-200">
-                <span class="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-1">Total Operaciones</span>
-                <span class="text-3xl font-extrabold text-slate-900">{{ operaciones|length }}</span>
-                <span class="text-xs text-slate-500 block mt-1">Compras: {{ total_compras_count }} | Ventas: {{ total_ventas_count }}</span>
+        <!-- Tarjetas de Resumen Consolidado Clasificadas por Tipo de Divisa -->
+        <div class="mb-8 space-y-6">
+            <!-- Total Operaciones Card -->
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-6">
+                <div class="bg-white p-6 rounded-xl shadow-md border border-slate-200">
+                    <span class="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-1">Total Operaciones</span>
+                    <span class="text-3xl font-extrabold text-slate-900">{{ operaciones|length }}</span>
+                    <span class="text-xs text-slate-500 block mt-1">Compras: {{ total_compras_count }} | Ventas: {{ total_ventas_count }}</span>
+                </div>
             </div>
-            <div class="bg-white p-6 rounded-xl shadow-md border border-slate-200">
-                <span class="text-xs font-bold text-emerald-600 uppercase tracking-wider block mb-1">Ingresos por Ventas (PYG)</span>
-                <span class="text-2xl font-extrabold text-emerald-700 font-mono">₲ {{ acumulado_ventas_pyg|floatformat:2 }}</span>
-                <span class="text-xs text-slate-500 block mt-1">Acumulado jornada cajero</span>
-            </div>
-            <div class="bg-white p-6 rounded-xl shadow-md border border-slate-200">
-                <span class="text-xs font-bold text-rose-600 uppercase tracking-wider block mb-1">Egresos por Compras (PYG)</span>
-                <span class="text-2xl font-extrabold text-rose-700 font-mono">₲ {{ acumulado_compras_pyg|floatformat:2 }}</span>
-                <span class="text-xs text-slate-500 block mt-1">Acumulado jornada cajero</span>
-            </div>
-            <div class="bg-white p-6 rounded-xl shadow-md border border-slate-200">
-                <span class="text-xs font-bold text-blue-800 uppercase tracking-wider block mb-1">Flujo Neto Turno</span>
-                <span class="text-2xl font-extrabold text-blue-900 font-mono">₲ {{ acumulado_ventas_pyg|floatformat:2 }}</span>
-                <span class="text-xs text-slate-500 block mt-1">Balance transaccional</span>
-            </div>
+
+            <!-- Tarjetas por Divisa -->
+            {% for item in resumen_divisas %}
+                <div class="bg-slate-50 p-4 rounded-2xl border border-slate-200">
+                    <h4 class="text-xs font-bold text-slate-700 uppercase tracking-wider mb-3 px-1">Resumen Financiero - Divisa: <span class="text-blue-800 font-extrabold text-sm">{{ item.divisa }}</span></h4>
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        <div class="bg-white p-6 rounded-xl shadow-md border border-slate-200">
+                            <span class="text-xs font-bold text-emerald-600 uppercase tracking-wider block mb-1">Ingresos por Ventas ({{ item.divisa }})</span>
+                            <span class="text-2xl font-extrabold text-emerald-700 font-mono">{{ item.divisa }} {{ item.ingresos|floatformat:2 }}</span>
+                            <span class="text-xs text-slate-500 block mt-1">Acumulado jornada cajero</span>
+                        </div>
+                        <div class="bg-white p-6 rounded-xl shadow-md border border-slate-200">
+                            <span class="text-xs font-bold text-rose-600 uppercase tracking-wider block mb-1">Egresos por Compras ({{ item.divisa }})</span>
+                            <span class="text-2xl font-extrabold text-rose-700 font-mono">{{ item.divisa }} {{ item.egresos|floatformat:2 }}</span>
+                            <span class="text-xs text-slate-500 block mt-1">Acumulado jornada cajero</span>
+                        </div>
+                        <div class="bg-white p-6 rounded-xl shadow-md border border-slate-200">
+                            <span class="text-xs font-bold text-blue-800 uppercase tracking-wider block mb-1">Flujo Neto Turno ({{ item.divisa }})</span>
+                            <span class="text-2xl font-extrabold text-blue-900 font-mono">{{ item.divisa }} {{ item.neto|floatformat:2 }}</span>
+                            <span class="text-xs text-slate-500 block mt-1">Balance transaccional (Saldo: {{ item.saldo_actual|floatformat:2 }})</span>
+                        </div>
+                    </div>
+                </div>
+            {% endfor %}
         </div>
 
         <!-- Barra de Filtros y Búsqueda (Criterio 4) -->

@@ -91,7 +91,9 @@ class VentanillaFacturaSifenTests(TestCase):
         servicio.obtener_token.return_value = "token"
         servicio.generar_de.return_value = {"code": 0, "results": [{"CDC": CDC_VALIDO}]}
 
-        self._procesar(tipo="VENTA", origen="PYG", destino="USD", monto="740000.00", cliente_id=self.cliente.id)
+        # En la venta el monto es lo que recibe el cliente (100 USD); paga en guaraníes
+        self._procesar(tipo="VENTA", origen="PYG", destino="USD", monto="100.00",
+                       efectivo_recibido="800000.00", cliente_id=self.cliente.id)
 
         de = servicio.generar_de.call_args[0][1]["DE"]
         self.assertEqual(de["iTipTra"], "5")

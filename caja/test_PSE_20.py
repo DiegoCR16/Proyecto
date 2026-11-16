@@ -202,9 +202,10 @@ class CajaShiftPSE20Tests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(len(response.context['cajas_data']), 2)
 
-    def test_cannot_open_shift_with_zero_balances(self):
+    def test_can_open_shift_with_zero_balances(self):
         """
-        Valida que no se pueda abrir turno si todas las cantidades iniciales de divisas están en 0.
+        Valida que se pueda abrir turno con todas las cantidades iniciales en 0 (PSE-40): el efectivo
+        de apertura se registra luego como ingreso con desglose de billetes.
         """
         self.client.force_login(self.cajero)
         url_abrir = reverse('caja:abrir_turno', args=[self.caja.id])
@@ -216,7 +217,7 @@ class CajaShiftPSE20Tests(TestCase):
             'saldo_inicial_ars': '0'
         })
         self.assertRedirects(response, self.gestion_url)
-        self.assertFalse(TurnoCaja.objects.filter(caja=self.caja, estado='ABIERTO').exists())
+        self.assertTrue(TurnoCaja.objects.filter(caja=self.caja, estado='ABIERTO').exists())
 
     def test_admin_assigns_multiple_cashiers_to_same_box(self):
         """

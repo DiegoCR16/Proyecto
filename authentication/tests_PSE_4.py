@@ -26,7 +26,7 @@ class AuthenticationPSE4Tests(TestCase):
     def setUp(self):
         self.client = Client()
         self.admin_role = Role.objects.create(name="Admin", description="Rol de Administrador")
-        self.corporate_role = Role.objects.create(name="Corporate", description="Rol Corporativo")
+        self.corporate_role = Role.objects.create(name="Cliente", description="Rol Cliente")
         self.individual_role = Role.objects.create(name="Individual", description="Rol Individual")
 
         # Usuario Admin
@@ -38,7 +38,7 @@ class AuthenticationPSE4Tests(TestCase):
         self.corp_profile = UserProfile.objects.create(user=self.corp_user, role=self.corporate_role, is_corporate=True)
 
         # Usuario Individual (con rol Cliente para pruebas de cliente por defecto)
-        self.client_role = Role.objects.create(name="Cliente", description="Rol de Cliente")
+        self.client_role = self.corporate_role
         self.ind_user = User.objects.create_user(username="induser", password="password123")
         self.ind_profile = UserProfile.objects.create(user=self.ind_user, role=self.client_role)
 

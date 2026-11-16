@@ -82,43 +82,43 @@
         </div>
 
         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
-            <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+            <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200 hover:border-blue-500 transition cursor-pointer" onclick="window.location.href='{% url 'admin_user_list' %}'">
                 <h3 class="text-lg font-semibold text-slate-800 mb-2">Gestión de Usuarios</h3>
                 <p class="text-sm text-slate-600 mb-4">CRUD de usuarios, asigne roles principales y adicionales.</p>
                 <a href="{% url 'admin_user_list' %}" class="text-blue-800 font-semibold text-sm hover:underline">Administrar &rarr;</a>
             </div>
-            <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+            <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200 hover:border-blue-500 transition cursor-pointer" onclick="window.location.href='{% url 'admin_client_list' %}'">
                 <h3 class="text-lg font-semibold text-slate-800 mb-2">Gestión de Clientes</h3>
                 <p class="text-sm text-slate-600 mb-4">Administre clientes personales y corporativos, KYC y límites.</p>
                 <a href="{% url 'admin_client_list' %}" class="text-blue-800 font-semibold text-sm hover:underline">Administrar &rarr;</a>
             </div>
-            <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+            <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200 hover:border-blue-500 transition cursor-pointer" onclick="window.location.href='{% url 'admin_roles' %}'">
                 <h3 class="text-lg font-semibold text-slate-800 mb-2">Roles y Permisos</h3>
                 <p class="text-sm text-slate-600 mb-4">CRUD de roles, asignación granular de permisos.</p>
                 <a href="{% url 'admin_roles' %}" class="text-blue-800 font-semibold text-sm hover:underline">Gestionar &rarr;</a>
             </div>
-            <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+            <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200 hover:border-blue-500 transition cursor-pointer" onclick="window.location.href='{% url 'admin_audit_logs' %}'">
                 <h3 class="text-lg font-semibold text-slate-800 mb-2">Auditoría y Seguridad</h3>
                 <p class="text-sm text-slate-600 mb-4">Revise los registros de inicio de sesión y alertas de seguridad MFA.</p>
                 <a href="{% url 'admin_audit_logs' %}" class="text-blue-800 font-semibold text-sm hover:underline">Ver Registros &rarr;</a>
             </div>
-            <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+            <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200 hover:border-blue-500 transition cursor-pointer" onclick="window.location.href='{% url 'tasas_cambio:client_benefit_config' %}'">
                 <h3 class="text-lg font-semibold text-slate-800 mb-2">Comisiones y Beneficios</h3>
                 <p class="text-sm text-slate-600 mb-4">Parametrice umbrales y porcentajes de beneficio por categoría de cliente.</p>
                 <a href="{% url 'tasas_cambio:client_benefit_config' %}" class="text-blue-800 font-semibold text-sm hover:underline">Configurar &rarr;</a>
             </div>
-            <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+            <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200 hover:border-blue-500 transition cursor-pointer" onclick="window.location.href='{% url 'tasas_cambio:currency_payment_config' %}'">
                 <h3 class="text-lg font-semibold text-slate-800 mb-2">Divisas y Métodos de Pago</h3>
                 <p class="text-sm text-slate-600 mb-4">Agregue nuevas divisas y gestione métodos de cobro en tiempo real.</p>
                 <a href="{% url 'tasas_cambio:currency_payment_config' %}" class="text-blue-800 font-semibold text-sm hover:underline">Parametrizar &rarr;</a>
             </div>
-            <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+            <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200 hover:border-blue-500 transition cursor-pointer" onclick="window.location.href='{% url 'tasas_cambio:rates_manager' %}'">
                 <h3 class="text-lg font-semibold text-slate-800 mb-2">Gestor y Cotizaciones</h3>
                 <p class="text-sm text-slate-600 mb-4">Actualice tasas en tiempo real y gestione el historial y trazabilidad.</p>
                 <a href="{% url 'tasas_cambio:rates_manager' %}" class="text-blue-800 font-semibold text-sm hover:underline">Gestionar &rarr;</a>
             </div>
             {% if 'can_manage_invoices' in permisos %}
-            <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+            <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200 hover:border-blue-500 transition cursor-pointer" onclick="window.location.href='{% url 'procesamiento_operaciones:admin_facturacion' %}'">
                 <div class="flex items-center justify-between mb-2">
                     <h3 class="text-lg font-semibold text-slate-800">Facturación Electrónica</h3>
                     {% if solicitudes_anulacion_pendientes %}<span class="bg-red-100 text-red-700 text-xs px-2 py-0.5 rounded-full font-semibold">{{ solicitudes_anulacion_pendientes }} solicitud(es)</span>{% endif %}
@@ -127,12 +127,12 @@
                 <a href="{% url 'procesamiento_operaciones:admin_facturacion' %}" class="text-blue-800 font-semibold text-sm hover:underline">Gestionar &rarr;</a>
             </div>
             {% endif %}
-            <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+            <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200 hover:border-blue-500 transition cursor-pointer" onclick="window.location.href='{% url 'caja:gestion_caja' %}'">
                 <h3 class="text-lg font-semibold text-slate-800 mb-2">Turnos y Cajas</h3>
                 <p class="text-sm text-slate-600 mb-4">Supervise y gestione la apertura y cierre de turnos de caja y saldos por divisa.</p>
                 <a href="{% url 'caja:gestion_caja' %}" class="text-blue-800 font-semibold text-sm hover:underline">Gestionar Turnos &rarr;</a>
             </div>
-            <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+            <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200 hover:border-blue-500 transition cursor-pointer" onclick="window.location.href='{% url 'caja:gestion_cajas_admin' %}'">
                 <h3 class="text-lg font-semibold text-slate-800 mb-2">Gestión y Asignación de Cajas</h3>
                 <p class="text-sm text-slate-600 mb-4">CRUD de cajas físicas, adición de nuevas cajas y asignación de cajeros autorizados.</p>
                 <a href="{% url 'caja:gestion_cajas_admin' %}" class="text-blue-800 font-semibold text-sm hover:underline">Gestionar Cajas &rarr;</a>

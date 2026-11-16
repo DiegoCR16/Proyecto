@@ -252,17 +252,13 @@ def keycloak_callback_view(request):
             user.save()
 
         role_obj = None
-        is_corp = False
-        
+
         if any(r in all_roles_lower for r in ['admin', 'administrador', 'administrator']):
             role_obj, _ = Role.objects.get_or_create(name="Admin")
         elif any(r in all_roles_lower for r in ['cajero']):
             role_obj, _ = Role.objects.get_or_create(name="Cajero")
         elif any(r in all_roles_lower for r in ['analista']):
             role_obj, _ = Role.objects.get_or_create(name="Analista")
-        elif any(r in all_roles_lower for r in ['corporate', 'corporativo', 'empresa', 'jefe']):
-            role_obj, _ = Role.objects.get_or_create(name="Corporate")
-            is_corp = True
         elif 'cliente' in all_roles_lower:
             role_obj, _ = Role.objects.get_or_create(name="Cliente")
         else:
@@ -274,7 +270,8 @@ def keycloak_callback_view(request):
         if kc_id:
             profile.keycloak_id = kc_id
         profile.role = role_obj
-        profile.is_corporate = is_corp
+        # "Corporativo" ya no viene de los roles de Keycloak: es una categoría de beneficio del cliente.
+        profile.is_corporate = False
         profile.save()
 
         for g in kc_groups:
@@ -405,7 +402,6 @@ def dashboard_redirect_view(request):
             return redirect('dashboard_redirect')
 
     profile, _ = UserProfile.objects.get_or_create(user=request.user)
-    role_name = profile.role.name.lower() if profile.role else 'individual'
 
     interface_ctx = get_user_interface_context(request, profile)
 
@@ -532,10 +528,8 @@ def dashboard_redirect_view(request):
         return render(request, 'authentication/cajero_dashboard.html', context)
     elif profile.role and 'analista' in profile.role.name.lower():
         return render(request, 'authentication/analista_dashboard.html', context)
-    elif profile.is_corporate or 'corporativo' in role_name:
-        if user_mode:
-            return render(request, 'authentication/user_dashboard.html', context)
-        return render(request, 'authentication/corporate_dashboard.html', context)
+    # "Corporativo" es una categoría de beneficio del cliente (como VIP), no una interfaz aparte:
+    # los clientes corporativos usan el panel de cliente.
     elif has_client_mode:
         if user_mode:
             return render(request, 'authentication/user_dashboard.html', context)

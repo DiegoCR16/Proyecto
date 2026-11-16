@@ -36,7 +36,6 @@ ROLES_DEFAULT = [
     ('Analista', 'Analista de Operaciones (Permisos Delegados)'),
     ('Cliente', 'Cliente de la Plataforma (Física y Jurídica General)'),
     ('Cajero', 'Cajero de Sucursal (Operaciones de Caja)'),
-    ('Corporate', 'Cliente Corporativo'),
 ]
 
 # Usuarios de prueba. Deben coincidir con docker/global-exchange-realm-users-0.json

@@ -205,7 +205,7 @@
             </div>
             {% endif %}
             {% if 'can_view_history' in permisos %}
-            <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+            <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200 hover:border-blue-500 transition cursor-pointer" onclick="window.location.href='{% url 'procesamiento_operaciones:currency_transactions_history' %}'">
                 <h3 class="text-lg font-semibold text-slate-800 mb-2">Mis Transacciones</h3>
                 <p class="text-sm text-slate-600 mb-4">Volumen Transaccional Acumulado: <strong class="font-mono text-slate-900">₲ {{ active_client.transaction_volume|default:profile.transaction_volume|floatformat:0 }}</strong></p>
                 <div class="flex flex-col space-y-1 text-sm">

@@ -14,7 +14,6 @@ class AssociationKeycloakPSE7Tests(TestCase):
         self.client = Client()
         self.admin_role, _ = Role.objects.get_or_create(name="Admin")
         self.client_role, _ = Role.objects.get_or_create(name="Cliente")
-        self.corp_role, _ = Role.objects.get_or_create(name="Corporate")
 
         # Administrador del Sistema
         self.admin_user = User.objects.create_user(username="admin_pse7", email="admin7@globalexchange.com", password="Password123*")

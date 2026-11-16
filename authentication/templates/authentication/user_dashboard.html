@@ -93,7 +93,7 @@
                 <a href="{% url 'tasas_cambio:currency_alerts' %}" class="text-blue-800 font-semibold text-sm hover:underline">Gestionar Alertas &rarr;</a>
             </div>
             {% endif %}
-            <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+            <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200 hover:border-blue-500 transition cursor-pointer" onclick="window.location.href='{% url 'register' %}'">
                 <h3 class="text-lg font-semibold text-slate-800 mb-2">Estado de Cuenta</h3>
                 <p class="text-sm text-slate-600 mb-4">Tipo de Acceso: <strong class="text-slate-900">Usuario Regular (Sin Cliente Asociado)</strong></p>
                 <a href="{% url 'register' %}" class="text-blue-800 font-semibold text-sm hover:underline">Gestionar Solicitud de Cliente &rarr;</a>

@@ -69,3 +69,41 @@
   sus facturas de ventanilla con el botón "Solicitar anulación" y el estado de la anulación.
 - Panel del Administrador: aviso de que la solicitud pedida en ventanilla no devuelve fondos.
 - Pruebas: `caja/test_PSE_40_anulacion_caja.py` (8). `caja` + `procesamiento_operaciones`: 134 pruebas OK.
+
+## Turno de caja con saldo inicial cero
+- Se quitó la regla que exigía algún saldo inicial mayor a 0 (`caja/views.py`, `abrir_turno_view`): el efectivo de apertura
+  se registra como ingreso con desglose de billetes, que el arqueo suma al saldo teórico. Se rechazan saldos negativos.
+- `caja/test_PSE_20.py`: la prueba de la regla vieja pasa a `test_can_open_shift_with_zero_balances`.
+- `caja/test_PSE_40_turno_saldo_cero.py` (3): apertura en cero, saldo negativo y arqueo CUADRADO con ingreso/salida por desglose.
+
+## Integración de cambios pendientes de la rama `origin/actualizacion`
+- La ventanilla ya no mostraba saldos ni verificaba el efectivo disponible: el commit `0723966` (procesamiento de ventanilla
+  y detalle de turnos) solo estaba en `origin/actualizacion` y nunca se integró. Se trajo con `cherry-pick -n` y se resolvieron
+  los conflictos a mano (diferencias de fin de línea CRLF/LF y la sección de facturas de la ventanilla).
+- `caja/models.py`: `calcular_saldos_actuales_turno` (saldo inicial + ingresos − salidas del desglose por divisa).
+- `caja/views.py`: saldos por divisa en el POS y en el detalle del turno; en la venta el monto es lo que recibe el cliente
+  (p. ej. 2000 USD) y se calcula lo que paga; se bloquea la operación si no hay saldo de la divisa a entregar
+  ("Saldo insuficiente de USD en caja …").
+- Del commit `64d7d95` la corrección de alertas de tasa ya estaba integrada; faltaba su registro CHIA
+  (`docs/prompts/20261018_fix_alerta_tasa_por_cliente.md`).
+- Pruebas: `caja/test_PSE_40_saldo_ventanilla.py` (5); `test_ventanilla_factura_sifen.py` adaptada al nuevo cálculo de la venta.
+  Suite completa: 357 pruebas OK.
+
+## Tarjetas clickeables en los paneles
+- Todas las tarjetas de acceso responden al pasar el mouse (borde azul) y se puede hacer click en toda la tarjeta:
+  "Mis Transacciones" del cliente, las 10 del Administrador, las 3 del cajero (la de operaciones del turno solo con turno
+  abierto), las del bloque `_accesos_por_permiso.html` (cajero y analista) y "Estado de Cuenta" del panel de usuario.
+
+## Eliminación del panel corporativo
+- "Corporativo" es hoy una categoría de beneficio del cliente (como VIP), no una interfaz aparte. Ningún usuario lo usaba.
+- Se eliminó `authentication/templates/authentication/corporate_dashboard.html` y su rama en `dashboard_redirect_view`:
+  los perfiles corporativos entran al panel de cliente (o al de usuario si no tienen cliente asociado).
+- Pruebas: `authentication/test_PSE_40_sin_panel_corporativo.py` (3).
+- Relevamiento de lo "corporativo" restante: `CorporateGroup`/`GroupMembership` (grupo Keycloak de cada cliente aprobado),
+  los roles Jefe/Operador/Analista (Corporativo) (rol del usuario dentro de su cliente), "Solicitar miembro", el selector de
+  grupo, la app `monitoreo_corporativo` (configuración de divisas y métodos de pago) y la categoría CORPORATIVO siguen en uso.
+- Se eliminó solo lo que ya no se usa: el rol "Corporate" (migración `authentication/0024_eliminar_rol_corporate`: los perfiles
+  con ese rol pasan a "Cliente") y la regla del login con Keycloak que lo asignaba y marcaba `is_corporate` a quien tuviera
+  roles "corporate", "corporativo", "empresa" o "jefe". `seed_data` ya no crea el rol.
+- Pruebas: +2 en `authentication/test_PSE_40_sin_panel_corporativo.py`; `tests_PSE_4.py` y `gestion_clientes/test_PSE_7.py` ya
+  no crean el rol "Corporate". Suite completa: 362 pruebas OK.
