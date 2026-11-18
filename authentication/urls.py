@@ -8,6 +8,7 @@ urlpatterns = [
     path('callback/', views.keycloak_callback_view, name='keycloak_callback'),
     path('mfa/', views.mfa_verify_view, name='mfa_verify'),
     path('dashboard/', views.dashboard_redirect_view, name='dashboard_redirect'),
+    path('api/estado-interfaz/', views.estado_interfaz_api, name='estado_interfaz_api'),
     path('mode/user/', views.switch_to_user_mode_view, name='switch_to_user_mode'),
     path('mode/client/', views.switch_to_client_mode_view, name='switch_to_client_mode'),
     path('roles/', views.admin_roles_view, name='admin_roles'),

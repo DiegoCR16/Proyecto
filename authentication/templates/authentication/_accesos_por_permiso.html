@@ -82,4 +82,9 @@ Parámetros opcionales: excluir_caja (no mostrar "Turnos y Cajas"), excluir_audi
     <p class="text-sm text-slate-600 mb-4">Transacciones y ganancias por período, con exportación a PDF y Excel/CSV.</p>
     <a href="{% url 'monitoreo_corporativo:reporte_financiero' %}" class="text-blue-800 font-semibold text-sm hover:underline">Generar Reporte &rarr;</a>
 </div>
+<div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200 hover:border-blue-500 transition cursor-pointer" onclick="window.location.href='{% url 'monitoreo_corporativo:dashboard_ganancias' %}'">
+    <h3 class="text-lg font-semibold text-slate-800 mb-2">Dashboard de Ganancias</h3>
+    <p class="text-sm text-slate-600 mb-4">Ganancias en tiempo real, cotizaciones activas y gráfico mensual por divisa (PYG).</p>
+    <a href="{% url 'monitoreo_corporativo:dashboard_ganancias' %}" class="text-blue-800 font-semibold text-sm hover:underline">Ver Dashboard &rarr;</a>
+</div>
 {% endif %}

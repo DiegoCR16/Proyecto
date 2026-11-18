@@ -1,0 +1,47 @@
+{% comment %}
+Actualización automática del dashboard (Administrador, Cliente y Analista).
+
+Cada {{ intervalo_auto_actualizacion }} segundos consulta /auth/api/estado-interfaz/. Si la firma cambió
+(notificación nueva, solicitud de anulación pendiente o cotización actualizada), recarga la página
+para mostrarlo. Si el usuario está escribiendo en un campo, espera a que termine. Con la pestaña
+oculta no consulta; al volver a ella consulta enseguida.
+Requiere en el contexto: estado_interfaz e intervalo_auto_actualizacion (los arma dashboard_redirect_view).
+Uso: {% include "authentication/_auto_actualizacion.html" %}
+{% endcomment %}
+{% if estado_interfaz %}
+{{ estado_interfaz|json_script:"gx-estado-interfaz" }}
+<script>
+    (function () {
+        var URL_ESTADO = "{% url 'estado_interfaz_api' %}";
+        var INTERVALO_MS = {{ intervalo_auto_actualizacion|default:30 }} * 1000;
+        var firma = JSON.parse(document.getElementById('gx-estado-interfaz').textContent).firma;
+        var hayCambios = false;
+
+        function usuarioEscribiendo() {
+            var el = document.activeElement;
+            if (!el) return false;
+            var etiqueta = (el.tagName || '').toUpperCase();
+            return etiqueta === 'INPUT' || etiqueta === 'SELECT' || etiqueta === 'TEXTAREA' || el.isContentEditable;
+        }
+
+        function recargarSiCorresponde() {
+            if (hayCambios && !usuarioEscribiendo()) window.location.reload();
+        }
+
+        function consultar() {
+            if (document.hidden) return;
+            fetch(URL_ESTADO, { headers: { 'Accept': 'application/json' }, credentials: 'same-origin' })
+                .then(function (r) { return r.ok ? r.json() : null; })
+                .then(function (estado) {
+                    if (estado && estado.firma !== firma) hayCambios = true;
+                    recargarSiCorresponde();
+                })
+                .catch(function () { /* sin conexión o sesión vencida: se reintenta en el próximo ciclo */ });
+        }
+
+        setInterval(consultar, INTERVALO_MS);
+        document.addEventListener('visibilitychange', function () { if (!document.hidden) consultar(); });
+        document.addEventListener('focusout', function () { setTimeout(recargarSiCorresponde, 0); });
+    })();
+</script>
+{% endif %}

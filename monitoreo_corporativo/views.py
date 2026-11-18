@@ -4,11 +4,14 @@ Vistas del módulo de Monitoreo Corporativo.
 
 PSE-41: panel de reportes financieros de transacciones y ganancias, con vista previa web,
 descarga en CSV (se abre en Excel) y vista de impresión para guardar como PDF desde el navegador.
+
+PSE-24: dashboard de ganancias cambiarias en tiempo real (polling a una API JSON) con gráfico
+de barras mensual por divisa, consolidado en PYG.
 """
 from django import forms
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import User
-from django.http import HttpResponse
+from django.http import HttpResponse, JsonResponse
 from django.shortcuts import render
 from django.utils import timezone
 
@@ -16,7 +19,7 @@ from authentication.models import Cliente
 from authentication.permisos import requiere_permiso
 from tasas_cambio.models import ExchangeRate
 
-from . import reportes
+from . import dashboard, reportes
 
 FORMATO_CSV = 'csv'
 FORMATO_PDF = 'pdf'
@@ -138,3 +141,60 @@ def reporte_financiero_view(request):
         'totales': totales,
         'consulta': consulta.urlencode(),
     })
+
+
+def _meses_solicitados(request):
+    """
+    Lee el parámetro ``meses`` del gráfico (6 o 12).
+
+    Args:
+        request (HttpRequest): Solicitud GET.
+
+    Returns:
+        int: Meses válidos; si el valor no es válido, el valor por defecto.
+    """
+    try:
+        meses = int(request.GET.get('meses', dashboard.MESES_POR_DEFECTO))
+    except (TypeError, ValueError):
+        return dashboard.MESES_POR_DEFECTO
+    return meses if meses in dashboard.MESES_PERMITIDOS else dashboard.MESES_POR_DEFECTO
+
+
+@login_required
+@requiere_permiso('can_view_financial_reports')
+def dashboard_ganancias_view(request):
+    """
+    Dashboard de monitoreo de ganancias cambiarias (PSE-24).
+
+    Renderiza los KPIs, las cotizaciones activas y el gráfico con los datos iniciales;
+    luego la página se actualiza sola consultando ``dashboard_ganancias_api``.
+
+    Args:
+        request (HttpRequest): Solicitud GET (``meses`` opcional: 6 o 12).
+
+    Returns:
+        HttpResponse: Página del dashboard.
+    """
+    meses = _meses_solicitados(request)
+    return render(request, 'monitoreo_corporativo/dashboard_ganancias.html', {
+        'datos': dashboard.datos_dashboard(meses),
+        'datos_json': dashboard.datos_dashboard_json(meses),
+        'meses': meses,
+        'meses_permitidos': dashboard.MESES_PERMITIDOS,
+        'intervalo_segundos': dashboard.INTERVALO_ACTUALIZACION_SEGUNDOS,
+    })
+
+
+@login_required
+@requiere_permiso('can_view_financial_reports')
+def dashboard_ganancias_api(request):
+    """
+    API JSON del dashboard de ganancias (PSE-24), consultada periódicamente por la página.
+
+    Args:
+        request (HttpRequest): Solicitud GET (``meses`` opcional: 6 o 12).
+
+    Returns:
+        JsonResponse: KPIs del día y del mes, cotizaciones activas y datos del gráfico, en PYG.
+    """
+    return JsonResponse(dashboard.datos_dashboard_json(_meses_solicitados(request)))

@@ -1,6 +1,7 @@
 import requests
 import base64
 import json
+import logging
 import re
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth import login, logout, authenticate
@@ -9,7 +10,7 @@ from django.contrib import messages
 from django.contrib.auth.models import User
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.conf import settings
-from django.http import HttpResponse, HttpResponseBadRequest
+from django.http import HttpResponse, HttpResponseBadRequest, JsonResponse
 from django.db import models
 from decimal import Decimal
 from django.utils import timezone
@@ -23,11 +24,14 @@ from rest_framework.permissions import IsAuthenticated, BasePermission
 from . import mfa
 from .facturacion_service import FacturaSeguraService
 from .usuarios import obtener_o_crear_usuario_keycloak
+from .estado_interfaz import INTERVALO_SEGUNDOS as INTERVALO_AUTO_ACTUALIZACION, estado_interfaz
 from .permisos import (
     ROL_ADMIN, ROL_ANALISTA, ROL_CLIENTE, ROL_CAJERO, ROL_JEFE, ROL_OPERADOR, ROL_ANALISTA_CORP,
     ROLES_DE_CLIENTE, PERMISOS_ADMINISTRATIVOS, NOMBRES_PERMISOS, TODOS_LOS_PERMISOS,
     asegurar_catalogo_permisos, es_rol_admin, permisos_del_rol, rol_efectivo, tiene_permiso, requiere_permiso,
 )
+
+logger = logging.getLogger(__name__)
 
 def get_client_ip(request):
     """
@@ -372,6 +376,41 @@ def mfa_verify_view(request):
 
     return render(request, 'authentication/mfa_verify.html', contexto)
 
+def _estado_interfaz_seguro(request):
+    """
+    Estado inicial de la interfaz para el dashboard; si falla, el dashboard se muestra igual
+    (sin actualización automática) en lugar de dar error.
+
+    Args:
+        request (HttpRequest): Solicitud actual.
+
+    Returns:
+        dict | None: Estado de la interfaz, o None si no se pudo calcular.
+    """
+    try:
+        return estado_interfaz(request)
+    except Exception:
+        logger.exception("No se pudo calcular el estado de la interfaz para la actualización automática")
+        return None
+
+
+@login_required
+def estado_interfaz_api(request):
+    """
+    API JSON con la firma del estado de la interfaz del usuario.
+
+    Los dashboards la consultan cada 30 segundos y se recargan si la firma cambió
+    (notificaciones nuevas, solicitudes de anulación pendientes o cotizaciones actualizadas).
+
+    Args:
+        request (HttpRequest): Solicitud GET de un usuario autenticado.
+
+    Returns:
+        JsonResponse: Estado de la interfaz (ver ``authentication.estado_interfaz.estado_interfaz``).
+    """
+    return JsonResponse(estado_interfaz(request))
+
+
 @login_required
 def dashboard_redirect_view(request):
     """
@@ -519,6 +558,8 @@ def dashboard_redirect_view(request):
         'active_turn_cajero': active_turn_cajero,
         'cajas_cajero': cajas_cajero,
         'now': timezone.now(),
+        'estado_interfaz': _estado_interfaz_seguro(request),
+        'intervalo_auto_actualizacion': INTERVALO_AUTO_ACTUALIZACION,
         **interface_ctx,
     }
 
