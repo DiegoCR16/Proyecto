@@ -76,3 +76,10 @@ Parámetros opcionales: excluir_caja (no mostrar "Turnos y Cajas"), excluir_audi
     <a href="{% url 'procesamiento_operaciones:admin_facturacion' %}" class="text-blue-800 font-semibold text-sm hover:underline">Gestionar &rarr;</a>
 </div>
 {% endif %}
+{% if 'can_view_financial_reports' in permisos %}
+<div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200 hover:border-blue-500 transition cursor-pointer" onclick="window.location.href='{% url 'monitoreo_corporativo:reporte_financiero' %}'">
+    <h3 class="text-lg font-semibold text-slate-800 mb-2">Reportes Financieros</h3>
+    <p class="text-sm text-slate-600 mb-4">Transacciones y ganancias por período, con exportación a PDF y Excel/CSV.</p>
+    <a href="{% url 'monitoreo_corporativo:reporte_financiero' %}" class="text-blue-800 font-semibold text-sm hover:underline">Generar Reporte &rarr;</a>
+</div>
+{% endif %}

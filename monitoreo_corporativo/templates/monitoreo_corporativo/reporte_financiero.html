@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reportes Financieros - Global Exchange</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .num { font-variant-numeric: tabular-nums; }
+        .campo { width: 100%; border: 1px solid #cbd5e1; border-radius: 0.75rem; padding: 0.55rem 0.75rem; font-size: 0.875rem; background: #fff; }
+        .campo:focus { outline: none; border-color: #2563eb; box-shadow: 0 0 0 3px rgba(37, 99, 235, .15); }
+    </style>
+</head>
+<body class="bg-slate-50 min-h-screen text-slate-900 flex flex-col">
+    <!-- Navbar -->
+    <nav class="bg-slate-900 text-white shadow-md">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between h-16 items-center">
+                <div class="flex items-center space-x-3">
+                    <div class="w-10 h-10 bg-blue-800 rounded-xl flex items-center justify-center font-bold text-xl shadow">GX</div>
+                    <span class="font-bold text-lg tracking-tight">Global Exchange</span>
+                </div>
+                <div class="flex items-center space-x-6">
+                    <a href="/auth/dashboard/" class="text-slate-300 hover:text-white text-sm font-medium transition">Panel Principal</a>
+                    {% if user.is_authenticated %}
+                        <span class="hidden sm:inline text-sm text-slate-300">Usuario: <strong class="text-white">{{ request.user.username }}</strong></span>
+                        <a href="/auth/logout/" class="bg-red-600 hover:bg-red-700 text-white px-3.5 py-1.5 rounded-lg text-sm font-medium transition shadow-sm">Cerrar Sesión</a>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 flex-grow w-full space-y-8">
+        <!-- Encabezado -->
+        <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+            <div>
+                <p class="text-xs font-semibold uppercase tracking-wider text-sky-600">Monitoreo Corporativo</p>
+                <h1 class="text-3xl font-bold text-slate-900 tracking-tight">Reportes de Transacciones y Ganancias</h1>
+                <p class="text-slate-600 mt-1">Informe contable consolidado en Guaraníes (PYG) de las operaciones de compra y venta confirmadas.</p>
+            </div>
+            <a href="/auth/dashboard/" class="inline-flex items-center bg-slate-900 hover:bg-slate-800 text-white px-4 py-2.5 rounded-xl text-sm font-medium shadow-sm transition">&larr; Volver al Panel</a>
+        </div>
+
+        {% include "authentication/_notificaciones.html" %}
+
+        <!-- Panel de filtros -->
+        <form method="get" class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+            <div class="px-6 py-4 bg-slate-900 text-white">
+                <h2 class="font-semibold text-base">Generación de Reportes Financieros</h2>
+                <p class="text-xs text-slate-400 mt-0.5">Los filtros son combinables; deje un campo vacío para no filtrar por él.</p>
+            </div>
+            <div class="p-6 space-y-4">
+                {% if form.non_field_errors %}
+                    <div class="bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl px-4 py-3">{{ form.non_field_errors|join:" " }}</div>
+                {% endif %}
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4">
+                    {% for campo in form %}
+                        <div>
+                            <label for="{{ campo.id_for_label }}" class="block text-xs font-semibold text-slate-600 mb-1">{{ campo.label }}</label>
+                            {{ campo }}
+                            {% for error in campo.errors %}<p class="text-xs text-red-600 mt-1">{{ error }}</p>{% endfor %}
+                        </div>
+                    {% endfor %}
+                </div>
+                <div class="flex flex-wrap items-center gap-3 pt-2">
+                    <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-xl text-sm font-semibold shadow-sm transition">Generar Reporte</button>
+                    <a href="{% url 'monitoreo_corporativo:reporte_financiero' %}" class="text-sm font-medium text-slate-600 hover:text-slate-900">Limpiar filtros</a>
+                </div>
+            </div>
+        </form>
+
+        <!-- Tarjetas resumen -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div class="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
+                <p class="text-xs font-semibold uppercase tracking-wider text-slate-500">Operaciones</p>
+                <p class="text-2xl font-bold text-slate-900 num mt-1">{{ totales.cantidad }}</p>
+                <p class="text-xs text-slate-500 mt-1">{{ totales.cantidad_compras }} compras · {{ totales.cantidad_ventas }} ventas</p>
+            </div>
+            <div class="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
+                <p class="text-xs font-semibold uppercase tracking-wider text-slate-500">Volumen operado</p>
+                <p class="text-2xl font-bold text-sky-600 num mt-1">₲ {{ totales.volumen_total_pyg|floatformat:"2g" }}</p>
+                <p class="text-xs text-slate-500 mt-1">Compras ₲ {{ totales.volumen_compras_pyg|floatformat:"2g" }}</p>
+            </div>
+            <div class="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
+                <p class="text-xs font-semibold uppercase tracking-wider text-slate-500">Comisiones</p>
+                <p class="text-2xl font-bold text-slate-900 num mt-1">₲ {{ totales.comision_pyg|floatformat:"2g" }}</p>
+                <p class="text-xs text-slate-500 mt-1">IVA ₲ {{ totales.iva_pyg|floatformat:"2g" }}</p>
+            </div>
+            <div class="bg-white rounded-2xl border border-green-200 p-5 shadow-sm">
+                <p class="text-xs font-semibold uppercase tracking-wider text-slate-500">Ganancia neta</p>
+                <p class="text-2xl font-bold text-green-600 num mt-1">₲ {{ totales.ganancia_neta_pyg|floatformat:"2g" }}</p>
+                <p class="text-xs text-slate-500 mt-1">Comisión − IVA</p>
+            </div>
+        </div>
+
+        <!-- Vista previa del informe -->
+        <section class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+            <div class="px-6 py-4 border-b border-slate-200 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                <div>
+                    <h2 class="font-semibold text-slate-900">Vista Previa del Informe</h2>
+                    <p class="text-xs text-slate-500">Solo operaciones confirmadas (SUCCESS). Importes en Guaraníes (PYG).</p>
+                </div>
+                <div class="flex flex-wrap gap-2">
+                    <a href="?{% if consulta %}{{ consulta }}&amp;{% endif %}formato=pdf" target="_blank" class="inline-flex items-center bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl text-sm font-semibold shadow-sm transition">Descargar PDF</a>
+                    <a href="?{% if consulta %}{{ consulta }}&amp;{% endif %}formato=csv" class="inline-flex items-center bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl text-sm font-semibold shadow-sm transition">Descargar Excel/CSV</a>
+                </div>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="min-w-full text-sm">
+                    <thead class="bg-slate-100 text-slate-600 text-xs uppercase tracking-wider">
+                        <tr>
+                            <th class="px-4 py-3 text-left">Fecha</th>
+                            <th class="px-4 py-3 text-left">Tipo</th>
+                            <th class="px-4 py-3 text-left">Canal</th>
+                            <th class="px-4 py-3 text-left">Cliente</th>
+                            <th class="px-4 py-3 text-left">Cajero / Usuario</th>
+                            <th class="px-4 py-3 text-left">Par</th>
+                            <th class="px-4 py-3 text-right">Monto Origen</th>
+                            <th class="px-4 py-3 text-right">Tasa</th>
+                            <th class="px-4 py-3 text-right">Volumen (PYG)</th>
+                            <th class="px-4 py-3 text-right">Comisión (PYG)</th>
+                            <th class="px-4 py-3 text-right">IVA (PYG)</th>
+                            <th class="px-4 py-3 text-right">Ganancia Neta (PYG)</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-100">
+                        {% for fila in filas %}
+                        <tr class="hover:bg-slate-50">
+                            <td class="px-4 py-2.5 whitespace-nowrap text-slate-600">{{ fila.fecha|date:"d/m/Y H:i" }}</td>
+                            <td class="px-4 py-2.5">
+                                {% if fila.tipo == 'COMPRA' %}
+                                    <span class="bg-blue-50 text-blue-800 text-xs font-semibold px-2 py-0.5 rounded-full">Compra</span>
+                                {% else %}
+                                    <span class="bg-sky-50 text-sky-700 text-xs font-semibold px-2 py-0.5 rounded-full">Venta</span>
+                                {% endif %}
+                            </td>
+                            <td class="px-4 py-2.5 text-slate-600">{{ fila.canal }}</td>
+                            <td class="px-4 py-2.5">{{ fila.cliente }}</td>
+                            <td class="px-4 py-2.5 text-slate-600">{{ fila.operador }}</td>
+                            <td class="px-4 py-2.5 font-mono text-xs">{{ fila.moneda_origen }} → {{ fila.moneda_destino }}</td>
+                            <td class="px-4 py-2.5 text-right num">{{ fila.monto_origen|floatformat:"2g" }}</td>
+                            <td class="px-4 py-2.5 text-right num">{{ fila.tasa_aplicada|floatformat:"2g" }}</td>
+                            <td class="px-4 py-2.5 text-right num">{{ fila.volumen_pyg|floatformat:"2g" }}</td>
+                            <td class="px-4 py-2.5 text-right num">{{ fila.comision_pyg|floatformat:"2g" }}</td>
+                            <td class="px-4 py-2.5 text-right num">{{ fila.iva_pyg|floatformat:"2g" }}</td>
+                            <td class="px-4 py-2.5 text-right num font-semibold text-green-600">{{ fila.ganancia_neta_pyg|floatformat:"2g" }}</td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="12" class="px-4 py-10 text-center text-slate-500">No hay operaciones para los filtros elegidos.</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                    <tfoot class="bg-slate-900 text-white">
+                        <tr>
+                            <td colspan="8" class="px-4 py-3 font-semibold">Totales del período · {{ totales.cantidad }} operación(es)</td>
+                            <td class="px-4 py-3 text-right num font-semibold">{{ totales.volumen_total_pyg|floatformat:"2g" }}</td>
+                            <td class="px-4 py-3 text-right num font-semibold">{{ totales.comision_pyg|floatformat:"2g" }}</td>
+                            <td class="px-4 py-3 text-right num font-semibold">{{ totales.iva_pyg|floatformat:"2g" }}</td>
+                            <td class="px-4 py-3 text-right num font-bold text-green-400">₲ {{ totales.ganancia_neta_pyg|floatformat:"2g" }}</td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+        </section>
+    </main>
+</body>
+</html>

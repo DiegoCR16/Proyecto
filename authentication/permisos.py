@@ -31,6 +31,7 @@ CATALOGO_PERMISOS = [
     ('can_manage_cashboxes', 'Gestionar Cajas', 'Crear y editar cajas físicas y asignar cajeros.', True),
     ('can_view_audit', 'Ver Auditoría', 'Consultar el registro de auditoría del sistema.', True),
     ('can_operate_cashier', 'Operar Caja y Ventanilla', 'Abrir y cerrar turnos, registrar movimientos y operar en ventanilla.', True),
+    ('can_view_financial_reports', 'Ver Reportes Financieros', 'Generar y exportar reportes de transacciones y ganancias (PDF, Excel/CSV).', True),
     ('can_manage_invoices', 'Gestionar Facturación Electrónica', 'Reintentar, consultar, cancelar y anular facturas con nota de crédito; resolver solicitudes de anulación.', True),
     ('can_perform_exchange', 'Realizar Transacciones', 'Comprar y vender divisas desde la interfaz de cliente.', False),
     ('can_view_history', 'Ver Historial de Operaciones', 'Consultar el historial de compras y ventas del cliente.', False),
@@ -62,7 +63,7 @@ _PERMISOS_CLIENTE = {
 
 PERMISOS_POR_DEFECTO = {
     ROL_ADMIN: set(TODOS_LOS_PERMISOS),
-    ROL_ANALISTA: {'can_view_audit', 'can_simulate', 'can_view_rates'},
+    ROL_ANALISTA: {'can_view_audit', 'can_view_financial_reports', 'can_simulate', 'can_view_rates'},
     ROL_CAJERO: {'can_operate_cashier', 'can_view_rates'},
     ROL_CLIENTE: set(_PERMISOS_CLIENTE),
     ROL_JEFE: set(_PERMISOS_CLIENTE),
