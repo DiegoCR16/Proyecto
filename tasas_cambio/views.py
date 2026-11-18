@@ -857,7 +857,12 @@ def ensure_default_payment_methods():
     """
     Asegura que existan los métodos de pago predeterminados en la base de datos (PSE-25),
     incluyendo tarjetas de crédito y débito, transferencias y billeteras con campos de número de cuenta y banco.
+
+    Solo los carga cuando no hay ningún método de pago (instalación inicial): si el administrador
+    elimina alguno desde el panel, no se vuelve a crear al recargar la página ni al reiniciar el sistema.
     """
+    if PaymentMethod.objects.exists():
+        return
     PaymentMethod.objects.get_or_create(
         code='TARJETA_CREDITO',
         defaults={

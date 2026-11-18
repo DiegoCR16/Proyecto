@@ -155,3 +155,27 @@ class ParametrizacionDivisasMetodosPSE25Tests(TestCase):
         })
         self.assertEqual(resp_del_curr.status_code, 200)
         self.assertFalse(ExchangeRate.objects.filter(currency_code='CLP').exists())
+
+    def test_eliminar_metodo_predeterminado_no_reaparece(self):
+        """
+        Un método de pago predeterminado eliminado desde el panel no se vuelve a crear
+        al recargar la página ni al ejecutar de nuevo la población inicial.
+        """
+        self.client.force_login(self.admin_user)
+        self.client.post(self.config_url, {
+            'action': 'delete_payment_method',
+            'payment_method_code': 'TARJETA_DEBITO',
+        })
+        self.assertFalse(PaymentMethod.objects.filter(code='TARJETA_DEBITO').exists())
+
+        self.client.get(self.config_url)
+        ensure_default_payment_methods()
+        self.assertFalse(PaymentMethod.objects.filter(code='TARJETA_DEBITO').exists())
+
+    def test_panel_muestra_saldo_de_metodos_de_pago(self):
+        """El catálogo muestra el saldo disponible de cada método de pago del negocio."""
+        PaymentMethod.objects.filter(code='TRANSFERENCIA').update(balance=Decimal('1234567.89'))
+        self.client.force_login(self.admin_user)
+        response = self.client.get(self.config_url)
+        self.assertContains(response, 'Saldo disponible')
+        self.assertContains(response, 'PYG 1234567.89')

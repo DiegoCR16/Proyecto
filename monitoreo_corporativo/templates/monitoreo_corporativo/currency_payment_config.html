@@ -273,6 +273,7 @@
                                     {% if pm.holder_name %}
                                     <p><span class="font-semibold text-slate-500">Titular:</span> {{ pm.holder_name }}</p>
                                     {% endif %}
+                                    <p><span class="font-semibold text-slate-500">Saldo disponible:</span> <strong class="font-mono text-emerald-700">PYG {{ pm.balance|floatformat:2 }}</strong></p>
                                 </div>
                                 <p class="text-xs text-slate-600 mt-2">{{ pm.description|default:"Sin descripción adicional." }}</p>
                                 <p class="text-[10px] text-slate-400 font-mono mt-1">Código: {{ pm.code }}</p>

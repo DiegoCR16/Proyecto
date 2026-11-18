@@ -5,6 +5,7 @@
 # Solo Caddy publica puertos (80/443). Django, Keycloak y PostgreSQL quedan
 # accesibles únicamente dentro de la red interna de Docker.
 # `!reset` es necesario porque Compose concatena las listas `ports` del archivo base.
+# `!reset` vacía el campo e ignora el valor; para reemplazarlo por otro valor se usa `!override`.
 
 services:
   db:
@@ -56,12 +57,12 @@ services:
       target: production
     restart: always
     command: ./entrypoint-prod.sh
-    volumes: !reset
+    volumes: !override
       - static_volume:/app/staticfiles
     ports: !reset []
     expose:
       - "8000"
-    env_file: !reset
+    env_file: !override
       - .env.production
     environment: !reset []
     depends_on:

@@ -80,6 +80,11 @@ Solo en el **primer despliegue** el script pide la contraseña del administrador
 dos veces y sin mostrarla: mínimo 12 caracteres, letras, números y `!%&*+,-./:;<=>?@^_~`
 (sin espacios, comillas, `$` ni `#`). Viaja al servidor por SSH y queda solo en su `.env.production`.
 Keycloak la usa al crear el admin la primera vez; para cambiarla después se usa la consola de Keycloak.
+Después pide el **correo Gmail** que envía la verificación de Keycloak y el iToken: la cuenta y su
+contraseña de aplicación de Google (16 letras, se genera en https://myaccount.google.com/apppasswords; los espacios
+se ignoran). Viaja igual que la contraseña de Keycloak y se escribe en `EMAIL_*` y `DEFAULT_FROM_EMAIL`. Con Enter vacío
+se omite; en ese caso, mientras el servidor no tenga correo, el script lo vuelve a pedir en cada despliegue.
+`--configurar-correo` lo pide de nuevo para cambiarlo y `--sin-correo` no lo pide.
 `--sin-usuarios-prueba` deja `SEED_TEST_USERS=false`: se cargan divisas, métodos de pago, comisiones, roles y cajas,
 pero ningún usuario ni cliente.
 
@@ -107,8 +112,9 @@ ssh -i ~/.ssh/oracle_ge ubuntu@16.58.240.129
 nano ~/globalexchange/.env.production
 ```
 
-- **Correo (Gmail del grupo):** `EMAIL_HOST=smtp.gmail.com`, `EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD`
-  (contraseña de aplicación de 16 letras) y `DEFAULT_FROM_EMAIL=Global Exchange <cuenta@gmail.com>`.
+- **Correo (Gmail del grupo):** lo pide `deploy-remoto.sh` (ver arriba). A mano: `EMAIL_HOST=smtp.gmail.com`,
+  `EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD` (contraseña de aplicación de 16 letras) y
+  `DEFAULT_FROM_EMAIL=Global Exchange <cuenta@gmail.com>`.
 - **SIFEN:** `SIFEN_API_EMAIL`, `SIFEN_API_PASSWORD`.
 - **Stripe:** `STRIPE_SECRET_KEY`.
 

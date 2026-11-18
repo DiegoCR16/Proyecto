@@ -202,8 +202,10 @@ if django.VERSION < (6, 1):
 SIFEN_API_EMAIL = os.environ.get('SIFEN_API_EMAIL', 'test@facturasegura.com.py')
 SIFEN_API_PASSWORD = os.environ.get('SIFEN_API_PASSWORD', 'testpassword')
 SIFEN_API_BASE_URL = os.environ.get('SIFEN_API_BASE_URL', 'https://apitest.facturasegura.com.py')
-FACTURASEGURA_NUMERO_INICIAL = 138
-FACTURASEGURA_NUMERO_FINAL = 147
+# Rango de facturas (dNumDoc) autorizado por Factura Segura. Configurable por entorno para que local y
+# producción no emitan el mismo número con la misma cuenta (SIFEN rechaza los duplicados).
+FACTURASEGURA_NUMERO_INICIAL = int(os.environ.get('FACTURASEGURA_NUMERO_INICIAL', 138))
+FACTURASEGURA_NUMERO_FINAL = int(os.environ.get('FACTURASEGURA_NUMERO_FINAL', 147))
 
 # Notas de crédito electrónicas (iTiDE = 5): numeración propia, independiente de las facturas.
 # Rango asignado por Factura Segura al establecimiento 001, punto de expedición 003.

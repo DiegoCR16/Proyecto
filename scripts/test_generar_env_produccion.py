@@ -10,7 +10,8 @@ from io import StringIO
 from unittest import TestCase
 
 from scripts.generar_env_produccion import (
-    aplicar_valores, leer_secreto_cliente, main, validar_dominio, validar_password_admin, valores_produccion,
+    aplicar_valores, leer_secreto_cliente, main, validar_dominio, validar_password_admin, valores_correo,
+    valores_produccion,
 )
 
 DOMINIO = 'globalexchange-g05.duckdns.org'
@@ -178,3 +179,70 @@ class MainTests(TestCase):
         with redirect_stdout(StringIO()), redirect_stderr(StringIO()):
             self.assertEqual(main(args), 1)
         self.assertFalse(os.path.exists(self.salida))
+
+    def _archivo_correo(self, contenido):
+        """Escribe el archivo de correo (cuenta y contraseña de aplicación) y devuelve su ruta."""
+        ruta = os.path.join(self.tmp.name, 'correo')
+        with open(ruta, 'w', encoding='utf-8') as f:
+            f.write(contenido)
+        return ruta
+
+    def test_primer_despliegue_con_correo(self):
+        """Con --correo-file el .env.production nace con el Gmail configurado."""
+        with open(self.plantilla, 'a', encoding='utf-8') as f:
+            f.write('EMAIL_HOST=\nEMAIL_HOST_USER=\nEMAIL_HOST_PASSWORD=\nDEFAULT_FROM_EMAIL=\n')
+        correo = self._archivo_correo('grupo@gmail.com\nabcd efgh ijkl mnop\n')
+        self.assertEqual(self._main('--correo-file', correo), 0)
+        with open(self.salida, encoding='utf-8') as f:
+            contenido = f.read()
+        self.assertIn('EMAIL_HOST=smtp.gmail.com\n', contenido)
+        self.assertIn('EMAIL_HOST_USER=grupo@gmail.com\n', contenido)
+        self.assertIn('EMAIL_HOST_PASSWORD=abcdefghijklmnop\n', contenido)
+        self.assertIn('DEFAULT_FROM_EMAIL=Global Exchange <grupo@gmail.com>\n', contenido)
+
+    def test_correo_invalido_no_genera_archivo(self):
+        """Una contraseña de aplicación inválida termina con error sin crear .env.production."""
+        correo = self._archivo_correo('grupo@gmail.com\ncorta\n')
+        self.assertEqual(self._main('--correo-file', correo), 1)
+        self.assertFalse(os.path.exists(self.salida))
+
+    def test_solo_correo_actualiza_archivo_existente(self):
+        """--solo-correo cambia solo las variables de correo y conserva el resto (agrega las que falten)."""
+        with open(self.salida, 'w', encoding='utf-8') as f:
+            f.write('# comentario\nSECRET_KEY=secreto\nEMAIL_HOST=\nEMAIL_HOST_USER=viejo@gmail.com\n')
+        correo = self._archivo_correo('grupo@gmail.com\nabcdefghijklmnop\n')
+        with redirect_stdout(StringIO()), redirect_stderr(StringIO()):
+            self.assertEqual(main(['--solo-correo', '--correo-file', correo, '--salida', self.salida]), 0)
+        with open(self.salida, encoding='utf-8') as f:
+            contenido = f.read()
+        self.assertIn('# comentario\nSECRET_KEY=secreto\n', contenido)
+        self.assertIn('EMAIL_HOST=smtp.gmail.com\n', contenido)
+        self.assertIn('EMAIL_HOST_USER=grupo@gmail.com\n', contenido)
+        self.assertIn('EMAIL_HOST_PASSWORD=abcdefghijklmnop\n', contenido)
+        self.assertNotIn('viejo@gmail.com', contenido)
+
+    def test_solo_correo_invalido_no_modifica(self):
+        """Con datos de correo inválidos --solo-correo no toca el archivo."""
+        with open(self.salida, 'w', encoding='utf-8') as f:
+            f.write('EMAIL_HOST=\n')
+        correo = self._archivo_correo('no-es-correo\nabcdefghijklmnop\n')
+        with redirect_stdout(StringIO()), redirect_stderr(StringIO()):
+            self.assertEqual(main(['--solo-correo', '--correo-file', correo, '--salida', self.salida]), 1)
+        with open(self.salida, encoding='utf-8') as f:
+            self.assertEqual(f.read(), 'EMAIL_HOST=\n')
+
+
+class ValoresCorreoTests(TestCase):
+    """Pruebas de valores_correo()."""
+
+    def test_ignora_espacios_de_la_contrasena(self):
+        """Gmail muestra la contraseña de aplicación en grupos de 4: los espacios se quitan."""
+        valores = valores_correo(' grupo@gmail.com ', 'abcd efgh ijkl mnop')
+        self.assertEqual(valores['EMAIL_HOST_PASSWORD'], 'abcdefghijklmnop')
+        self.assertEqual(valores['EMAIL_HOST_USER'], 'grupo@gmail.com')
+
+    def test_rechaza_valores_invalidos(self):
+        """Correo mal formado o contraseña que no sea de 16 letras lanzan ValueError."""
+        for cuenta, password in [('sin-arroba', 'abcdefghijklmnop'), ('a@b.com', 'corta'), ('a@b.com', 'abcdefghijklmn$%')]:
+            with self.assertRaises(ValueError):
+                valores_correo(cuenta, password)
